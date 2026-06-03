@@ -49,12 +49,15 @@ export default function Home() {
             <a className="rounded-md px-3 py-2 hover:bg-muted" href="#">
               Contrats
             </a>
-            <a className="rounded-md px-3 py-2 hover:bg-muted" href="#">
+            <Link className="rounded-md px-3 py-2 hover:bg-muted" href="/commissions">
               Commissions
-            </a>
-            <a className="rounded-md px-3 py-2 hover:bg-muted" href="#">
+            </Link>
+            <Link className="rounded-md px-3 py-2 hover:bg-muted" href="/users">
               Utilisateurs
-            </a>
+            </Link>
+            <Link className="rounded-md px-3 py-2 hover:bg-muted" href="/login">
+              Connexion
+            </Link>
           </nav>
         </aside>
 

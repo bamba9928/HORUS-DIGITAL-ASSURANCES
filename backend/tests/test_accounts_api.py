@@ -91,6 +91,31 @@ def test_admin_general_can_create_contributor_with_null_commissions():
 
 
 @pytest.mark.django_db
+def test_django_superuser_is_treated_as_general_admin():
+    organization = Organization.objects.create(name="Groupe Superuser", code="SUPER")
+    superuser = User.objects.create_superuser(
+        username="django-superuser",
+        password="test-pass-123",
+    )
+    client = APIClient()
+    client.force_authenticate(superuser)
+
+    response = client.post(
+        "/api/accounts/users/",
+        {
+            "username": "apporteur-created-by-superuser",
+            "password": "test-pass-123",
+            "role": User.Role.CONTRIBUTOR,
+            "organization": organization.id,
+        },
+        format="json",
+    )
+
+    assert superuser.is_admin_general is True
+    assert response.status_code == 201
+
+
+@pytest.mark.django_db
 def test_admin_group_creates_user_only_in_own_group():
     own_group = Organization.objects.create(name="Groupe Thies", code="THS")
     other_group = Organization.objects.create(name="Groupe Louga", code="LGA")

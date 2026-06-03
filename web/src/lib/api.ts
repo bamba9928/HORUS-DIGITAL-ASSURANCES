@@ -12,7 +12,7 @@ type ApiListResponse<T> = {
 };
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api";
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
 
 export async function fetchApi<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method ?? "GET";
@@ -83,6 +83,81 @@ export async function login(username: string, password: string) {
 export async function logout() {
   return fetchApi<{ authenticated: false }>("/accounts/auth/logout/", {
     method: "POST",
+  });
+}
+
+export type ManagedUser = AuthUser & {
+  commission_percent_on_prime_rc: string | null;
+  commission_fixed_on_policy_fee: number | null;
+  is_active: boolean;
+  date_joined: string;
+};
+
+export type CreateUserPayload = {
+  username: string;
+  password: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  role: AuthUser["role"];
+  organization?: number | null;
+};
+
+export async function listUsers() {
+  return fetchApi<ApiListResponse<ManagedUser>>("/accounts/users/");
+}
+
+export async function createUser(payload: CreateUserPayload) {
+  return fetchApi<ManagedUser>("/accounts/users/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateUserCommission(
+  userId: number,
+  payload: {
+    commission_percent_on_prime_rc: string | null;
+    commission_fixed_on_policy_fee: number | null;
+  },
+) {
+  return fetchApi<ManagedUser>(`/accounts/users/${userId}/commission/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export type CommissionSnapshot = {
+  id: number;
+  contract: number;
+  contributor: number;
+  contributor_username: string;
+  organization: number;
+  organization_name: string;
+  status: "PENDING" | "PAYABLE" | "PAID" | "CANCELLED" | "DISPUTED";
+  prime_rc_ass: number;
+  cout_police_ass: number;
+  ttc_ass: number;
+  commission_percent_used: string;
+  commission_fixed_policy_fee_used: number;
+  commission_prime_rc_amount: number;
+  commission_policy_fee_amount: number;
+  commission_total: number;
+  net_to_horus: number;
+  created_at: string;
+};
+
+export async function listCommissionSnapshots() {
+  return fetchApi<ApiListResponse<CommissionSnapshot>>("/commissions/snapshots/");
+}
+
+export async function updateCommissionSnapshotStatus(
+  snapshotId: number,
+  status: CommissionSnapshot["status"],
+) {
+  return fetchApi<CommissionSnapshot>(`/commissions/snapshots/${snapshotId}/status/`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
   });
 }
 
