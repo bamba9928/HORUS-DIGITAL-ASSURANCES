@@ -43,11 +43,12 @@ Le PDF indique :
 - Sandbox : `https://manager.lasecu-assurances.sn/`
 - Production : `https://manager.lasecu-assurances.sn/`
 
-La collection Postman utilise une autre base de test :
+La sandbox officielle confirmee par ASS est :
 
 - `https://kiiraytest.lasecu-assurances.sn`
 
-Point a confirmer avec ASS avant implementation definitive : base URL sandbox officielle et valeur exacte de `{partner}`.
+Le segment `partner` est fixe dans l'URL : `/api/v1/partner/`.
+L'identite partenaire est portee par Basic Auth.
 
 ## Endpoints observes
 
@@ -150,9 +151,9 @@ Codes observes :
 
 ## Ecarts et points a clarifier
 
-- Base URL sandbox : PDF et Postman divergent.
-- `{partner}` : le PDF dit que c'est le nom du partenaire, Postman utilise literalement `partner`.
-- Methodes : `stock.qr`, `rc.moto` et `rc.flotte.request` sont GET dans le PDF mais POST dans Postman.
+- Base URL sandbox : clarifiee par ASS, utiliser `https://kiiraytest.lasecu-assurances.sn`.
+- `{partner}` : clarifie par ASS, utiliser le segment fixe `/api/v1/partner/`.
+- Methodes : clarifiees par ASS, `stock.qr`, `rc.moto` et `rc.flotte.request` sont en `POST`.
 - Annulation : PDF indique `qrcode.mono.cancel`; Postman indique `qrcode.cancel`.
 - `stock.qr` : PDF dit sans body; Postman envoie `{ "code": "1000" }`.
 - Reponses : la documentation melange parfois `status/message` et `operationStatus/operationMessage`.

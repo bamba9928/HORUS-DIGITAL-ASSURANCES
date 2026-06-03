@@ -1,69 +1,101 @@
 import requests
 from django.conf import settings
 
-from integrations.ass.constants import ASS_POLICY_FEE, ASS_SUCCESS_STATUS
-from integrations.ass.exceptions import AssRealCallsDisabledError
+from integrations.ass.constants import (
+    ASS_ENDPOINT_ISSUE_AUTO,
+    ASS_ENDPOINT_ISSUE_FLEET,
+    ASS_ENDPOINT_ISSUE_MOTO,
+    ASS_ENDPOINT_RC_AUTO,
+    ASS_ENDPOINT_RC_FLEET,
+    ASS_ENDPOINT_RC_MOTO,
+    ASS_ENDPOINT_RC_TRAILER,
+    ASS_ENDPOINT_STOCK_QR,
+    ASS_POLICY_FEE,
+    ASS_SUCCESS_STATUS,
+)
+from integrations.ass.exceptions import AssConfigurationError, AssRealCallsDisabledError
 
 
 class AssClient:
-    def __init__(self, *, base_url=None, partner=None, username=None, password=None):
+    def __init__(
+        self,
+        *,
+        base_url=None,
+        partner_segment=None,
+        username=None,
+        password=None,
+        session=None,
+    ):
         self.base_url = (base_url if base_url is not None else settings.ASS_BASE_URL).rstrip("/")
-        self.partner = partner if partner is not None else settings.ASS_PARTNER
+        self.partner_segment = (
+            partner_segment
+            if partner_segment is not None
+            else settings.ASS_API_PARTNER_SEGMENT
+        ).strip("/")
         self.username = username if username is not None else settings.ASS_USERNAME
         self.password = password if password is not None else settings.ASS_PASSWORD
-        self.session = requests.Session()
+        self.session = session or requests.Session()
 
     def calculate_auto_rc(self, payload):
         if settings.ASS_MOCK_ENABLED:
             return self._mock_rc_response(payload)
-        return self._post("/rc.request", payload)
+        return self._post(ASS_ENDPOINT_RC_AUTO, payload)
 
     def calculate_moto_rc(self, payload):
         if settings.ASS_MOCK_ENABLED:
             return self._mock_moto_rc_response(payload)
-        return self._post("/rc.moto", payload)
+        return self._post(ASS_ENDPOINT_RC_MOTO, payload)
 
     def calculate_fleet_rc(self, payload):
         if settings.ASS_MOCK_ENABLED:
             return self._mock_fleet_rc_response(payload)
-        return self._post("/rc.flotte.request", payload)
+        return self._post(ASS_ENDPOINT_RC_FLEET, payload)
 
     def calculate_trailer_rc(self, payload):
         if settings.ASS_MOCK_ENABLED:
             return self._mock_trailer_rc_response(payload)
-        return self._post("/remorque.rc.request", payload)
+        return self._post(ASS_ENDPOINT_RC_TRAILER, payload)
 
     def issue_auto_contract(self, payload):
         if settings.ASS_MOCK_ENABLED:
             return self._mock_issue_response(payload)
-        return self._post("/qrcode.request", payload)
+        return self._post(ASS_ENDPOINT_ISSUE_AUTO, payload)
 
     def issue_moto_contract(self, payload):
         if settings.ASS_MOCK_ENABLED:
             return self._mock_issue_response(payload)
-        return self._post("/moto.request", payload)
+        return self._post(ASS_ENDPOINT_ISSUE_MOTO, payload)
 
     def issue_fleet_contract(self, payload):
         if settings.ASS_MOCK_ENABLED:
             return self._mock_fleet_issue_response(payload)
-        return self._post("/qrcode.flotte.request", payload)
+        return self._post(ASS_ENDPOINT_ISSUE_FLEET, payload)
 
-    def stock_qr(self):
+    def stock_qr(self, payload=None):
         if settings.ASS_MOCK_ENABLED:
             return {
                 "operationStatus": ASS_SUCCESS_STATUS,
                 "operationMessage": "Stock QR fictif.",
                 "data": 80,
             }
-        return self._post("/stock.qr", {})
+        return self._post(ASS_ENDPOINT_STOCK_QR, payload or {})
 
     def _post(self, endpoint, payload):
         if not settings.ASS_REAL_CALLS_ALLOWED:
             raise AssRealCallsDisabledError("Les appels reels ASS sont desactives.")
-        url = f"{self.base_url}/api/v1/{self.partner}{endpoint}"
+        if not self.base_url:
+            raise AssConfigurationError("ASS_BASE_URL est requis pour les appels ASS reels.")
+        if not self.username or not self.password:
+            raise AssConfigurationError("ASS_USERNAME et ASS_PASSWORD sont requis pour ASS.")
+
+        url = self._build_url(endpoint)
         response = self.session.post(url, json=payload, auth=(self.username, self.password), timeout=30)
         response.raise_for_status()
         return response.json()
+
+    def _build_url(self, endpoint):
+        normalized_endpoint = endpoint if endpoint.startswith("/") else f"/{endpoint}"
+        return f"{self.base_url}/api/v1/{self.partner_segment}{normalized_endpoint}"
 
     def _mock_rc_response(self, payload):
         puissance = int(payload.get("puissanceFiscale") or 1)

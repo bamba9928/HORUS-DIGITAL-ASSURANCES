@@ -41,7 +41,7 @@ TODO backend :
   - production
 - Utiliser des variables d'environnement pour :
   - `ASS_BASE_URL`
-  - `ASS_PARTNER`
+  - `ASS_API_PARTNER_SEGMENT`
   - `ASS_USERNAME`
   - `ASS_PASSWORD`
   - `ASS_POLICY_FEE`
@@ -243,14 +243,21 @@ TODO environnement de test Postman :
 - Importer la collection Postman ASS originale localement.
 - Ne pas commit les credentials contenus dans la collection.
 - Creer un environnement Postman separe :
-  - `base_url`
-  - `partner`
+  - `base_url = https://kiiraytest.lasecu-assurances.sn`
+  - segment API fixe : `/api/v1/partner/`
   - `ass_username`
   - `ass_password`
 - Remplacer les credentials en dur par des variables.
 - Creer une version nettoyee de la collection pour l'equipe si necessaire.
 - Marquer les requetes d'emission comme dangereuses tant qu'elles consomment un QR code.
 - Tester uniquement les endpoints non destructifs ou mockes tant que ASS n'a pas confirme l'environnement.
+
+Clarifications ASS recues :
+
+- Sandbox officielle : `https://kiiraytest.lasecu-assurances.sn`
+- Le segment `partner` est fixe : `/api/v1/partner/`
+- L'identite partenaire passe par Basic Auth, pas par une valeur dynamique dans l'URL.
+- `stock.qr`, `rc.moto` et `rc.flotte.request` utilisent `POST`.
 
 Endpoints a mapper :
 
@@ -273,9 +280,6 @@ Endpoints a mapper :
 
 Points ASS a confirmer avant appels reels :
 
-- URL sandbox officielle.
-- Valeur exacte de `{partner}`.
-- Methode reelle de `stock.qr`, `rc.moto`, `rc.flotte.request`.
 - Endpoint exact d'annulation.
 - Valeurs officielles `usage` moto.
 - Signification exacte de `linkCarteBrune` vs attestation CEDEAO.

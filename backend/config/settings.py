@@ -2,6 +2,11 @@ from pathlib import Path
 
 from decouple import config
 
+from integrations.ass.constants import (
+    ASS_API_PARTNER_SEGMENT as DEFAULT_ASS_API_PARTNER_SEGMENT,
+    ASS_SANDBOX_BASE_URL,
+)
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -125,8 +130,11 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-ASS_BASE_URL = config("ASS_BASE_URL", default="")
-ASS_PARTNER = config("ASS_PARTNER", default="")
+ASS_BASE_URL = config("ASS_BASE_URL", default=ASS_SANDBOX_BASE_URL)
+ASS_API_PARTNER_SEGMENT = config(
+    "ASS_API_PARTNER_SEGMENT",
+    default=DEFAULT_ASS_API_PARTNER_SEGMENT,
+)
 ASS_USERNAME = config("ASS_USERNAME", default="")
 ASS_PASSWORD = config("ASS_PASSWORD", default="")
 ASS_POLICY_FEE = config("ASS_POLICY_FEE", default=3000, cast=int)

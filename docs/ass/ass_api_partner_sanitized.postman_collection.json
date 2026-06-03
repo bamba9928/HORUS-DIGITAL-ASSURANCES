@@ -24,14 +24,14 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/{{partner}}/rc.request",
+              "raw": "{{base_url}}/api/v1/partner/rc.request",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "{{partner}}",
+                "partner",
                 "rc.request"
               ]
             }
@@ -90,14 +90,14 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/{{partner}}/qrcode.request",
+              "raw": "{{base_url}}/api/v1/partner/qrcode.request",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "{{partner}}",
+                "partner",
                 "qrcode.request"
               ]
             }
@@ -124,14 +124,14 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/{{partner}}/rc.flotte.request",
+              "raw": "{{base_url}}/api/v1/partner/rc.flotte.request",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "{{partner}}",
+                "partner",
                 "rc.flotte.request"
               ]
             }
@@ -153,14 +153,14 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/{{partner}}/qrcode.flotte.request",
+              "raw": "{{base_url}}/api/v1/partner/qrcode.flotte.request",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "{{partner}}",
+                "partner",
                 "qrcode.flotte.request"
               ]
             }
@@ -187,14 +187,14 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/{{partner}}/remorque.rc.request",
+              "raw": "{{base_url}}/api/v1/partner/remorque.rc.request",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "{{partner}}",
+                "partner",
                 "remorque.rc.request"
               ]
             }
@@ -216,14 +216,14 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/{{partner}}/remorque.qrcode.request",
+              "raw": "{{base_url}}/api/v1/partner/remorque.qrcode.request",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "{{partner}}",
+                "partner",
                 "remorque.qrcode.request"
               ]
             }
@@ -250,14 +250,14 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/{{partner}}/stock.qr",
+              "raw": "{{base_url}}/api/v1/partner/stock.qr",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "{{partner}}",
+                "partner",
                 "stock.qr"
               ]
             }
@@ -279,14 +279,14 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/{{partner}}/qrcode.cancel",
+              "raw": "{{base_url}}/api/v1/partner/qrcode.cancel",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "{{partner}}",
+                "partner",
                 "qrcode.cancel"
               ]
             }
@@ -313,14 +313,14 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/{{partner}}/bus.ecole.request",
+              "raw": "{{base_url}}/api/v1/partner/bus.ecole.request",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "{{partner}}",
+                "partner",
                 "bus.ecole.request"
               ]
             }
@@ -342,14 +342,14 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/{{partner}}/bus.ecole.rc",
+              "raw": "{{base_url}}/api/v1/partner/bus.ecole.rc",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "{{partner}}",
+                "partner",
                 "bus.ecole.rc"
               ]
             }
@@ -376,14 +376,14 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/{{partner}}/garage.request",
+              "raw": "{{base_url}}/api/v1/partner/garage.request",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "{{partner}}",
+                "partner",
                 "garage.request"
               ]
             }
@@ -405,14 +405,14 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/{{partner}}/rc.garage",
+              "raw": "{{base_url}}/api/v1/partner/rc.garage",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "{{partner}}",
+                "partner",
                 "rc.garage"
               ]
             }
@@ -439,14 +439,14 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/{{partner}}/rc.moto",
+              "raw": "{{base_url}}/api/v1/partner/rc.moto",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "{{partner}}",
+                "partner",
                 "rc.moto"
               ]
             }
@@ -468,14 +468,14 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/{{partner}}/moto.request",
+              "raw": "{{base_url}}/api/v1/partner/moto.request",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "{{partner}}",
+                "partner",
                 "moto.request"
               ]
             }
@@ -502,14 +502,14 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/{{partner}}/verif.immatriculation",
+              "raw": "{{base_url}}/api/v1/partner/verif.immatriculation",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "{{partner}}",
+                "partner",
                 "verif.immatriculation"
               ]
             }
