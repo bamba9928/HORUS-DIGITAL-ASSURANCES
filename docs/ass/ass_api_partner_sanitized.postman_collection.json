@@ -1,0 +1,591 @@
+{
+  "info": {
+    "_postman_id": "f21480d7-cccb-41a1-ae64-cc2e0a60ec81",
+    "name": "ASS API PARTNER",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "38797314"
+  },
+  "item": [
+    {
+      "name": "mono",
+      "item": [
+        {
+          "name": "mono-rc",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"puissanceFiscale\" : 8,\r\n    \"duree\" : 3,\r\n    \"genre\" : \"VP\",\r\n    \"nombrePlace\" : 5,\r\n    \"periodicite\" : \"MOIS\",\r\n    \"energie\" : \"ESSENCE\",\r\n    \"valeurNeuve\" : 9000900,\r\n    \"valeurActuelle\" : 9000900,\r\n    \"garanties\":[1,2,4],\r\n    \"garantiesOptPT\":\"OPTION_1\",\r\n    \"garantiesOptAR\":\"500000\",\r\n    \"garantiesOptAS\":\"OPTION_1\",\r\n    \"cout_police\" : 3000,\r\n\"remise_rc\" : 0,\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/{{partner}}/rc.request",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "{{partner}}",
+                "rc.request"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "mono-request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var template = `\r",
+                  "<style type=\"text/css\">\r",
+                  "    .tftable {font-size:14px;color:#333333;width:100%;border-width: 1px;border-color: #87ceeb;border-collapse: collapse;}\r",
+                  "    .tftable th {font-size:18px;background-color:#87ceeb;border-width: 1px;padding: 8px;border-style: solid;border-color: #87ceeb;text-align:left;}\r",
+                  "    .tftable tr {background-color:#ffffff;}\r",
+                  "    .tftable td {font-size:14px;border-width: 1px;padding: 8px;border-style: solid;border-color: #87ceeb;}\r",
+                  "    .tftable tr:hover {background-color:#e0ffff;}\r",
+                  "</style>\r",
+                  "\r",
+                  "<table class=\"tftable\" border=\"1\">\r",
+                  "    <tr>\r",
+                  "        <th>Error</th>\r",
+                  "        <th>Error Description</th>\r",
+                  "    </tr>\r",
+                  "    <tr>\r",
+                  "        <td>{{response.error}}</td>\r",
+                  "        <td>{{response.error_descrip}}</td>\r",
+                  "    </tr>\r",
+                  "</table>\r",
+                  "`;\r",
+                  "\r",
+                  "function constructVisualizerPayload() {\r",
+                  "    return {response: pm.response.json()}\r",
+                  "}\r",
+                  "\r",
+                  "pm.visualizer.set(template, constructVisualizerPayload());"
+                ],
+                "type": "text/javascript",
+                "packages": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n   \"duree\":1,\r\n   \"assure\":{\r\n      \"nom\":\"TEST \",\r\n      \"email\":\"awafallou89@gmail.com\",\r\n      \"prenom\":\"LAMINE \",\r\n      \"cellulaire\":\"776276249\"\r\n   },\r\n   \"police\":\"500-2024200001\",\r\n   \"vehicule\":{\r\n      \"genre\":\"VP\",\r\n      \"marque\":\"TOYOTA\",\r\n      \"modele\":\"YARIS\",\r\n      \"chassis\":\"CH-1245T\",\r\n      \"energie\":\"ESSENCE\",\r\n      \"nombrePlace\":5,\r\n      \"valeurNeuve\":8000000,\r\n      \"valeurActuelle\":3500000,\r\n      \"immatriculation\":\"TT-789-XR\",\r\n      \"puissanceFiscale\": 8,\r\n      \"dateMiseCirculation\":\"2008-08-12\"\r\n   },\r\n   \"dateEffet\":\"2024-12-27\",\r\n   \"valeurNeuve\" : 9000900,\r\n   \"valeurActuelle\" : 9000900,\r\n    \"garanties\":[\r\n        1,2,4\r\n    ],\r\n    \"garantiesOptPT\":\"OPTION_1\",\r\n    \"garantiesOptAR\":\"CAPITAL\",\r\n    \"garantiesOptAS\":\"OPTION_1\",\r\n   \"periodicite\":\"MOIS\",\r\n   \"souscripteur\":{\r\n      \"nom\":\"TEST \",\r\n      \"email\":\"awafallou89@gmail.com\",\r\n      \"prenom\":\"LAMINE \",\r\n      \"cellulaire\":\"776276249\"\r\n   },\r\n   \"typePersonne\":\"PHYSIQUE\",\r\n   \"referenceTrxPartner\":\"a5c986095a51496082a035c01aa58oCC_4zAAA\",\r\n   \"responsabiliteCivile\":18688\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/{{partner}}/qrcode.request",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "{{partner}}",
+                "qrcode.request"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "flotte",
+      "item": [
+        {
+          "name": "rc-flotte",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n\"referenceFlotte\": \"123f1\",\r\n\"periodicite\": \"MOIS\",\r\n\"duree\": 12 ,\r\n\"dateEffet\":\"2025-04-07\",\r\n\"cout_police\" : 3000,\r\n\"remise_rc\" : 0,\r\n \"requests\": [\r\n {\r\n \"puissanceFiscale\": 14,\r\n \"genre\": \"VP\",\r\n \"energie\": \"ESSENCE\",\r\n \"requestId\": \"123f11\",\r\n \"valeurNeuve\":4500000,\r\n\"valeurActuelle\":3500000,\r\n\"garanties\":[]\r\n },\r\n {\r\n\"puissanceFiscale\": 10,\r\n\"genre\": \"VP\",\r\n\"energie\": \"ESSENCE\",\r\n\"requestId\": \"123f12\",\r\n\"valeurNeuve\":4500000,\r\n\"valeurActuelle\":3500000,\r\n\"garanties\":[]\r\n }\r\n ]\r\n }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/{{partner}}/rc.flotte.request",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "{{partner}}",
+                "rc.flotte.request"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "flotte-request",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n\"referenceFlotte\":\"1233393hzeeyh29AFA2\",\r\n\"dateEffet\":\"2025-07-07\",\r\n\"duree\":1,\r\n\"periodicite\":\"MOIS\",\r\n\"typePersonne\": \"MORALE\",\r\n\"police\":\"1234567\",\r\n\"cout_police\" : 3000,\r\n\"remise_rc\" : 0,\r\n\"souscripteur\":{\r\n\"nom\":\"Test \",\r\n\"prenom\":\" SARL \",\r\n\"cellulaire\":\"770000000\",\r\n\"email\":\"test@test.com\"\r\n},\r\n\"items\":[\r\n{\r\n\"responsabiliteCivile\":6047,\r\n\"referenceTrxPartner\":\"aaabbbbccc1\",\r\n\"assure\":{\r\n\"nom\":\" Test \",\r\n\"prenom\":\" SARL \",\r\n\"cellulaire\":\"770000000\",\r\n\"email\":\"test@diotali.com\"\r\n},\r\n\"vehicule\":{\r\n\"puissanceFiscale\":14,\r\n\"dateMiseCirculation\":\"2000-11-08\",\r\n\"nombrePlace\":5,\r\n\"valeurNeuve\":4500000,\r\n\"valeurActuelle\":3500000,\r\n\"garanties\":[],\r\n\"immatriculation\":\"TT-1005-FR\",\r\n\"energie\":\"ESSENCE\",\r\n\"genre\":\"VP\",\r\n\"modele\":\"LOGAN\",\r\n\"marque\":\"RENAULD\",\r\n\"chassis\":\"\"\r\n}\r\n},\r\n{\r\n\"responsabiliteCivile\":4769,\r\n\"referenceTrxPartner\":\"aaabbbbccc2\",\r\n\"assure\":{\r\n\"nom\":\" Test \",\r\n\"prenom\":\" SARL \",\r\n\"cellulaire\":\"770000000\",\r\n\"email\":\"test@diotali.com\"\r\n},\r\n\"vehicule\":{\r\n\"puissanceFiscale\":10,\r\n\"dateMiseCirculation\":\"2006-11-08\",\r\n\"nombrePlace\":5,\r\n\"valeurNeuve\":4500000,\r\n\"valeurActuelle\":3500000,\r\n\"garanties\":[],\r\n\"immatriculation\":\"TT-2005-CV\",\r\n\"energie\":\"ESSENCE\",\r\n\"genre\":\"VP\",\r\n\"modele\":\"LOGAN\",\r\n\"marque\":\"RENAULD\",\r\n\"chassis\":\"\"\r\n}\r\n}\r\n]\r\n}\r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/{{partner}}/qrcode.flotte.request",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "{{partner}}",
+                "qrcode.flotte.request"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "remorque",
+      "item": [
+        {
+          "name": "rc-remorque",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n \"duree\": 12,\r\n \"periodicite\": \"MOIS\",\r\n \"referenceVehicule\":\"DK-0000-KO\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/{{partner}}/remorque.rc.request",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "{{partner}}",
+                "remorque.rc.request"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "remorque-request",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n \"dateEffet\": \"2024-07-11\",\r\n \"dateExpiration\": \"2025-01-10\",\r\n \"duree\": 12,\r\n \"periodicite\": \"MOIS\",\r\n \"police\": \"500-2024200002\",\r\n \"referenceTrxPartner\": \"770000000AAE\",\r\n \"referenceVehicule\": \"DK-0000-KF\",\r\n \"responsabiliteCivile\": 0,\r\n \"immatriculation\": \"KL2365HA\",\r\n \"marque\": \"Remoque\",\r\n \"modele\": \"Remoque\",\r\n \"typePersonne\": \"PHYSIQUE\",\r\n \"assure\": {\r\n \"cellulaire\": \"770000000\",\r\n \"email\": \"test@test.com\",\r\n \"nom\": \"Fall\",\r\n \"prenom\": \"Modou\" \r\n },\r\n \"souscripteur\": {\r\n \"cellulaire\": \"770000000\",\r\n \"email\": \"test@test.com\",\r\n \"nom\": \"Fall\",\r\n \"prenom\": \"Modou\"\r\n }\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/{{partner}}/remorque.qrcode.request",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "{{partner}}",
+                "remorque.qrcode.request"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "qrcode",
+      "item": [
+        {
+          "name": "stock-qr",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n \"code\": \"1000\"\r\n} ",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/{{partner}}/stock.qr",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "{{partner}}",
+                "stock.qr"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "qrcode-cancel",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"referenceTrxPartner\": \"123456789\",\r\n    \"methode\": \"RESILIER\",\r\n    \"motif\": \"RESILIER\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/{{partner}}/qrcode.cancel",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "{{partner}}",
+                "qrcode.cancel"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "bus",
+      "item": [
+        {
+          "name": "bus-ecole-request",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n \"responsabiliteCivile\":391193,\r\n \"dateEffet\":\"2024-10-01\",\r\n \"dateExpiration\":\"2025-04-30\",\r\n \"police\":\"123456789BUS\",\r\n \"duree\":6,\r\n \"periodicite\": \"MOIS\",\r\n \"referenceTrxPartner\":\"12345678909876543BUS\",\r\n \"cout_police\" : 3000,\r\n \"remise_rc\" : 0,\r\n \"souscripteur\":{\r\n \"nom\":\"FALL\",\r\n \"prenom\":\"MODOU\",\r\n \"cellulaire\":\"771234578\",\r\n \"email\":\"modou.fall@test.com\"\r\n },\r\n \"assure\":{\r\n \"nom\":\"FALL\",\r\n \"prenom\":\"MODOU\",\r\n \"cellulaire\":\"771234578\",\r\n \"email\":\"modou.fall@test.com\"\r\n },\r\n\"vehicule\":{\r\n \"puissanceFiscale\":20,\r\n \"dateMiseCirculation\":\"1999-11-08\",\r\n \"nombrePlace\":30,\r\n \"valeurNeuve\":45000000.00,\r\n \"valeurActuelle\":35000000.00,\r\n \"immatriculation\":\"DK-9807-BS\",\r\n \"energie\":\"ESSENCE\",\r\n \"genre\":\"VP\",\r\n \"modele\":\"MERCEDES\",\r\n \"marque\":\"BUSSY\",\r\n \"chassis\":\"1234567890OIUYTREZQSDF\"\r\n },\r\n\"valeurNeuve\" : 0,\r\n\"valeurActuelle\" : 0,\r\n\"garanties\":[]\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/{{partner}}/bus.ecole.request",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "{{partner}}",
+                "bus.ecole.request"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "bus-ecole-rc",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n\"duree\": 6,\r\n\"energie\": \"ESSENCE\",\r\n\"periodicite\":\"MOIS\",\r\n\"genre\": \"BE-VTA\",\r\n\"nombrePlace\": 30,\r\n\"puissanceFiscale\": 20,\r\n\"cout_police\" : 3000,\r\n\"remise_rc\" : 0,\r\n\"valeurNeuve\" : 0,\r\n\"valeurActuelle\" : 0,\r\n\"garanties\":[]\r\n} \r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/{{partner}}/bus.ecole.rc",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "{{partner}}",
+                "bus.ecole.rc"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "garage",
+      "item": [
+        {
+          "name": "garage-request",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n\"responsabiliteCivile\": 237675,\r\n\"dateEffet\":\"2024-10-01\",\r\n\"dateExpiration\":\"2025-03-31\",\r\n\"police\":\"123456789Garage\",\r\n\"cout_police\" : 3000,\r\n\"remise_rc\" : 0,\r\n\"duree\":6,\r\n\"periodicite\": \"MOIS\",\r\n\"referenceTrxPartner\":\"12345678909876543Garage\",\r\n\"nombreCarte\":1,\r\n\"immatriculation\": \"AA-111-KL\",\r\n\"genre\":\"C6-WG-4R\",\r\n\"valeurNeuve\" : 0,\r\n\"valeurActuelle\" : 0,\r\n\"garanties\":[],\r\n\"souscripteur\":{\r\n\"nom\":\"FALL\",\r\n\"prenom\":\"MODOU\",\r\n\"cellulaire\":\"771234578\",\r\n\"email\":\"modou.fall@test.com\"\r\n},\r\n\"assure\":{\r\n\"nom\":\"FALL\",\r\n\"prenom\":\"MODOU\",\r\n\"cellulaire\":\"771234578\",\r\n\"email\":\"modou.fall@test.com\"\r\n}\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/{{partner}}/garage.request",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "{{partner}}",
+                "garage.request"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "rc-garage",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n\"duree\": 6,\r\n\"periodicite\":\"MOIS\",\r\n\"genre\": \"C6-WG-4R\",\r\n\"nombreCarte\": 1,\r\n\"cout_police\" : 3000,\r\n\"remise_rc\" : 0,\r\n\"valeurNeuve\" : 0,\r\n\"valeurActuelle\" : 0,\r\n\"garanties\":[]\r\n}\r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/{{partner}}/rc.garage",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "{{partner}}",
+                "rc.garage"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "moto",
+      "item": [
+        {
+          "name": "moto-rc-request",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n\"cylindre\": \"126\",\r\n\"duree\": \"6\",\r\n\"periodicite\": \"MOIS\",\r\n\"genre\": \"2RCYC\",\r\n\"energie\":\"ESSENCE\",\r\n\"usage\" : \"NON_COMMERCIAL\",\r\n\"nombrePlace\": \"2\",\r\n\"cout_police\" : 3000,\r\n\"remise_rc\" : 0,\r\n\"garanties\":[]\r\n}\r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/{{partner}}/rc.moto",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "{{partner}}",
+                "rc.moto"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "moto-request",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n \"dateEffet\": \"2024-07-11\",\r\n \"dateExpiration\" : \"2025-01-10\",\r\n \"duree\": 6,\r\n \"periodicite\": \"MOIS\",\r\n \"police\": \"poltest123456\",\r\n \"cout_police\" : 3000,\r\n \"remise_rc\" : 0,\r\n \"referenceTrxPartner\": \"reftest123456\",\r\n \"responsabiliteCivile\":14273 ,\r\n \"typePersonne\": \"PHYSIQUE\",\r\n \"souscripteur\":{\r\n \"nom\":\"FALL\",\r\n \"prenom\":\"MODOU\",\r\n \"cellulaire\":\"771234578\",\r\n \"email\":\"modou.fall@test.com\"\r\n },\r\n \"assure\":{\r\n \"nom\":\"FALL\",\r\n \"prenom\":\"MODOU\",\r\n \"cellulaire\":\"771234578\",\r\n \"email\":\"modou.fall@test.com\"\r\n },\r\n \"vehicule\":{\r\n \"cylindre\":126,\r\n \"dateMiseCirculation\":\"2022-11-08\",\r\n \"nombrePlace\":2,\r\n \"immatriculation\":\"DK-0000-MT\",\r\n \"energie\":\"ESSENCE\",\r\n \"genre\":\"2RCYC\",\r\n \"modele\":\"Vespa\",\r\n \"marque\":\"MTN\",\r\n \"usage\":\"NON_COMMERCIALE\"\r\n },\r\n\"garanties\":[]\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/{{partner}}/moto.request",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "{{partner}}",
+                "moto.request"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "verification",
+      "item": [
+        {
+          "name": "immatriculation",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"immatriculation\" : \"AA_544_JW\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/{{partner}}/verif.immatriculation",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "{{partner}}",
+                "verif.immatriculation"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "status-qrcode",
+      "item": [
+        {
+          "name": "check.qrcode.status",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/promobile/check.qrcode.status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "promobile",
+                "check.qrcode.status"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "basic",
+    "basic": [
+      {
+        "key": "password",
+        "value": "{{ass_password}}",
+        "type": "string"
+      },
+      {
+        "key": "username",
+        "value": "{{ass_username}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "{{base_url}}",
+      "type": "string"
+    }
+  ]
+}
