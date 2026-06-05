@@ -2,6 +2,8 @@ from django.urls import path
 
 from referentials.views import (
     ContractTypesView,
+    CustomVehicleBrandDetailView,
+    CustomVehicleBrandListView,
     EnergiesView,
     GuaranteeOptionsView,
     GuaranteesView,
@@ -18,6 +20,12 @@ urlpatterns = [
     path("vehicle-categories/", VehicleCategoriesView.as_view(), name="vehicle-categories"),
     path("vehicle-subcategories/", VehicleSubcategoriesView.as_view(), name="vehicle-subcategories"),
     path("vehicle-brands/", VehicleBrandsView.as_view(), name="vehicle-brands"),
+    path("custom-vehicle-brands/", CustomVehicleBrandListView.as_view(), name="custom-vehicle-brands"),
+    path(
+        "custom-vehicle-brands/<int:pk>/",
+        CustomVehicleBrandDetailView.as_view(),
+        name="custom-vehicle-brand-detail",
+    ),
     path("energies/", EnergiesView.as_view(), name="energies"),
     path("guarantees/", GuaranteesView.as_view(), name="guarantees"),
     path("guarantee-options/", GuaranteeOptionsView.as_view(), name="guarantee-options"),

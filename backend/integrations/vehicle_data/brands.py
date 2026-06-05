@@ -45,7 +45,7 @@ def search_vehicle_brands(search="", limit=50):
     return [brand_option(brand) for brand in brands[:limit]]
 
 
-def create_vehicle_brand(label):
+def create_vehicle_brand(label, created_by=None):
     normalized = normalize_brand_label(label)
     if not normalized:
         raise ValueError("Marque requise.")
@@ -54,11 +54,13 @@ def create_vehicle_brand(label):
     if existing_base:
         return brand_option(existing_base)
 
+    creator = created_by if getattr(created_by, "is_authenticated", False) else None
     brand, _created = VehicleBrand.objects.get_or_create(
         value=brand_value(normalized),
         defaults={
             "name": normalized,
             "is_custom": True,
+            "created_by": creator,
         },
     )
     return brand_option(brand.name)

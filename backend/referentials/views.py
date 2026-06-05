@@ -1,8 +1,10 @@
+from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.permissions import IsAdminGeneralOrGroupAdmin
 from integrations.ass.referentials import (
     CONTRACT_TYPES,
     ENERGIES,
@@ -15,6 +17,8 @@ from integrations.ass.referentials import (
     filter_subcategories,
 )
 from integrations.vehicle_data.brands import create_vehicle_brand, search_vehicle_brands
+from referentials.models import VehicleBrand
+from referentials.serializers import VehicleBrandAdminSerializer
 
 
 class ContractTypesView(APIView):
@@ -66,7 +70,10 @@ class VehicleBrandsView(APIView):
 
     def post(self, request):
         try:
-            brand = create_vehicle_brand(request.data.get("label") or request.data.get("value"))
+            brand = create_vehicle_brand(
+                request.data.get("label") or request.data.get("value"),
+                created_by=request.user,
+            )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(brand, status=status.HTTP_201_CREATED)
@@ -78,6 +85,42 @@ def parse_limit(raw_limit, default, maximum):
     except (TypeError, ValueError):
         return default
     return max(1, min(limit, maximum))
+
+
+class CustomVehicleBrandListView(APIView):
+    permission_classes = [IsAdminGeneralOrGroupAdmin]
+
+    def get(self, request):
+        queryset = VehicleBrand.objects.select_related("created_by", "updated_by").filter(is_custom=True)
+        search = request.query_params.get("search", "").strip()
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+        serializer = VehicleBrandAdminSerializer(queryset, many=True)
+        return Response({"results": serializer.data})
+
+
+class CustomVehicleBrandDetailView(APIView):
+    permission_classes = [IsAdminGeneralOrGroupAdmin]
+
+    def patch(self, request, pk):
+        brand = self.get_object(pk)
+        serializer = VehicleBrandAdminSerializer(
+            brand,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def delete(self, request, pk):
+        brand = self.get_object(pk)
+        brand.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def get_object(self, pk):
+        return get_object_or_404(VehicleBrand, pk=pk, is_custom=True)
 
 
 class EnergiesView(APIView):

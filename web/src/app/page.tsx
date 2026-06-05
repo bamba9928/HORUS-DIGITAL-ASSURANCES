@@ -51,6 +51,9 @@ export default function Home() {
             <Link className="rounded-md px-3 py-2 hover:bg-muted" href="/integrations/ass">
               Integration ASS
             </Link>
+            <Link className="rounded-md px-3 py-2 hover:bg-muted" href="/referentials/brands">
+              Marques
+            </Link>
             <Link className="rounded-md px-3 py-2 hover:bg-muted" href="/users">
               Utilisateurs
             </Link>

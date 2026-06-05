@@ -7,6 +7,7 @@ from commissions.models import CommissionSnapshot
 from contracts.models import Contract
 from organizations.models import Organization
 from payments.models import Payment
+from referentials.models import VehicleBrand
 
 
 TEST_POLICYHOLDER = {
@@ -140,6 +141,131 @@ def test_vehicle_brand_can_be_added_when_missing():
     }
     assert search_response.status_code == 200
     assert search_response.data["results"] == [create_response.data]
+
+
+@pytest.mark.django_db
+def test_vehicle_brand_creation_records_authenticated_author():
+    admin = User.objects.create_user(
+        username="brand-author-admin",
+        password="test",
+        role=User.Role.ADMIN_GENERAL,
+    )
+    client = APIClient()
+    client.force_authenticate(admin)
+
+    response = client.post(
+        "/api/referentials/vehicle-brands/",
+        {"label": "Auteur Horus Test"},
+        format="json",
+    )
+
+    brand = VehicleBrand.objects.get(value="AUTEUR HORUS TEST")
+    assert response.status_code == 201
+    assert brand.created_by == admin
+
+
+@pytest.mark.django_db
+def test_custom_vehicle_brand_admin_list_requires_admin():
+    contributor = User.objects.create_user(
+        username="brand-contributor",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+    )
+    VehicleBrand.objects.create(value="BRAND FORBIDDEN TEST", name="BRAND FORBIDDEN TEST")
+    client = APIClient()
+    client.force_authenticate(contributor)
+
+    response = client.get("/api/referentials/custom-vehicle-brands/")
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_custom_vehicle_brand_admin_list_exposes_author_and_dates():
+    admin = User.objects.create_user(
+        username="brand-list-admin",
+        password="test",
+        role=User.Role.ADMIN_GROUP,
+    )
+    VehicleBrand.objects.create(
+        value="MARQUE LISTE TEST",
+        name="MARQUE LISTE TEST",
+        created_by=admin,
+        updated_by=admin,
+    )
+    client = APIClient()
+    client.force_authenticate(admin)
+
+    response = client.get("/api/referentials/custom-vehicle-brands/", {"search": "liste"})
+
+    assert response.status_code == 200
+    assert response.data["results"][0]["name"] == "MARQUE LISTE TEST"
+    assert response.data["results"][0]["created_by_username"] == "brand-list-admin"
+    assert response.data["results"][0]["updated_by_username"] == "brand-list-admin"
+    assert response.data["results"][0]["created_at"]
+    assert response.data["results"][0]["updated_at"]
+
+
+@pytest.mark.django_db
+def test_custom_vehicle_brand_admin_can_correct_typo():
+    admin = User.objects.create_user(
+        username="brand-update-admin",
+        password="test",
+        role=User.Role.ADMIN_GENERAL,
+    )
+    brand = VehicleBrand.objects.create(value="RENALT HORUS TEST", name="RENALT HORUS TEST")
+    client = APIClient()
+    client.force_authenticate(admin)
+
+    response = client.patch(
+        f"/api/referentials/custom-vehicle-brands/{brand.id}/",
+        {"name": "Renault Horus Test"},
+        format="json",
+    )
+
+    brand.refresh_from_db()
+    assert response.status_code == 200
+    assert response.data["name"] == "RENAULT HORUS TEST"
+    assert brand.value == "RENAULT HORUS TEST"
+    assert brand.updated_by == admin
+
+
+@pytest.mark.django_db
+def test_custom_vehicle_brand_admin_cannot_rename_to_base_duplicate():
+    admin = User.objects.create_user(
+        username="brand-duplicate-admin",
+        password="test",
+        role=User.Role.ADMIN_GENERAL,
+    )
+    brand = VehicleBrand.objects.create(value="TOYOTTA HORUS TEST", name="TOYOTTA HORUS TEST")
+    client = APIClient()
+    client.force_authenticate(admin)
+
+    response = client.patch(
+        f"/api/referentials/custom-vehicle-brands/{brand.id}/",
+        {"name": "Toyota"},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert "name" in response.data
+
+
+@pytest.mark.django_db
+def test_custom_vehicle_brand_admin_can_remove_custom_brand():
+    admin = User.objects.create_user(
+        username="brand-delete-admin",
+        password="test",
+        role=User.Role.ADMIN_GENERAL,
+    )
+    brand = VehicleBrand.objects.create(value="DELETE HORUS TEST", name="DELETE HORUS TEST")
+    client = APIClient()
+    client.force_authenticate(admin)
+
+    response = client.delete(f"/api/referentials/custom-vehicle-brands/{brand.id}/")
+
+    assert response.status_code == 204
+    assert not VehicleBrand.objects.filter(id=brand.id).exists()
 
 
 @pytest.mark.django_db

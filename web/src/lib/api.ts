@@ -45,6 +45,10 @@ export async function fetchApi<T>(path: string, init?: RequestInit): Promise<T> 
     throw new Error(detail || `API error ${response.status}`);
   }
 
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return response.json() as Promise<T>;
 }
 
@@ -155,6 +159,40 @@ export async function updateUserCommission(
   return fetchApi<ManagedUser>(`/accounts/users/${userId}/commission/`, {
     method: "PATCH",
     body: JSON.stringify(payload),
+  });
+}
+
+export type CustomVehicleBrand = {
+  id: number;
+  value: string;
+  name: string;
+  is_custom: boolean;
+  created_by: number | null;
+  created_by_username: string | null;
+  created_at: string;
+  updated_by: number | null;
+  updated_by_username: string | null;
+  updated_at: string;
+  duplicate_of_base: boolean;
+};
+
+export async function listCustomVehicleBrands(search = "") {
+  const query = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : "";
+  return fetchApi<ApiListResponse<CustomVehicleBrand>>(
+    `/referentials/custom-vehicle-brands/${query}`,
+  );
+}
+
+export async function updateCustomVehicleBrand(brandId: number, name: string) {
+  return fetchApi<CustomVehicleBrand>(`/referentials/custom-vehicle-brands/${brandId}/`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function deleteCustomVehicleBrand(brandId: number) {
+  await fetchApi<void>(`/referentials/custom-vehicle-brands/${brandId}/`, {
+    method: "DELETE",
   });
 }
 
