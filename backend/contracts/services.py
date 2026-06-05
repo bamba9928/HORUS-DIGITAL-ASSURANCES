@@ -1,3 +1,5 @@
+from calendar import monthrange
+from datetime import date, timedelta
 from uuid import uuid4
 
 from django.core.exceptions import ValidationError
@@ -23,11 +25,18 @@ class ContractIssueError(ValueError):
 
 def calculate_contract_quote(contract, ass_client=None):
     ass_client = ass_client or AssClient()
+    guarantees = selected_guarantees(contract.draft_payload)
+    guarantee_options = selected_guarantee_options(contract.draft_payload)
 
     if contract.contract_type == Contract.ContractType.AUTO_MONO:
-        request_payload = build_auto_rc_payload(contract.draft_payload.get("vehicle", {}))
+        request_payload = build_auto_rc_payload(
+            contract.draft_payload.get("vehicle", {}),
+            guarantees=guarantees,
+            guarantee_options=guarantee_options,
+        )
         ass_response = ass_client.calculate_auto_rc(request_payload)
         prime_rc_ass = extract_prime_rc(ass_response)
+        response_payload = ass_response
         quote = {
             "type": "AUTO_MONO",
             "prime_rc_ass": prime_rc_ass,
@@ -36,32 +45,42 @@ def calculate_contract_quote(contract, ass_client=None):
             "warnings": [],
         }
     elif contract.contract_type == Contract.ContractType.MOTO:
-        request_payload = build_moto_rc_payload(contract.draft_payload.get("vehicle", {}))
+        request_payload = build_moto_rc_payload(
+            contract.draft_payload.get("vehicle", {}),
+            guarantees=guarantees,
+            guarantee_options=guarantee_options,
+        )
         ass_response = ass_client.calculate_moto_rc(request_payload)
         prime_rc_ass = extract_prime_rc(ass_response)
+        response_payload = ass_response
         quote = {
             "type": "MOTO",
             "prime_rc_ass": prime_rc_ass,
             "policy_fee_ass": ASS_POLICY_FEE,
             "items": [],
-            "warnings": ["Les valeurs usage moto restent a confirmer avec ASS avant appels reels."],
+            "warnings": [],
         }
     elif contract.contract_type == Contract.ContractType.FLEET:
-        request_payload = build_fleet_rc_payload(contract.draft_payload)
-        ass_response = ass_client.calculate_fleet_rc(request_payload)
-        items = extract_fleet_items(ass_response)
-        trailer_items = build_trailer_quote_items(contract.draft_payload)
+        fleet_request_payload = build_fleet_rc_payload(contract.draft_payload)
+        fleet_response = ass_client.calculate_fleet_rc(fleet_request_payload)
+        items = extract_fleet_items(fleet_response)
+        trailer_quote = calculate_trailer_quote_items(contract.draft_payload, ass_client)
+        trailer_items = trailer_quote["items"]
+        request_payload = {
+            "flotte": fleet_request_payload,
+            "remorques": trailer_quote["requests"],
+        }
+        response_payload = {
+            "flotte": fleet_response,
+            "remorques": trailer_quote["responses"],
+        }
         prime_rc_ass = sum(item["prime_rc_ass"] for item in items + trailer_items)
         quote = {
             "type": "FLEET",
             "prime_rc_ass": prime_rc_ass,
             "policy_fee_ass": ASS_POLICY_FEE,
             "items": items + trailer_items,
-            "warnings": [
-                "Les remorques sont rattachees au tracteur; leur tarification reelle sera confirmee via ASS."
-            ]
-            if trailer_items
-            else [],
+            "warnings": [],
         }
     else:
         raise QuoteCalculationError("Ce type de contrat n'est pas encore actif pour le devis.")
@@ -71,7 +90,7 @@ def calculate_contract_quote(contract, ass_client=None):
     contract.ttc_ass = None
     contract.internal_status = Contract.InternalStatus.QUOTE_READY
     contract.ass_request_payload = request_payload
-    contract.ass_response_payload = ass_response
+    contract.ass_response_payload = response_payload
     contract.save(
         update_fields=[
             "prime_rc_ass",
@@ -112,9 +131,29 @@ def issue_contract(contract, ass_client=None):
         ass_response = ass_client.issue_moto_contract(request_payload)
         issue_data = extract_issue_data(ass_response)
     elif contract.contract_type == Contract.ContractType.FLEET:
-        request_payload = build_fleet_issue_payload(contract, reference)
-        ass_response = ass_client.issue_fleet_contract(request_payload)
-        issue_data = extract_fleet_issue_data(ass_response)
+        fleet_request_payload = build_fleet_issue_payload(contract, reference)
+        fleet_response = ass_client.issue_fleet_contract(fleet_request_payload)
+        fleet_issue_items = extract_fleet_issue_items(fleet_response)
+        trailer_request_payloads = build_fleet_trailer_issue_payloads(
+            contract=contract,
+            reference=reference,
+            fleet_request_payload=fleet_request_payload,
+            fleet_issue_items=fleet_issue_items,
+        )
+        trailer_responses = []
+        for trailer_payload in trailer_request_payloads:
+            trailer_response = ass_client.issue_trailer_contract(trailer_payload)
+            extract_issue_data(trailer_response)
+            trailer_responses.append(trailer_response)
+        request_payload = {
+            "flotte": fleet_request_payload,
+            "remorques": trailer_request_payloads,
+        }
+        ass_response = {
+            "flotte": fleet_response,
+            "remorques": trailer_responses,
+        }
+        issue_data = fleet_issue_items[0]
     else:
         raise ContractIssueError("Ce type de contrat n'est pas encore actif pour emission.")
 
@@ -175,17 +214,19 @@ def issue_contract(contract, ass_client=None):
     }
 
 
-def build_auto_rc_payload(vehicle):
+def build_auto_rc_payload(vehicle, guarantees=None, guarantee_options=None):
+    periodicity = vehicle_periodicity(vehicle)
     return {
         "puissanceFiscale": to_int(vehicle.get("fiscalPower"), default=1),
         "duree": to_int(vehicle.get("duration"), default=1),
-        "periodicite": "MOIS",
+        "periodicite": periodicity,
         "genre": vehicle.get("subcategory"),
         "nombrePlace": to_int(vehicle.get("seats"), default=1),
         "energie": vehicle.get("energy"),
         "valeurNeuve": to_int(vehicle.get("newValue"), default=0),
         "valeurActuelle": to_int(vehicle.get("currentValue"), default=0),
-        "garanties": [],
+        "garanties": normalize_guarantees(guarantees),
+        **guarantee_options_for_payload(guarantees, guarantee_options),
         "cout_police": ASS_POLICY_FEE,
         "remise_rc": 0,
     }
@@ -193,61 +234,87 @@ def build_auto_rc_payload(vehicle):
 
 def build_auto_issue_payload(contract, reference):
     vehicle = contract.draft_payload.get("vehicle", {})
+    periodicity = vehicle_periodicity(vehicle)
+    policyholder = policyholder_payload(contract.draft_payload)
+    insured = insured_payload(contract.draft_payload)
+    guarantee_options = selected_guarantee_options(contract.draft_payload)
     return {
         "responsabiliteCivile": contract.prime_rc_ass,
         "dateEffet": vehicle.get("effectDate"),
         "duree": to_int(vehicle.get("duration"), default=1),
-        "periodicite": "MOIS",
+        "periodicite": periodicity,
         "police": f"HORUS-POL-{contract.id}",
         "referenceTrxPartner": reference,
-        "typePersonne": "PHYSIQUE",
-        "souscripteur": build_mock_person(),
-        "assure": build_mock_person(),
+        "typePersonne": vehicle_person_type(vehicle, default="PHYSIQUE"),
+        "garanties": selected_guarantees(contract.draft_payload),
+        **guarantee_options,
+        "cout_police": ASS_POLICY_FEE,
+        "remise_rc": 0,
+        "souscripteur": policyholder,
+        "assure": insured,
         "vehicule": build_issue_vehicle_payload(vehicle),
     }
 
 
-def build_moto_rc_payload(vehicle):
+def build_moto_rc_payload(vehicle, guarantees=None, guarantee_options=None):
+    periodicity = vehicle_periodicity(vehicle)
     return {
         "cylindre": to_int(vehicle.get("cylindree"), default=0),
         "duree": to_int(vehicle.get("duration"), default=1),
-        "periodicite": "MOIS",
+        "periodicite": periodicity,
         "genre": vehicle.get("subcategory"),
         "energie": vehicle.get("energy"),
-        "usage": vehicle.get("motoUsage"),
+        "usage": normalize_moto_usage(vehicle.get("motoUsage")),
         "nombrePlace": to_int(vehicle.get("seats"), default=1),
         "cout_police": ASS_POLICY_FEE,
         "remise_rc": 0,
-        "garanties": [],
+        "garanties": normalize_guarantees(guarantees),
+        **guarantee_options_for_payload(guarantees, guarantee_options),
     }
 
 
 def build_moto_issue_payload(contract, reference):
     vehicle = contract.draft_payload.get("vehicle", {})
+    duration = to_int(vehicle.get("duration"), default=1)
+    periodicity = vehicle_periodicity(vehicle)
+    policyholder = policyholder_payload(contract.draft_payload)
+    insured = insured_payload(contract.draft_payload)
+    guarantee_options = selected_guarantee_options(contract.draft_payload)
     return {
         "responsabiliteCivile": contract.prime_rc_ass,
         "dateEffet": vehicle.get("effectDate"),
-        "dateExpiration": "",
-        "duree": to_int(vehicle.get("duration"), default=1),
-        "periodicite": "MOIS",
+        "dateExpiration": calculate_expiration_date(
+            vehicle.get("effectDate"),
+            duration,
+            periodicity,
+        ),
+        "duree": duration,
+        "periodicite": periodicity,
         "police": f"HORUS-MOTO-{contract.id}",
         "referenceTrxPartner": reference,
-        "typePersonne": "PHYSIQUE",
-        "souscripteur": build_mock_person(),
-        "assure": build_mock_person(),
+        "typePersonne": vehicle_person_type(vehicle, default="PHYSIQUE"),
+        "garanties": selected_guarantees(contract.draft_payload),
+        **guarantee_options,
+        "cout_police": ASS_POLICY_FEE,
+        "remise_rc": 0,
+        "souscripteur": policyholder,
+        "assure": insured,
         "vehicule": {
             **build_issue_vehicle_payload(vehicle),
             "cylindre": to_int(vehicle.get("cylindree"), default=0),
-            "usage": vehicle.get("motoUsage"),
+            "usage": normalize_moto_usage(vehicle.get("motoUsage")),
         },
     }
 
 
 def build_fleet_rc_payload(draft_payload):
     vehicles = draft_payload.get("fleet", {}).get("vehicles", [])
+    periodicity = first_vehicle_periodicity(vehicles)
+    guarantees = selected_guarantees(draft_payload)
+    guarantee_options = selected_guarantee_options(draft_payload)
     return {
         "referenceFlotte": draft_payload.get("referenceFlotte", "HORUS-DRAFT-FLEET"),
-        "periodicite": "MOIS",
+        "periodicite": periodicity,
         "duree": to_int(first_value(vehicles, "duration"), default=1),
         "dateEffet": first_value(vehicles, "effectDate") or "",
         "cout_police": ASS_POLICY_FEE,
@@ -261,7 +328,8 @@ def build_fleet_rc_payload(draft_payload):
                 "energie": vehicle.get("energy"),
                 "valeurNeuve": to_int(vehicle.get("newValue"), default=0),
                 "valeurActuelle": to_int(vehicle.get("currentValue"), default=0),
-                "garanties": [],
+                "garanties": guarantees,
+                **guarantee_options,
             }
             for vehicle in vehicles
         ],
@@ -270,28 +338,40 @@ def build_fleet_rc_payload(draft_payload):
 
 def build_fleet_issue_payload(contract, reference):
     vehicles = contract.draft_payload.get("fleet", {}).get("vehicles", [])
+    prime_by_request_id = get_fleet_prime_rc_by_request_id(contract)
+    periodicity = first_vehicle_periodicity(vehicles)
+    guarantees = selected_guarantees(contract.draft_payload)
+    guarantee_options = selected_guarantee_options(contract.draft_payload)
+    policyholder = policyholder_payload(contract.draft_payload)
+    insured = insured_payload(contract.draft_payload)
     return {
         "referenceFlotte": f"HORUS-FLEET-{contract.id}",
         "dateEffet": first_value(vehicles, "effectDate") or "",
         "duree": to_int(first_value(vehicles, "duration"), default=1),
-        "periodicite": "MOIS",
-        "typePersonne": "MORALE",
+        "periodicite": periodicity,
+        "typePersonne": first_vehicle_person_type(vehicles, default="MORALE"),
         "police": f"HORUS-FLEET-POL-{contract.id}",
-        "souscripteur": build_mock_person(),
+        "cout_police": ASS_POLICY_FEE,
+        "remise_rc": 0,
+        "souscripteur": policyholder,
         "items": [
             {
-                "responsabiliteCivile": 0,
+                "responsabiliteCivile": prime_by_request_id.get(vehicle.get("id"), 0),
                 "referenceTrxPartner": f"{reference}-{index}",
-                "assure": build_mock_person(),
-                "vehicule": build_issue_vehicle_payload(vehicle),
+                "assure": insured,
+                "vehicule": build_issue_vehicle_payload(
+                    vehicle,
+                    guarantees=guarantees,
+                    guarantee_options=guarantee_options,
+                ),
             }
             for index, vehicle in enumerate(vehicles, start=1)
         ],
     }
 
 
-def build_issue_vehicle_payload(vehicle):
-    return {
+def build_issue_vehicle_payload(vehicle, guarantees=None, guarantee_options=None):
+    payload = {
         "puissanceFiscale": to_int(vehicle.get("fiscalPower"), default=1),
         "dateMiseCirculation": vehicle.get("firstCirculationDate") or "",
         "nombrePlace": to_int(vehicle.get("seats"), default=1),
@@ -304,36 +384,135 @@ def build_issue_vehicle_payload(vehicle):
         "marque": vehicle.get("brand") or "",
         "chassis": vehicle.get("chassis") or "",
     }
+    if guarantees is not None:
+        payload["garanties"] = normalize_guarantees(guarantees)
+        payload.update(guarantee_options_for_payload(guarantees, guarantee_options))
+    return payload
 
 
-def build_mock_person():
-    return {
-        "nom": "DEMO",
-        "prenom": "HORUS",
-        "cellulaire": "770000000",
-        "email": "demo@horus.test",
-    }
-
-
-def build_trailer_quote_items(draft_payload):
+def calculate_trailer_quote_items(draft_payload, ass_client):
     items = []
+    requests = []
+    responses = []
     for vehicle in draft_payload.get("fleet", {}).get("vehicles", []):
         for index, trailer in enumerate(vehicle.get("trailers", []), start=1):
+            if index == 1:
+                prime_rc_ass = 0
+                request_payload = None
+                response_payload = {
+                    "operationStatus": ASS_SUCCESS_STATUS,
+                    "operationMessage": "Premiere remorque rattachee au tracteur, RC a zero.",
+                    "data": 0,
+                }
+            else:
+                request_payload = build_trailer_rc_payload(vehicle, trailer)
+                response_payload = ass_client.calculate_trailer_rc(request_payload)
+                prime_rc_ass = extract_prime_rc(response_payload)
+
+            if request_payload:
+                requests.append(
+                    {
+                        "vehicle_id": vehicle.get("id"),
+                        "trailer_id": trailer.get("id"),
+                        "payload": request_payload,
+                    }
+                )
+            responses.append(
+                {
+                    "vehicle_id": vehicle.get("id"),
+                    "trailer_id": trailer.get("id"),
+                    "payload": response_payload,
+                    "prime_rc_ass": prime_rc_ass,
+                }
+            )
             items.append(
                 {
                     "request_id": trailer.get("id"),
                     "label": trailer.get("registration") or trailer.get("chassis") or "Remorque",
-                    "prime_rc_ass": 0 if index == 1 else 0,
+                    "prime_rc_ass": prime_rc_ass,
                     "kind": "TRAILER",
                     "tractor_vehicle_id": vehicle.get("id"),
                 }
             )
-    return items
+    return {"items": items, "requests": requests, "responses": responses}
+
+
+def build_trailer_rc_payload(vehicle, trailer):
+    periodicity = vehicle_periodicity(trailer, default=vehicle_periodicity(vehicle))
+    return {
+        "duree": to_int(trailer.get("duration") or vehicle.get("duration"), default=1),
+        "periodicite": periodicity,
+        "referenceVehicule": vehicle.get("registration")
+        or vehicle.get("chassis")
+        or vehicle.get("id")
+        or "",
+    }
+
+
+def build_fleet_trailer_issue_payloads(
+    *,
+    contract,
+    reference,
+    fleet_request_payload,
+    fleet_issue_items,
+):
+    vehicles = contract.draft_payload.get("fleet", {}).get("vehicles", [])
+    trailer_prime_by_id = get_trailer_prime_rc_by_id(contract)
+    policyholder = policyholder_payload(contract.draft_payload)
+    insured = insured_payload(contract.draft_payload)
+    issued_vehicles_by_reference = {
+        item.get("referenceExterne"): item for item in fleet_issue_items
+    }
+    payloads = []
+
+    for vehicle_index, vehicle in enumerate(vehicles, start=1):
+        vehicle_request_item = fleet_request_payload["items"][vehicle_index - 1]
+        vehicle_issue_data = issued_vehicles_by_reference.get(
+            vehicle_request_item["referenceTrxPartner"],
+            {},
+        )
+        reference_vehicule = (
+            vehicle_issue_data.get("referenceExterne")
+            or vehicle_request_item["referenceTrxPartner"]
+        )
+        for trailer_index, trailer in enumerate(vehicle.get("trailers", []), start=1):
+            duration = to_int(trailer.get("duration") or vehicle.get("duration"), default=1)
+            periodicity = vehicle_periodicity(trailer, default=vehicle_periodicity(vehicle))
+            payloads.append(
+                {
+                    "responsabiliteCivile": trailer_prime_by_id.get(trailer.get("id"), 0),
+                    "dateEffet": trailer.get("effectDate") or vehicle.get("effectDate") or "",
+                    "dateExpiration": calculate_expiration_date(
+                        trailer.get("effectDate") or vehicle.get("effectDate"),
+                        duration,
+                        periodicity,
+                    ),
+                    "duree": duration,
+                    "periodicite": periodicity,
+                    "police": f"HORUS-REM-{contract.id}-{vehicle_index}-{trailer_index}",
+                    "referenceVehicule": reference_vehicule,
+                    "referenceTrxPartner": (
+                        f"{reference}-REM-{vehicle_index}-{trailer_index}"
+                    ),
+                    "typePersonne": vehicle_person_type(
+                        trailer,
+                        default=vehicle_person_type(vehicle, default="MORALE"),
+                    ),
+                    "immatriculation": trailer.get("registration") or "",
+                    "marque": trailer.get("brand") or "",
+                    "modele": trailer.get("model") or "",
+                    "energie": vehicle.get("energy") or "",
+                    "souscripteur": policyholder,
+                    "assure": insured,
+                }
+            )
+
+    return payloads
 
 
 def extract_prime_rc(ass_response):
-    if ass_response.get("operationStatus") != ASS_SUCCESS_STATUS:
-        raise QuoteCalculationError(ass_response.get("operationMessage", "Calcul ASS echoue."))
+    if not is_success_response(ass_response):
+        raise QuoteCalculationError(response_message(ass_response, "Calcul ASS echoue."))
     try:
         return int(ass_response["data"])
     except (KeyError, TypeError, ValueError) as exc:
@@ -341,9 +520,8 @@ def extract_prime_rc(ass_response):
 
 
 def extract_fleet_items(ass_response):
-    status = ass_response.get("status") or ass_response.get("operationStatus")
-    if status != ASS_SUCCESS_STATUS:
-        raise QuoteCalculationError(ass_response.get("message") or ass_response.get("operationMessage") or "Calcul ASS echoue.")
+    if not is_success_response(ass_response):
+        raise QuoteCalculationError(response_message(ass_response, "Calcul ASS echoue."))
 
     items = []
     for item in ass_response.get("items", []):
@@ -363,8 +541,8 @@ def extract_fleet_items(ass_response):
 
 
 def extract_issue_data(ass_response):
-    if ass_response.get("operationStatus") != ASS_SUCCESS_STATUS:
-        raise ContractIssueError(ass_response.get("operationMessage", "Emission ASS echouee."))
+    if not is_success_response(ass_response):
+        raise ContractIssueError(response_message(ass_response, "Emission ASS echouee."))
     data = ass_response.get("data")
     if not isinstance(data, dict):
         raise ContractIssueError("Reponse ASS emission invalide.")
@@ -372,12 +550,63 @@ def extract_issue_data(ass_response):
 
 
 def extract_fleet_issue_data(ass_response):
-    if ass_response.get("operationStatus") != ASS_SUCCESS_STATUS:
-        raise ContractIssueError(ass_response.get("operationMessage", "Emission ASS echouee."))
+    return extract_fleet_issue_items(ass_response)[0]
+
+
+def extract_fleet_issue_items(ass_response):
+    if not is_success_response(ass_response):
+        raise ContractIssueError(response_message(ass_response, "Emission ASS echouee."))
     items = ass_response.get("items") or []
     if not items:
         raise ContractIssueError("Reponse ASS emission flotte invalide.")
-    return items[0]
+    return items
+
+
+def get_fleet_prime_rc_by_request_id(contract):
+    fleet_response = get_stored_fleet_response(contract)
+    return {
+        item["request_id"]: item["prime_rc_ass"]
+        for item in extract_fleet_items(fleet_response)
+        if item.get("request_id")
+    }
+
+
+def get_trailer_prime_rc_by_id(contract):
+    response_payload = contract.ass_response_payload or {}
+    trailer_responses = response_payload.get("remorques", [])
+    if not isinstance(trailer_responses, list):
+        return {}
+
+    primes = {}
+    for item in trailer_responses:
+        if not isinstance(item, dict):
+            continue
+        trailer_id = item.get("trailer_id")
+        if trailer_id:
+            primes[trailer_id] = int(item.get("prime_rc_ass") or 0)
+    return primes
+
+
+def get_stored_fleet_response(contract):
+    response_payload = contract.ass_response_payload or {}
+    if isinstance(response_payload.get("flotte"), dict):
+        return response_payload["flotte"]
+    return response_payload
+
+
+def is_success_response(ass_response):
+    return (ass_response.get("operationStatus") or ass_response.get("status")) == ASS_SUCCESS_STATUS
+
+
+def response_message(ass_response, fallback):
+    return (
+        ass_response.get("operationMessage")
+        or ass_response.get("message")
+        or ass_response.get("error_descrip")
+        or ass_response.get("error_description")
+        or ass_response.get("error")
+        or fallback
+    )
 
 
 def build_reference_trx_partner(contract):
@@ -389,6 +618,199 @@ def parse_ass_datetime(value):
     if parsed and timezone.is_naive(parsed):
         return timezone.make_aware(parsed, timezone.get_current_timezone())
     return parsed
+
+
+def calculate_expiration_date(effect_date, duration, periodicity):
+    if not effect_date:
+        return ""
+
+    try:
+        start_date = date.fromisoformat(effect_date)
+    except ValueError as exc:
+        raise ValidationError("Date d'effet invalide.") from exc
+    if periodicity == "JOUR":
+        expiration = start_date + timedelta(days=duration) - timedelta(days=1)
+    else:
+        expiration = add_months(start_date, duration) - timedelta(days=1)
+    return expiration.isoformat()
+
+
+def add_months(value, months):
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
+
+
+def normalize_moto_usage(value):
+    mapping = {
+        "COMMERCIAL": "commerciale",
+        "COMMERCIALE": "commerciale",
+        "commerciale": "commerciale",
+        "NON_COMMERCIAL": "non_commerciale",
+        "NON_COMMERCIALE": "non_commerciale",
+        "non_commercial": "non_commerciale",
+        "non_commerciale": "non_commerciale",
+    }
+    return mapping.get(value, value)
+
+
+def vehicle_periodicity(vehicle, default="MOIS"):
+    return normalize_periodicity(
+        vehicle.get("periodicity") or vehicle.get("periodicite") or default
+    )
+
+
+def first_vehicle_periodicity(vehicles, default="MOIS"):
+    return normalize_periodicity(
+        first_value(vehicles, "periodicity") or first_value(vehicles, "periodicite") or default
+    )
+
+
+def normalize_periodicity(value):
+    normalized = str(value or "MOIS").upper()
+    if normalized not in {"JOUR", "MOIS"}:
+        raise ValidationError("Periodicite ASS invalide.")
+    return normalized
+
+
+def vehicle_person_type(vehicle, default):
+    return normalize_person_type(
+        vehicle.get("personType") or vehicle.get("typePersonne") or default
+    )
+
+
+def first_vehicle_person_type(vehicles, default):
+    return normalize_person_type(
+        first_value(vehicles, "personType") or first_value(vehicles, "typePersonne") or default
+    )
+
+
+def normalize_person_type(value):
+    normalized = str(value or "").upper()
+    if normalized not in {"PHYSIQUE", "MORALE"}:
+        raise ValidationError("Type personne ASS invalide.")
+    return normalized
+
+
+def selected_guarantees(draft_payload):
+    return normalize_guarantees(draft_payload.get("guarantees") or draft_payload.get("garanties"))
+
+
+def normalize_guarantees(values):
+    if not values:
+        return []
+    if not isinstance(values, list):
+        raise ValidationError("Garanties ASS invalides.")
+
+    normalized = []
+    allowed = set(range(1, 9))
+    for value in values:
+        try:
+            guarantee = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("Garanties ASS invalides.") from exc
+        if guarantee not in allowed:
+            raise ValidationError("Garantie ASS inconnue.")
+        if guarantee not in normalized:
+            normalized.append(guarantee)
+    return sorted(normalized)
+
+
+def selected_guarantee_options(draft_payload):
+    options = draft_payload.get("guaranteeOptions") or {}
+    if not isinstance(options, dict):
+        raise ValidationError("Options de garanties ASS invalides.")
+    return guarantee_options_for_payload(selected_guarantees(draft_payload), options)
+
+
+def guarantee_options_for_payload(guarantees, options):
+    normalized = normalize_guarantee_options(options)
+    validate_guarantee_option_dependencies(guarantees, normalized)
+    return normalized
+
+
+def normalize_guarantee_options(options):
+    if not options:
+        return {}
+    if not isinstance(options, dict):
+        raise ValidationError("Options de garanties ASS invalides.")
+
+    allowed_values = {
+        "garantiesOptPT": {"OPTION_1"},
+        "garantiesOptAR": {"500000", "CAPITAL"},
+        "garantiesOptAS": {"OPTION_1"},
+    }
+    normalized = {}
+    unknown_fields = [
+        key
+        for key, value in options.items()
+        if key not in allowed_values and value not in (None, "")
+    ]
+    if unknown_fields:
+        raise ValidationError("Option de garantie ASS inconnue.")
+
+    for key, allowed in allowed_values.items():
+        value = options.get(key)
+        if value in (None, ""):
+            continue
+        value = str(value)
+        if value not in allowed:
+            raise ValidationError("Option de garantie ASS inconnue.")
+        normalized[key] = value
+    return normalized
+
+
+def validate_guarantee_option_dependencies(guarantees, options):
+    guarantee_values = set(normalize_guarantees(guarantees))
+    requirements = {
+        "garantiesOptPT": 2,
+        "garantiesOptAR": 4,
+    }
+    for field, required_guarantee in requirements.items():
+        if field in options and required_guarantee not in guarantee_values:
+            raise ValidationError(
+                f"{field} requiert la garantie ASS {required_guarantee}."
+            )
+
+
+def validate_guarantee_configuration(draft_payload):
+    if not isinstance(draft_payload, dict):
+        raise ValidationError("Brouillon contrat invalide.")
+    selected_guarantees(draft_payload)
+    selected_guarantee_options(draft_payload)
+
+
+def policyholder_payload(draft_payload):
+    return person_payload(
+        draft_payload.get("policyholder") or draft_payload.get("souscripteur"),
+        label="Souscripteur",
+    )
+
+
+def insured_payload(draft_payload):
+    return person_payload(
+        draft_payload.get("insured") or draft_payload.get("assure"),
+        label="Assure",
+    )
+
+
+def person_payload(value, label):
+    if not isinstance(value, dict):
+        raise ValidationError(f"{label} requis avant emission.")
+
+    last_name = first_present(value, ["lastName", "last_name", "nom", "raisonSociale"])
+    phone = first_present(value, ["phone", "cellulaire", "telephone"])
+    if not last_name or not phone:
+        raise ValidationError(f"{label}: nom et telephone requis avant emission.")
+
+    return {
+        "nom": last_name,
+        "prenom": first_present(value, ["firstName", "first_name", "prenom"]),
+        "cellulaire": phone,
+        "email": first_present(value, ["email"]),
+    }
 
 
 def to_int(value, default=0):
@@ -405,3 +827,11 @@ def first_value(items, key):
         if item.get(key):
             return item[key]
     return None
+
+
+def first_present(payload, keys):
+    for key in keys:
+        value = payload.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return ""

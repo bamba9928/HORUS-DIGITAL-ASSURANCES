@@ -1,9 +1,22 @@
 export type SelectOption = {
-  value: string;
+  value: string | number;
   label: string;
   enabled?: boolean;
   category?: string;
   needs_confirmation?: boolean;
+  min_duration?: number;
+  max_duration?: number;
+};
+
+export type GuaranteeOptionReferential = {
+  field: "garantiesOptPT" | "garantiesOptAR" | "garantiesOptAS";
+  label: string;
+  helper?: string;
+  trigger_guarantee: number | null;
+  enabled?: boolean;
+  needs_confirmation?: boolean;
+  disabled_reason?: string;
+  options: SelectOption[];
 };
 
 type ApiListResponse<T> = {
@@ -28,11 +41,29 @@ export async function fetchApi<T>(path: string, init?: RequestInit): Promise<T> 
   });
 
   if (!response.ok) {
-    const detail = await response.text();
+    const detail = await parseApiError(response);
     throw new Error(detail || `API error ${response.status}`);
   }
 
   return response.json() as Promise<T>;
+}
+
+async function parseApiError(response: Response) {
+  const detail = await response.text();
+  if (!detail) {
+    return "";
+  }
+
+  try {
+    const parsed = JSON.parse(detail) as { detail?: unknown } | Record<string, unknown>;
+    if ("detail" in parsed && typeof parsed.detail === "string") {
+      return parsed.detail;
+    }
+  } catch {
+    return detail;
+  }
+
+  return detail;
 }
 
 function isUnsafeMethod(method: string) {
@@ -161,17 +192,190 @@ export async function updateCommissionSnapshotStatus(
   });
 }
 
+export type AssStockQr = {
+  mode: "mock" | "real";
+  operation_status: string;
+  operation_message: string;
+  available_qr: number | null;
+  raw_response: Record<string, unknown>;
+};
+
+export async function fetchAssStockQr() {
+  return fetchApi<AssStockQr>("/integrations/ass/stock-qr/");
+}
+
+export type AssRegistrationVerification = {
+  mode: "mock" | "real";
+  operation_status: string;
+  operation_message: string;
+  immatriculation: string;
+  is_registered: boolean | null;
+  raw_response: Record<string, unknown>;
+};
+
+export async function verifyAssRegistration(immatriculation: string) {
+  return fetchApi<AssRegistrationVerification>("/integrations/ass/verify-registration/", {
+    method: "POST",
+    body: JSON.stringify({ immatriculation }),
+  });
+}
+
+export type ContractSummary = {
+  drafts: number;
+  quotes_ready: number;
+  payment_pending: number;
+  issued: number;
+  total: number;
+};
+
+export async function fetchContractSummary() {
+  return fetchApi<ContractSummary>("/contracts/summary/");
+}
+
+export type ContractInternalStatus =
+  | "DRAFT"
+  | "QUOTE_READY"
+  | "PAYMENT_PENDING"
+  | "PAID"
+  | "ISSUED"
+  | "CANCELLED";
+
+export type ContractListItem = {
+  id: number;
+  contract_type: string;
+  internal_status: ContractInternalStatus;
+  ass_status: string | null;
+  organization: number;
+  organization_name: string;
+  contributor: number;
+  contributor_username: string;
+  vehicle_label: string;
+  prime_rc_ass: number | null;
+  cout_police_ass: number;
+  ttc_ass: number | null;
+  immatriculation: string;
+  attestation_number: string;
+  reference_externe: string;
+  date_expiration: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ContractPayment = {
+  id: number;
+  amount: number;
+  status: "PENDING" | "CONFIRMED" | "FAILED" | "CANCELLED" | "REFUNDED";
+  external_reference: string;
+  confirmed_at: string | null;
+  created_at: string;
+};
+
+export type ContractCommissionSnapshot = {
+  id: number;
+  status: "PENDING" | "PAYABLE" | "PAID" | "CANCELLED" | "DISPUTED";
+  prime_rc_ass: number;
+  cout_police_ass: number;
+  ttc_ass: number;
+  commission_percent_used: string;
+  commission_fixed_policy_fee_used: number;
+  commission_prime_rc_amount: number;
+  commission_policy_fee_amount: number;
+  commission_total: number;
+  net_to_horus: number;
+  created_at: string;
+};
+
+export type ContractAssAttestation = {
+  kind: "VEHICLE" | "TRAILER";
+  label: string;
+  immatriculation: string;
+  reference_externe: string;
+  attestation_number: string;
+  secure_key: string;
+  date_expiration: string | null;
+  link_attestation_digitale: string;
+  link_attestation_cedeao: string;
+};
+
+export type ContractDetail = ContractListItem & {
+  draft_payload: Record<string, unknown>;
+  link_attestation_digitale: string;
+  link_attestation_cedeao: string;
+  payments: ContractPayment[];
+  commission_snapshot: ContractCommissionSnapshot | null;
+  ass_attestations: ContractAssAttestation[];
+};
+
+export type ContractDraft = {
+  id: number;
+  contract_type: string;
+  internal_status: ContractInternalStatus;
+  draft_payload: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ContractDraftPayload = {
+  contract_type: string;
+  draft_payload: Record<string, unknown>;
+};
+
+export async function listContracts(filters?: {
+  status?: ContractInternalStatus | "";
+  contract_type?: string;
+}) {
+  const params = new URLSearchParams();
+  if (filters?.status) {
+    params.set("status", filters.status);
+  }
+  if (filters?.contract_type) {
+    params.set("contract_type", filters.contract_type);
+  }
+  const query = params.toString();
+  return fetchApi<ApiListResponse<ContractListItem>>(`/contracts/${query ? `?${query}` : ""}`);
+}
+
+export async function fetchContractDetail(contractId: number) {
+  return fetchApi<ContractDetail>(`/contracts/${contractId}/`);
+}
+
+export async function fetchContractDraft(draftId: number) {
+  return fetchApi<ContractDraft>(`/contracts/drafts/${draftId}/`);
+}
+
 export async function fetchOptions(path: string): Promise<SelectOption[]> {
   const data = await fetchApi<ApiListResponse<SelectOption>>(path);
   return data.results;
 }
 
-export async function createContractDraft(payload: {
-  contract_type: string;
-  draft_payload: Record<string, unknown>;
-}) {
+export async function fetchVehicleBrands(limit = 2000): Promise<SelectOption[]> {
+  return fetchOptions(`/referentials/vehicle-brands/?limit=${limit}`);
+}
+
+export async function createVehicleBrand(label: string) {
+  return fetchApi<SelectOption>("/referentials/vehicle-brands/", {
+    method: "POST",
+    body: JSON.stringify({ label }),
+  });
+}
+
+export async function fetchGuaranteeOptionReferentials() {
+  const data = await fetchApi<ApiListResponse<GuaranteeOptionReferential>>(
+    "/referentials/guarantee-options/",
+  );
+  return data.results;
+}
+
+export async function createContractDraft(payload: ContractDraftPayload) {
   return fetchApi<{ id: number }>("/contracts/drafts/", {
     method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateContractDraft(draftId: number, payload: ContractDraftPayload) {
+  return fetchApi<{ id: number }>(`/contracts/drafts/${draftId}/`, {
+    method: "PATCH",
     body: JSON.stringify(payload),
   });
 }
@@ -197,7 +401,7 @@ export async function calculateContractQuote(contractId: number) {
     contract_id: number;
     internal_status: string;
     quote: ContractQuote;
-  }>(`/contracts/drafts/${contractId}/quote/`, {
+  }>(`/contracts/${contractId}/quote/`, {
     method: "POST",
   });
 }

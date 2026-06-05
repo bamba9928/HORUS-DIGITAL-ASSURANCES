@@ -17,6 +17,47 @@ GUARANTEES = [
     {"value": 8, "label": "Tierce complete"},
 ]
 
+GUARANTEE_OPTION_FIELDS = [
+    {
+        "field": "garantiesOptPT",
+        "label": "Option personnes transportees",
+        "helper": "Valeur confirmee ASS pour la garantie 2.",
+        "trigger_guarantee": 2,
+        "enabled": True,
+        "options": [{"value": "OPTION_1", "label": "Option 1"}],
+    },
+    {
+        "field": "garantiesOptAR",
+        "label": "Option avance / recours",
+        "helper": "Valeurs confirmees ASS pour la garantie 4.",
+        "trigger_guarantee": 4,
+        "enabled": True,
+        "options": [
+            {"value": "500000", "label": "Capital 500 000"},
+            {"value": "CAPITAL", "label": "Capital"},
+        ],
+    },
+    {
+        "field": "garantiesOptAS",
+        "label": "Option AS",
+        "helper": "Valeur confirmee ASS pour l'option AS.",
+        "trigger_guarantee": None,
+        "enabled": True,
+        "needs_confirmation": False,
+        "options": [{"value": "OPTION_1", "label": "Option 1"}],
+    },
+]
+
+PERIODICITIES = [
+    {"value": "JOUR", "label": "Jour", "min_duration": 1, "max_duration": 366},
+    {"value": "MOIS", "label": "Mois", "min_duration": 1, "max_duration": 12},
+]
+
+PERSON_TYPES = [
+    {"value": "PHYSIQUE", "label": "Personne physique"},
+    {"value": "MORALE", "label": "Personne morale"},
+]
+
 ENERGIES = [
     {"value": "ESSENCE", "label": "Essence"},
     {"value": "DIESEL", "label": "Diesel"},
@@ -24,25 +65,79 @@ ENERGIES = [
 
 MOTO_USAGES = [
     {
-        "value": "NON_COMMERCIAL",
+        "value": "non_commerciale",
         "label": "Non commercial",
-        "needs_confirmation": True,
     },
     {
-        "value": "COMMERCIAL",
+        "value": "commerciale",
         "label": "Commercial",
-        "needs_confirmation": True,
     },
 ]
 
 VEHICLE_CATEGORIES = [
-    {"value": "C1", "label": "C1 - Vehicule particulier", "contract_types": ["AUTO_MONO", "FLEET"]},
-    {"value": "C2", "label": "C2 - Vehicules utilitaires", "contract_types": ["AUTO_MONO", "FLEET"]},
-    {"value": "C3", "label": "C3 - Transport public marchandises", "contract_types": ["AUTO_MONO", "FLEET"]},
-    {"value": "C5", "label": "C5 - Deux roues", "contract_types": ["MOTO"]},
-    {"value": "BUS_ECOLE", "label": "Bus ecole", "contract_types": ["BUS_SCHOOL"]},
-    {"value": "C6", "label": "C6 - Garage", "contract_types": ["GARAGE"]},
-    {"value": "REMORQUE", "label": "Remorque", "contract_types": ["FLEET_TRAILER"]},
+    {
+        "value": "C1",
+        "label": "C1 - Vehicule particulier",
+        "contract_types": ["AUTO_MONO", "FLEET"],
+        "enabled": True,
+    },
+    {
+        "value": "C2",
+        "label": "C2 - Vehicules utilitaires",
+        "contract_types": ["AUTO_MONO", "FLEET"],
+        "enabled": True,
+    },
+    {
+        "value": "C3",
+        "label": "C3 - Transport public marchandises",
+        "contract_types": ["AUTO_MONO", "FLEET"],
+        "enabled": True,
+    },
+    {
+        "value": "C4",
+        "label": "C4 - Transport public de personnes",
+        "contract_types": [],
+        "enabled": False,
+        "disabled_reason": "Pool TPV exclu temporairement de la digitalisation ASS.",
+    },
+    {"value": "C5", "label": "C5 - Deux roues", "contract_types": ["MOTO"], "enabled": True},
+    {
+        "value": "C7",
+        "label": "C7 - Auto ecole",
+        "contract_types": ["AUTO_MONO", "FLEET"],
+        "enabled": True,
+    },
+    {
+        "value": "C8",
+        "label": "C8 - Location sans chauffeur",
+        "contract_types": ["AUTO_MONO", "FLEET"],
+        "enabled": True,
+    },
+    {
+        "value": "C9",
+        "label": "C9 - Engins mobiles de chantier",
+        "contract_types": ["AUTO_MONO", "FLEET"],
+        "enabled": True,
+    },
+    {
+        "value": "C10",
+        "label": "C10 - Vehicules speciaux",
+        "contract_types": ["AUTO_MONO", "FLEET"],
+        "enabled": True,
+    },
+    {
+        "value": "BUS_ECOLE",
+        "label": "Bus ecole",
+        "contract_types": ["BUS_SCHOOL"],
+        "enabled": True,
+    },
+    {"value": "C6", "label": "C6 - Garage", "contract_types": ["GARAGE"], "enabled": True},
+    {
+        "value": "REMORQUE",
+        "label": "Remorque",
+        "contract_types": ["FLEET_TRAILER"],
+        "enabled": True,
+    },
 ]
 
 VEHICLE_SUBCATEGORIES = [
@@ -52,10 +147,82 @@ VEHICLE_SUBCATEGORIES = [
     {"category": "C2", "value": "TPC3T500P", "label": "Utilitaire autre carrosserie au-dela de 3T500"},
     {"category": "C3", "value": "TPM3T500", "label": "Transport marchandises jusqu'a 3T500"},
     {"category": "C3", "value": "TPM3T500P", "label": "Transport marchandises au-dela de 3T500"},
+    {"category": "C4", "value": "TPV8", "label": "Transport personnes a titre onereux 8 places au plus"},
+    {"category": "C4", "value": "TPV9", "label": "Transport personnes a titre onereux 9 places et plus"},
     {"category": "C5", "value": "2RCYC", "label": "Cyclomoteurs"},
     {"category": "C5", "value": "2RSCO", "label": "Scooters et velomoteurs jusqu'a 125 cm3"},
     {"category": "C5", "value": "2RMOT", "label": "Motocyclettes et scooters de plus de 125 cm3"},
     {"category": "C5", "value": "2RSID", "label": "Side-cars toutes cylindrees"},
+    {"category": "C7", "value": "C7-AE-SC-VTSDC_2R", "label": "Side-cars sans double commande"},
+    {"category": "C7", "value": "C7-AE-VTADC", "label": "Vehicule de tourisme avec double commande"},
+    {
+        "category": "C7",
+        "value": "C7-AE-VTADC_TPC",
+        "label": "Categories 2 et 3 avec double commande",
+    },
+    {"category": "C7", "value": "C7-AE-VTSDC", "label": "Vehicule de tourisme sans double commande"},
+    {
+        "category": "C7",
+        "value": "C7-AE-VTSDC_TPC",
+        "label": "Categories 2 et 3 sans double commande",
+    },
+    {"category": "C8", "value": "C8-VLSC", "label": "Vehicule de location sans chauffeur"},
+    {"category": "C8", "value": "C8-VLSC_TPC", "label": "Location sans chauffeur TPC"},
+    {
+        "category": "C8",
+        "value": "C8-VLSC_TPM3T500",
+        "label": "Location sans chauffeur TPM moins de 3T500",
+    },
+    {
+        "category": "C8",
+        "value": "C8-VLSC_TPM3T500P",
+        "label": "Location sans chauffeur TPM plus de 3T500",
+    },
+    {
+        "category": "C9",
+        "value": "C9-EMC-EXCLUSION",
+        "label": "Engins mobiles de chantier avec exclusion des accidents",
+    },
+    {
+        "category": "C9",
+        "value": "C9-EMC-EXTENSION",
+        "label": "Engins mobiles de chantier avec extension des accidents",
+    },
+    {"category": "C10", "value": "C10-VS-EMC", "label": "Engins mobiles de chantier"},
+    {
+        "category": "C10",
+        "value": "C10-VS-EMC_TPC3T500",
+        "label": "Engins mobiles de chantier de moins de 3T500",
+    },
+    {
+        "category": "C10",
+        "value": "C10-VS-EMC_TPC3T500P",
+        "label": "Engins mobiles de chantier de plus de 3T500",
+    },
+    {"category": "C10", "value": "C10-VS-TAR", "label": "Tracteurs agricoles et routiers"},
+    {
+        "category": "C10",
+        "value": "C10-VS-TAR_TPC3T500",
+        "label": "Tracteurs agricoles et routiers de moins de 3T500",
+    },
+    {
+        "category": "C10",
+        "value": "C10-VS-TAR_TPC3T500P",
+        "label": "Tracteurs agricoles et routiers de plus de 3T500",
+    },
+    {"category": "C10", "value": "C10-VS-VACFF", "label": "Ambulances, corbillards et fourgons funeraires"},
+    {"category": "C10", "value": "C10-VS-VAME", "label": "Vehicules automobiles a moteur electrique"},
+    {"category": "C10", "value": "C10-VS-VCP", "label": "Vehicules des collectivites publiques"},
+    {
+        "category": "C10",
+        "value": "C10-VS-VCP_TPC3T500",
+        "label": "Collectivites publiques de moins de 3T500",
+    },
+    {
+        "category": "C10",
+        "value": "C10-VS-VCP_TPC3T500P",
+        "label": "Collectivites publiques de plus de 3T500",
+    },
     {"category": "BUS_ECOLE", "value": "BE-VTA", "label": "Vehicule de transport dans des autocars"},
     {"category": "BUS_ECOLE", "value": "BE-VTCATP", "label": "Camions amenages transport de personnes"},
     {"category": "C6", "value": "C6-WG-4R", "label": "Garage vehicule a 04 roues"},

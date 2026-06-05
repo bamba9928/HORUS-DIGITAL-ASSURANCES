@@ -5,11 +5,13 @@ from integrations.ass.constants import (
     ASS_ENDPOINT_ISSUE_AUTO,
     ASS_ENDPOINT_ISSUE_FLEET,
     ASS_ENDPOINT_ISSUE_MOTO,
+    ASS_ENDPOINT_ISSUE_TRAILER,
     ASS_ENDPOINT_RC_AUTO,
     ASS_ENDPOINT_RC_FLEET,
     ASS_ENDPOINT_RC_MOTO,
     ASS_ENDPOINT_RC_TRAILER,
     ASS_ENDPOINT_STOCK_QR,
+    ASS_ENDPOINT_VERIFY_REGISTRATION,
     ASS_POLICY_FEE,
     ASS_SUCCESS_STATUS,
 )
@@ -71,6 +73,11 @@ class AssClient:
             return self._mock_fleet_issue_response(payload)
         return self._post(ASS_ENDPOINT_ISSUE_FLEET, payload)
 
+    def issue_trailer_contract(self, payload):
+        if settings.ASS_MOCK_ENABLED:
+            return self._mock_trailer_issue_response(payload)
+        return self._post(ASS_ENDPOINT_ISSUE_TRAILER, payload)
+
     def stock_qr(self, payload=None):
         if settings.ASS_MOCK_ENABLED:
             return {
@@ -79,6 +86,11 @@ class AssClient:
                 "data": 80,
             }
         return self._post(ASS_ENDPOINT_STOCK_QR, payload or {})
+
+    def verify_registration(self, payload):
+        if settings.ASS_MOCK_ENABLED:
+            return self._mock_verify_registration_response(payload)
+        return self._post(ASS_ENDPOINT_VERIFY_REGISTRATION, payload)
 
     def _post(self, endpoint, payload):
         if not settings.ASS_REAL_CALLS_ALLOWED:
@@ -138,8 +150,7 @@ class AssClient:
 
     def _mock_trailer_rc_response(self, payload):
         duree = int(payload.get("duree") or 1)
-        reference = payload.get("referenceVehicule", "")
-        prime = 0 if reference else max(2000, duree * 1000)
+        prime = max(2000, duree * 1000)
         return {
             "code": 2000,
             "operationStatus": ASS_SUCCESS_STATUS,
@@ -186,4 +197,33 @@ class AssClient:
             "operationStatus": ASS_SUCCESS_STATUS,
             "operationMessage": "Emission flotte mockee avec succes.",
             "items": items,
+        }
+
+    def _mock_trailer_issue_response(self, payload):
+        reference = payload.get("referenceTrxPartner", "MOCK-TRAILER-REFERENCE")
+        attestation_number = f"SNREM-{reference[-8:]}"
+        return {
+            "operationStatus": ASS_SUCCESS_STATUS,
+            "operationMessage": "Emission remorque mockee avec succes.",
+            "data": {
+                "referenceExterne": reference,
+                "attestationNumber": attestation_number,
+                "secureKey": "MOCK-TRAILER-SECURE-KEY",
+                "dateExpiration": "2026-09-01T23:59:59",
+                "linkAttestation": f"https://example.test/attestation/{attestation_number}",
+                "linkCarteBrune": f"https://example.test/cedeao/{attestation_number}",
+                "immatriculation": payload.get("immatriculation", ""),
+            },
+        }
+
+    def _mock_verify_registration_response(self, payload):
+        immatriculation = (payload.get("immatriculation") or "").strip().upper()
+        is_registered = immatriculation.startswith("ASS-") or immatriculation.endswith("-ASS")
+        return {
+            "operationStatus": ASS_SUCCESS_STATUS,
+            "operationMessage": "Verification immatriculation mockee.",
+            "data": {
+                "immatriculation": immatriculation,
+                "isRegistered": is_registered,
+            },
         }

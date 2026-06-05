@@ -99,6 +99,42 @@ def test_fleet_rc_request_uses_post_endpoint_confirmed_by_ass():
     ASS_USERNAME="ass",
     ASS_PASSWORD="secret-test",
     ASS_MOCK_ENABLED=False,
+    ASS_REAL_CALLS_ALLOWED=True,
+)
+def test_trailer_issue_uses_pdf_endpoint():
+    session = FakeAssSession()
+    client = AssClient(session=session)
+
+    client.issue_trailer_contract({"referenceTrxPartner": "REM-1"})
+
+    assert session.calls[0]["url"].endswith("/api/v1/partner/remorque.qrcode.request")
+    assert session.calls[0]["json"] == {"referenceTrxPartner": "REM-1"}
+
+
+@override_settings(
+    ASS_BASE_URL="https://kiiraytest.lasecu-assurances.sn",
+    ASS_API_PARTNER_SEGMENT="partner",
+    ASS_USERNAME="ass",
+    ASS_PASSWORD="secret-test",
+    ASS_MOCK_ENABLED=False,
+    ASS_REAL_CALLS_ALLOWED=True,
+)
+def test_verify_registration_uses_postman_endpoint():
+    session = FakeAssSession()
+    client = AssClient(session=session)
+
+    client.verify_registration({"immatriculation": "AA-917-XQ"})
+
+    assert session.calls[0]["url"].endswith("/api/v1/partner/verif.immatriculation")
+    assert session.calls[0]["json"] == {"immatriculation": "AA-917-XQ"}
+
+
+@override_settings(
+    ASS_BASE_URL="https://kiiraytest.lasecu-assurances.sn",
+    ASS_API_PARTNER_SEGMENT="partner",
+    ASS_USERNAME="ass",
+    ASS_PASSWORD="secret-test",
+    ASS_MOCK_ENABLED=False,
     ASS_REAL_CALLS_ALLOWED=False,
 )
 def test_real_ass_calls_remain_disabled_by_default_guard():

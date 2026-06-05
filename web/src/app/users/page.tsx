@@ -138,6 +138,7 @@ function Header({ title }: { title: string }) {
         </div>
         <nav className="flex gap-4 text-sm font-black">
           <Link href="/contracts/new">Nouveau contrat</Link>
+          <Link href="/contracts">Contrats</Link>
           <Link href="/commissions">Commissions</Link>
           <Link href="/login">Connexion</Link>
         </nav>

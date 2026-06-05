@@ -1,18 +1,14 @@
 import Link from "next/link";
 
+import { DashboardAssStockCard } from "@/components/DashboardAssStockCard";
+import { DashboardContractMetrics } from "@/components/DashboardContractMetrics";
+
 const contractTypes = [
   { name: "Auto mono", status: "Pret" },
   { name: "Moto", status: "Pret" },
   { name: "Flotte", status: "Pret" },
   { name: "Bus ecole", status: "A venir" },
   { name: "Garage", status: "A venir" },
-];
-
-const metrics = [
-  { label: "Brouillons", value: "0" },
-  { label: "Devis prets", value: "0" },
-  { label: "Paiements en attente", value: "0" },
-  { label: "Contrats emis", value: "0" },
 ];
 
 export default function Home() {
@@ -46,11 +42,14 @@ export default function Home() {
             <Link className="rounded-md px-3 py-2 hover:bg-muted" href="/contracts/new">
               Nouveau contrat
             </Link>
-            <a className="rounded-md px-3 py-2 hover:bg-muted" href="#">
+            <Link className="rounded-md px-3 py-2 hover:bg-muted" href="/contracts">
               Contrats
-            </a>
+            </Link>
             <Link className="rounded-md px-3 py-2 hover:bg-muted" href="/commissions">
               Commissions
+            </Link>
+            <Link className="rounded-md px-3 py-2 hover:bg-muted" href="/integrations/ass">
+              Integration ASS
             </Link>
             <Link className="rounded-md px-3 py-2 hover:bg-muted" href="/users">
               Utilisateurs
@@ -62,17 +61,9 @@ export default function Home() {
         </aside>
 
         <section className="space-y-8">
-          <div className="grid grid-cols-4 gap-4">
-            {metrics.map((metric) => (
-              <div
-                className="rounded-md border border-border bg-white p-4"
-                key={metric.label}
-              >
-                <p className="text-sm font-bold text-black/60">{metric.label}</p>
-                <p className="mt-3 text-3xl font-black">{metric.value}</p>
-              </div>
-            ))}
-          </div>
+          <DashboardContractMetrics />
+
+          <DashboardAssStockCard />
 
           <div>
             <div className="mb-4 flex items-end justify-between">

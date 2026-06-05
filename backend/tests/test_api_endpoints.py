@@ -9,6 +9,14 @@ from organizations.models import Organization
 from payments.models import Payment
 
 
+TEST_POLICYHOLDER = {
+    "lastName": "DIOP",
+    "firstName": "Awa",
+    "phone": "771112233",
+    "email": "awa.diop@example.test",
+}
+
+
 @pytest.mark.django_db
 def test_vehicle_subcategories_are_filtered_by_category():
     client = APIClient()
@@ -20,13 +28,487 @@ def test_vehicle_subcategories_are_filtered_by_category():
     assert values == {"2RCYC", "2RSCO", "2RMOT", "2RSID"}
 
 
+def test_vehicle_categories_follow_ass_metadata_and_exclude_c4_from_auto():
+    client = APIClient()
+
+    response = client.get("/api/referentials/vehicle-categories/", {"contract_type": "AUTO_MONO"})
+
+    assert response.status_code == 200
+    values = {item["value"] for item in response.data["results"]}
+    assert "C4" not in values
+    assert {"C1", "C2", "C3", "C7", "C8", "C9", "C10"}.issubset(values)
+
+
+def test_special_vehicle_subcategories_include_pdf_c10_values():
+    client = APIClient()
+
+    response = client.get("/api/referentials/vehicle-subcategories/", {"category": "C10"})
+
+    assert response.status_code == 200
+    values = {item["value"] for item in response.data["results"]}
+    assert {
+        "C10-VS-EMC",
+        "C10-VS-TAR",
+        "C10-VS-VACFF",
+        "C10-VS-VAME",
+        "C10-VS-VCP",
+    }.issubset(values)
+
+
+def test_ass_periodicities_and_person_types_are_exposed():
+    client = APIClient()
+
+    periodicities_response = client.get("/api/referentials/periodicities/")
+    person_types_response = client.get("/api/referentials/person-types/")
+
+    assert periodicities_response.status_code == 200
+    assert periodicities_response.data["results"] == [
+        {"value": "JOUR", "label": "Jour", "min_duration": 1, "max_duration": 366},
+        {"value": "MOIS", "label": "Mois", "min_duration": 1, "max_duration": 12},
+    ]
+    assert person_types_response.status_code == 200
+    assert {item["value"] for item in person_types_response.data["results"]} == {
+        "PHYSIQUE",
+        "MORALE",
+    }
+
+
+def test_ass_guarantee_options_are_exposed():
+    client = APIClient()
+
+    response = client.get("/api/referentials/guarantee-options/")
+
+    assert response.status_code == 200
+    fields = {item["field"] for item in response.data["results"]}
+    assert {"garantiesOptPT", "garantiesOptAR", "garantiesOptAS"}.issubset(fields)
+    option_as = next(item for item in response.data["results"] if item["field"] == "garantiesOptAS")
+    assert option_as["enabled"] is True
+    assert option_as["needs_confirmation"] is False
+
+
+@pytest.mark.django_db
 def test_vehicle_brand_search_returns_select_options():
     client = APIClient()
 
     response = client.get("/api/referentials/vehicle-brands/", {"search": "toy"})
 
     assert response.status_code == 200
-    assert response.data["results"] == [{"value": "TOYOTA", "label": "Toyota"}]
+    assert response.data["results"] == [{"value": "TOYOTA", "label": "TOYOTA"}]
+
+
+@pytest.mark.django_db
+def test_vehicle_brand_default_list_returns_imported_referential():
+    client = APIClient()
+
+    response = client.get("/api/referentials/vehicle-brands/")
+
+    assert response.status_code == 200
+    values = {item["value"] for item in response.data["results"]}
+    assert len(response.data["results"]) > 1000
+    assert {"TOYOTA", "ZONGSHEN"}.issubset(values)
+
+
+@pytest.mark.django_db
+def test_vehicle_brand_search_uses_imported_referential():
+    client = APIClient()
+
+    response = client.get("/api/referentials/vehicle-brands/", {"search": "zong"})
+
+    assert response.status_code == 200
+    values = {item["value"] for item in response.data["results"]}
+    assert "ZONGSHEN" in values
+
+
+@pytest.mark.django_db
+def test_vehicle_brand_can_be_added_when_missing():
+    client = APIClient()
+
+    create_response = client.post(
+        "/api/referentials/vehicle-brands/",
+        {"label": "Marque Test Horus"},
+        format="json",
+    )
+    search_response = client.get(
+        "/api/referentials/vehicle-brands/",
+        {"search": "marque test"},
+    )
+
+    assert create_response.status_code == 201
+    assert create_response.data == {
+        "value": "MARQUE TEST HORUS",
+        "label": "MARQUE TEST HORUS",
+    }
+    assert search_response.status_code == 200
+    assert search_response.data["results"] == [create_response.data]
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=True)
+def test_contract_summary_counts_statuses_in_debug_mode():
+    organization = Organization.objects.create(name="Groupe Summary", code="SUMMARY")
+    contributor = User.objects.create_user(
+        username="summary-contributor",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=organization,
+    )
+    Contract.objects.create(
+        organization=organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.DRAFT,
+    )
+    Contract.objects.create(
+        organization=organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.QUOTE_READY,
+    )
+    Contract.objects.create(
+        organization=organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.PAYMENT_PENDING,
+    )
+    Contract.objects.create(
+        organization=organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.ISSUED,
+    )
+    client = APIClient()
+
+    response = client.get("/api/contracts/summary/")
+
+    assert response.status_code == 200
+    assert response.data == {
+        "drafts": 1,
+        "quotes_ready": 1,
+        "payment_pending": 1,
+        "issued": 1,
+        "total": 4,
+    }
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=False)
+def test_contract_summary_is_filtered_by_authenticated_user_group():
+    own_group = Organization.objects.create(name="Groupe Own Summary", code="OWN-SUM")
+    other_group = Organization.objects.create(name="Groupe Other Summary", code="OTHER-SUM")
+    admin_group = User.objects.create_user(
+        username="summary-admin-group",
+        password="test",
+        role=User.Role.ADMIN_GROUP,
+        organization=own_group,
+    )
+    own_contributor = User.objects.create_user(
+        username="summary-own-contributor",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=own_group,
+    )
+    other_contributor = User.objects.create_user(
+        username="summary-other-contributor",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=other_group,
+    )
+    Contract.objects.create(
+        organization=own_group,
+        contributor=own_contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.DRAFT,
+    )
+    Contract.objects.create(
+        organization=other_group,
+        contributor=other_contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.ISSUED,
+    )
+    client = APIClient()
+    client.force_authenticate(admin_group)
+
+    response = client.get("/api/contracts/summary/")
+
+    assert response.status_code == 200
+    assert response.data["drafts"] == 1
+    assert response.data["issued"] == 0
+    assert response.data["total"] == 1
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=True)
+def test_contract_list_can_filter_by_status_and_contract_type_in_debug_mode():
+    organization = Organization.objects.create(name="Groupe List", code="LIST")
+    contributor = User.objects.create_user(
+        username="list-contributor",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=organization,
+    )
+    issued = Contract.objects.create(
+        organization=organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.ISSUED,
+        immatriculation="AA-917-XQ",
+        attestation_number="SN-LIST-001",
+        draft_payload={
+            "vehicle": {
+                "brand": "TOYOTA",
+                "model": "YARIS",
+                "registration": "AA-917-XQ",
+            }
+        },
+    )
+    Contract.objects.create(
+        organization=organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.MOTO,
+        internal_status=Contract.InternalStatus.DRAFT,
+        draft_payload={"vehicle": {"brand": "YAMAHA", "registration": "DK-001-AA"}},
+    )
+    client = APIClient()
+
+    response = client.get(
+        "/api/contracts/",
+        {"status": Contract.InternalStatus.ISSUED, "contract_type": Contract.ContractType.AUTO_MONO},
+    )
+
+    assert response.status_code == 200
+    assert len(response.data["results"]) == 1
+    assert response.data["results"][0]["id"] == issued.id
+    assert response.data["results"][0]["vehicle_label"] == "TOYOTA YARIS AA-917-XQ"
+    assert response.data["results"][0]["attestation_number"] == "SN-LIST-001"
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=True)
+def test_contract_list_rejects_invalid_status_filter():
+    client = APIClient()
+
+    response = client.get("/api/contracts/", {"status": "UNKNOWN"})
+
+    assert response.status_code == 400
+    assert response.data["detail"] == "Statut contrat invalide."
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=False)
+def test_contract_list_is_filtered_by_authenticated_user_group():
+    own_group = Organization.objects.create(name="Groupe Own List", code="OWN-LIST")
+    other_group = Organization.objects.create(name="Groupe Other List", code="OTHER-LIST")
+    admin_group = User.objects.create_user(
+        username="list-admin-group",
+        password="test",
+        role=User.Role.ADMIN_GROUP,
+        organization=own_group,
+    )
+    own_contributor = User.objects.create_user(
+        username="list-own-contributor",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=own_group,
+    )
+    other_contributor = User.objects.create_user(
+        username="list-other-contributor",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=other_group,
+    )
+    own_contract = Contract.objects.create(
+        organization=own_group,
+        contributor=own_contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.DRAFT,
+    )
+    Contract.objects.create(
+        organization=other_group,
+        contributor=other_contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.DRAFT,
+    )
+    client = APIClient()
+    client.force_authenticate(admin_group)
+
+    response = client.get("/api/contracts/")
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.data["results"]] == [own_contract.id]
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=True)
+def test_contract_detail_returns_payments_and_commission_snapshot():
+    organization = Organization.objects.create(name="Groupe Detail", code="DETAIL")
+    contributor = User.objects.create_user(
+        username="detail-contributor",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=organization,
+    )
+    contract = Contract.objects.create(
+        organization=organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.ISSUED,
+        prime_rc_ass=50_000,
+        cout_police_ass=3_000,
+        ttc_ass=65_000,
+        attestation_number="SN-DETAIL-001",
+        draft_payload={
+            "vehicle": {
+                "brand": "TOYOTA",
+                "model": "YARIS",
+                "registration": "AA-917-XQ",
+            }
+        },
+    )
+    Payment.objects.create(
+        contract=contract,
+        amount=65_000,
+        status=Payment.Status.CONFIRMED,
+        external_reference="PAY-DETAIL",
+    )
+    CommissionSnapshot.objects.create(
+        contract=contract,
+        contributor=contributor,
+        prime_rc_ass=50_000,
+        cout_police_ass=3_000,
+        ttc_ass=65_000,
+        commission_percent_used="18.00",
+        commission_fixed_policy_fee_used=2_000,
+        commission_prime_rc_amount=9_000,
+        commission_policy_fee_amount=2_000,
+        commission_total=11_000,
+        net_to_horus=54_000,
+    )
+    client = APIClient()
+
+    response = client.get(f"/api/contracts/{contract.id}/")
+
+    assert response.status_code == 200
+    assert response.data["id"] == contract.id
+    assert response.data["attestation_number"] == "SN-DETAIL-001"
+    assert response.data["payments"][0]["external_reference"] == "PAY-DETAIL"
+    assert response.data["commission_snapshot"]["commission_total"] == 11_000
+    assert response.data["vehicle_label"] == "TOYOTA YARIS AA-917-XQ"
+    assert response.data["ass_attestations"][0]["attestation_number"] == "SN-DETAIL-001"
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=True)
+def test_contract_detail_returns_fleet_and_trailer_attestations():
+    organization = Organization.objects.create(name="Groupe Detail Fleet", code="DETAIL-FLEET")
+    contributor = User.objects.create_user(
+        username="detail-fleet-contributor",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=organization,
+    )
+    contract = Contract.objects.create(
+        organization=organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.FLEET,
+        internal_status=Contract.InternalStatus.ISSUED,
+        prime_rc_ass=27_000,
+        cout_police_ass=3_000,
+        ttc_ass=30_000,
+        ass_issue_request_payload={
+            "flotte": {
+                "items": [
+                    {
+                        "referenceTrxPartner": "REF-FLEET-1",
+                        "vehicule": {
+                            "marque": "TOYOTA",
+                            "modele": "YARIS",
+                            "immatriculation": "AA-917-XQ",
+                        },
+                    }
+                ]
+            },
+            "remorques": [
+                {
+                    "referenceTrxPartner": "REF-FLEET-REM-1-1",
+                    "immatriculation": "REM-001",
+                    "marque": "TRAIL",
+                    "modele": "T1",
+                }
+            ],
+        },
+        ass_issue_response_payload={
+            "flotte": {
+                "operationStatus": "SUCCESS",
+                "items": [
+                    {
+                        "referenceExterne": "REF-FLEET-1",
+                        "attestationNumber": "SN-FLEET-001",
+                        "secureKey": "SEC-FLEET",
+                        "dateExpiration": "2026-09-01T23:59:59",
+                        "linkAttestation": "https://example.test/attestation/SN-FLEET-001",
+                        "linkCarteBrune": "https://example.test/cedeao/SN-FLEET-001",
+                    }
+                ],
+            },
+            "remorques": [
+                {
+                    "operationStatus": "SUCCESS",
+                    "data": {
+                        "referenceExterne": "REF-FLEET-REM-1-1",
+                        "attestationNumber": "SN-REM-001",
+                        "secureKey": "SEC-REM",
+                        "dateExpiration": "2026-09-01T23:59:59",
+                        "linkAttestation": "https://example.test/attestation/SN-REM-001",
+                        "linkCarteBrune": "https://example.test/cedeao/SN-REM-001",
+                    },
+                }
+            ],
+        },
+    )
+    client = APIClient()
+
+    response = client.get(f"/api/contracts/{contract.id}/")
+
+    assert response.status_code == 200
+    assert [item["kind"] for item in response.data["ass_attestations"]] == [
+        "VEHICLE",
+        "TRAILER",
+    ]
+    assert response.data["ass_attestations"][0]["attestation_number"] == "SN-FLEET-001"
+    assert response.data["ass_attestations"][0]["label"] == "TOYOTA YARIS AA-917-XQ"
+    assert response.data["ass_attestations"][1]["attestation_number"] == "SN-REM-001"
+    assert response.data["ass_attestations"][1]["immatriculation"] == "REM-001"
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=False)
+def test_contract_detail_is_filtered_by_authenticated_user_group():
+    own_group = Organization.objects.create(name="Groupe Own Detail", code="OWN-DETAIL")
+    other_group = Organization.objects.create(name="Groupe Other Detail", code="OTHER-DETAIL")
+    admin_group = User.objects.create_user(
+        username="detail-admin-group",
+        password="test",
+        role=User.Role.ADMIN_GROUP,
+        organization=own_group,
+    )
+    other_contributor = User.objects.create_user(
+        username="detail-other-contributor",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=other_group,
+    )
+    other_contract = Contract.objects.create(
+        organization=other_group,
+        contributor=other_contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.DRAFT,
+    )
+    client = APIClient()
+    client.force_authenticate(admin_group)
+
+    response = client.get(f"/api/contracts/{other_contract.id}/")
+
+    assert response.status_code == 404
 
 
 @pytest.mark.django_db
@@ -57,6 +539,46 @@ def test_can_create_contract_draft_in_debug_mode():
 
 @pytest.mark.django_db
 @override_settings(DEBUG=True)
+def test_can_update_contract_draft_in_debug_mode():
+    client = APIClient()
+    draft_response = client.post(
+        "/api/contracts/drafts/",
+        {
+            "contract_type": "AUTO_MONO",
+            "draft_payload": {
+                "vehicle": {
+                    "brand": "TOYOTA",
+                    "registration": "AA-917-XQ",
+                }
+            },
+        },
+        format="json",
+    )
+
+    response = client.patch(
+        f"/api/contracts/drafts/{draft_response.data['id']}/",
+        {
+            "contract_type": "MOTO",
+            "draft_payload": {
+                "vehicle": {
+                    "brand": "YAMAHA",
+                    "cylindree": 126,
+                    "registration": "DK-1234-AB",
+                }
+            },
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    draft = Contract.objects.get(id=draft_response.data["id"])
+    assert draft.contract_type == Contract.ContractType.MOTO
+    assert draft.draft_payload["vehicle"]["brand"] == "YAMAHA"
+    assert draft.draft_payload["vehicle"]["cylindree"] == 126
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=True)
 def test_rejects_disabled_contract_type_for_draft():
     client = APIClient()
 
@@ -68,6 +590,51 @@ def test_rejects_disabled_contract_type_for_draft():
 
     assert response.status_code == 400
     assert "contract_type" in response.data
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=True)
+def test_rejects_guarantee_option_without_required_guarantee():
+    client = APIClient()
+
+    response = client.post(
+        "/api/contracts/drafts/",
+        {
+            "contract_type": "AUTO_MONO",
+            "draft_payload": {
+                "guarantees": [1],
+                "guaranteeOptions": {"garantiesOptPT": "OPTION_1"},
+                "vehicle": {"brand": "TOYOTA"},
+            },
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert "garantiesOptPT" in str(response.data["draft_payload"])
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=True)
+def test_accepts_confirmed_guarantee_as_option_in_draft():
+    client = APIClient()
+
+    response = client.post(
+        "/api/contracts/drafts/",
+        {
+            "contract_type": "AUTO_MONO",
+            "draft_payload": {
+                "guarantees": [1],
+                "guaranteeOptions": {"garantiesOptAS": "OPTION_1"},
+                "vehicle": {"brand": "TOYOTA"},
+            },
+        },
+        format="json",
+    )
+
+    assert response.status_code == 201
+    draft = Contract.objects.get(id=response.data["id"])
+    assert draft.draft_payload["guaranteeOptions"]["garantiesOptAS"] == "OPTION_1"
 
 
 @pytest.mark.django_db
@@ -179,6 +746,76 @@ def test_can_calculate_auto_quote_from_ass_mock():
 
 @pytest.mark.django_db
 @override_settings(DEBUG=True, ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
+def test_can_calculate_quote_from_contract_detail_route():
+    client = APIClient()
+    draft_response = client.post(
+        "/api/contracts/drafts/",
+        {
+            "contract_type": "AUTO_MONO",
+            "draft_payload": {
+                "vehicle": {
+                    "brand": "TOYOTA",
+                    "subcategory": "VP",
+                    "energy": "ESSENCE",
+                    "fiscalPower": "8",
+                    "duration": "3",
+                    "registration": "AA-917-XQ",
+                }
+            },
+        },
+        format="json",
+    )
+
+    response = client.post(f"/api/contracts/{draft_response.data['id']}/quote/")
+
+    assert response.status_code == 200
+    assert response.data["internal_status"] == Contract.InternalStatus.QUOTE_READY
+    assert response.data["quote"]["prime_rc_ass"] == 24_000
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=False, ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
+def test_contract_quote_route_is_filtered_by_authenticated_user_group():
+    own_group = Organization.objects.create(name="Groupe Quote Own", code="QUOTE-OWN")
+    other_group = Organization.objects.create(name="Groupe Quote Other", code="QUOTE-OTHER")
+    admin_group = User.objects.create_user(
+        username="quote-admin-group",
+        password="test",
+        role=User.Role.ADMIN_GROUP,
+        organization=own_group,
+    )
+    other_contributor = User.objects.create_user(
+        username="quote-other-contributor",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=other_group,
+    )
+    other_contract = Contract.objects.create(
+        organization=other_group,
+        contributor=other_contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.DRAFT,
+        draft_payload={
+            "vehicle": {
+                "brand": "TOYOTA",
+                "subcategory": "VP",
+                "energy": "ESSENCE",
+                "fiscalPower": "8",
+                "duration": "3",
+                "registration": "AA-917-XQ",
+            }
+        },
+    )
+    client = APIClient()
+    client.force_authenticate(admin_group)
+
+    response = client.post(f"/api/contracts/{other_contract.id}/quote/")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=True, ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
 def test_can_calculate_fleet_quote_with_trailer_from_ass_mock():
     client = APIClient()
     draft_response = client.post(
@@ -219,7 +856,7 @@ def test_can_calculate_fleet_quote_with_trailer_from_ass_mock():
     assert response.data["quote"]["items"][0]["kind"] == "VEHICLE"
     assert response.data["quote"]["items"][1]["kind"] == "TRAILER"
     assert response.data["quote"]["items"][1]["prime_rc_ass"] == 0
-    assert response.data["quote"]["warnings"]
+    assert response.data["quote"]["warnings"] == []
 
 
 @pytest.mark.django_db
@@ -253,6 +890,41 @@ def test_issue_is_blocked_without_confirmed_payment():
 
 @pytest.mark.django_db
 @override_settings(DEBUG=True, ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
+def test_issue_is_blocked_without_policyholder_and_insured():
+    client = APIClient()
+    draft_response = client.post(
+        "/api/contracts/drafts/",
+        {
+            "contract_type": "AUTO_MONO",
+            "draft_payload": {
+                "vehicle": {
+                    "brand": "TOYOTA",
+                    "subcategory": "VP",
+                    "energy": "ESSENCE",
+                    "fiscalPower": "8",
+                    "duration": "3",
+                    "registration": "AA-917-XQ",
+                }
+            },
+        },
+        format="json",
+    )
+    quote_response = client.post(f"/api/contracts/drafts/{draft_response.data['id']}/quote/")
+    contract_id = quote_response.data["contract_id"]
+    client.post(
+        f"/api/contracts/{contract_id}/payments/confirm/",
+        {"amount": 27_000, "external_reference": "PAY-NO-PERSON"},
+        format="json",
+    )
+
+    response = client.post(f"/api/contracts/{contract_id}/issue/")
+
+    assert response.status_code == 400
+    assert "Souscripteur" in response.data["detail"]
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=True, ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
 def test_can_confirm_payment_then_issue_mock_contract():
     client = APIClient()
     draft_response = client.post(
@@ -260,6 +932,9 @@ def test_can_confirm_payment_then_issue_mock_contract():
         {
             "contract_type": "AUTO_MONO",
             "draft_payload": {
+                "guarantees": [1],
+                "policyholder": TEST_POLICYHOLDER,
+                "insured": TEST_POLICYHOLDER,
                 "vehicle": {
                     "brand": "TOYOTA",
                     "subcategory": "VP",
@@ -293,6 +968,8 @@ def test_can_confirm_payment_then_issue_mock_contract():
     assert contract.internal_status == Contract.InternalStatus.ISSUED
     assert contract.reference_trx_partner.startswith("HORUS-")
     assert contract.ttc_ass == 27_000
+    assert contract.ass_issue_request_payload["garanties"] == [1]
+    assert contract.ass_issue_request_payload["souscripteur"]["nom"] == "DIOP"
     assert CommissionSnapshot.objects.filter(contract=contract).exists()
 
 
