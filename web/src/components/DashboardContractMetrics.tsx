@@ -1,7 +1,9 @@
 "use client";
 
+import { CircleDollarSign, FileClock, FileText, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { MetricCard } from "@/components/ui";
 import { fetchContractSummary, type ContractSummary } from "@/lib/api";
 
 const defaultSummary: ContractSummary = {
@@ -44,23 +46,51 @@ export function DashboardContractMetrics() {
   }, []);
 
   const metrics = [
-    { label: "Brouillons", value: summary.drafts },
-    { label: "Devis prets", value: summary.quotes_ready },
-    { label: "Paiements en attente", value: summary.payment_pending },
-    { label: "Contrats emis", value: summary.issued },
+    {
+      label: "Brouillons",
+      value: summary.drafts,
+      detail: "À compléter",
+      icon: FileText,
+      tone: "neutral" as const,
+    },
+    {
+      label: "Devis prêts",
+      value: summary.quotes_ready,
+      detail: "En attente de paiement",
+      icon: FileClock,
+      tone: "primary" as const,
+    },
+    {
+      label: "Paiements attendus",
+      value: summary.payment_pending,
+      detail: "À confirmer",
+      icon: CircleDollarSign,
+      tone: "warning" as const,
+    },
+    {
+      label: "Contrats émis",
+      value: summary.issued,
+      detail: `${summary.total} dossiers au total`,
+      icon: ShieldCheck,
+      tone: "success" as const,
+    },
   ];
 
   return (
     <div>
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {metrics.map((metric) => (
-          <div className="rounded-md border border-border bg-white p-4" key={metric.label}>
-            <p className="text-sm font-bold text-black/60">{metric.label}</p>
-            <p className="mt-3 text-3xl font-black">{isLoading ? "-" : metric.value}</p>
-          </div>
+          <MetricCard
+            detail={metric.detail}
+            icon={metric.icon}
+            key={metric.label}
+            label={metric.label}
+            tone={metric.tone}
+            value={isLoading ? "-" : metric.value}
+          />
         ))}
       </div>
-      {error ? <p className="mt-3 text-sm font-bold text-primary">{error}</p> : null}
+      {error ? <p className="mt-3 text-sm font-bold text-red-700">{error}</p> : null}
     </div>
   );
 }

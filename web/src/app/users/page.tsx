@@ -1,8 +1,17 @@
 "use client";
 
-import Link from "next/link";
+import { Percent, Plus, RefreshCw, UserPlus, Users } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
+import { AppShell } from "@/components/AppShell";
+import {
+  AlertMessage,
+  EmptyState,
+  LoadingState,
+  MetricCard,
+  PageAction,
+  StatusBadge,
+} from "@/components/ui";
 import {
   createUser,
   fetchCurrentUser,
@@ -17,7 +26,7 @@ const roles = [
   { value: "CONTRIBUTOR", label: "Apporteur" },
   { value: "FINANCE", label: "Finance" },
   { value: "ADMIN_GROUP", label: "Admin groupe" },
-  { value: "ADMIN_GENERAL", label: "Admin general" },
+  { value: "ADMIN_GENERAL", label: "Admin général" },
 ] as const;
 
 export default function UsersPage() {
@@ -35,6 +44,8 @@ export default function UsersPage() {
       if (current.authenticated) {
         const response = await listUsers();
         setUsers(response.results);
+      } else {
+        setUsers([]);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Chargement impossible.");
@@ -55,10 +66,9 @@ export default function UsersPage() {
         setAuth(current);
         if (current.authenticated) {
           const response = await listUsers();
-          if (isCancelled) {
-            return;
+          if (!isCancelled) {
+            setUsers(response.results);
           }
-          setUsers(response.results);
         }
       } catch (err) {
         if (!isCancelled) {
@@ -78,72 +88,89 @@ export default function UsersPage() {
   }, []);
 
   const canCreateAdminRoles = auth?.user?.role === "ADMIN_GENERAL";
+  const configuredContributors = users.filter(
+    (user) => user.role === "CONTRIBUTOR" && user.has_configured_commission,
+  ).length;
 
   return (
-    <main className="min-h-screen bg-white text-black">
-      <Header title="Utilisateurs" />
-      <section className="mx-auto grid max-w-7xl grid-cols-[320px_1fr] gap-8 px-6 py-8">
-        <CreateUserPanel
-          canCreateAdminRoles={canCreateAdminRoles}
-          disabled={!auth?.authenticated}
-          onCreated={refresh}
-        />
-
-        <div className="space-y-4">
-          {isLoading ? <p className="font-bold text-black/60">Chargement...</p> : null}
-          {!isLoading && !auth?.authenticated ? <LoginNotice /> : null}
-          {error ? <ErrorMessage message={error} /> : null}
-
-          <div className="overflow-hidden rounded-md border border-border">
-            <table className="w-full border-collapse text-left text-sm">
-              <thead className="bg-muted">
-                <tr>
-                  <th className="px-4 py-3 font-black">Utilisateur</th>
-                  <th className="px-4 py-3 font-black">Role</th>
-                  <th className="px-4 py-3 font-black">Groupe</th>
-                  <th className="px-4 py-3 font-black">Commission Prime RC</th>
-                  <th className="px-4 py-3 font-black">Police</th>
-                  <th className="px-4 py-3 font-black">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((user) => (
-                  <UserRow key={user.id} onSaved={refresh} user={user} />
-                ))}
-                {!users.length && !isLoading ? (
-                  <tr>
-                    <td className="px-4 py-6 font-bold text-black/50" colSpan={6}>
-                      Aucun utilisateur accessible.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
+    <AppShell
+      actions={
+        <button
+          aria-label="Actualiser les utilisateurs"
+          className="flex size-10 items-center justify-center rounded-md border border-border bg-white hover:bg-muted disabled:text-black/30"
+          disabled={isLoading}
+          onClick={() => void refresh()}
+          title="Actualiser"
+          type="button"
+        >
+          <RefreshCw className={isLoading ? "animate-spin" : ""} size={18} />
+        </button>
+      }
+      description="Comptes, rôles et paramètres de commission"
+      title="Utilisateurs"
+    >
+      <div className="space-y-5">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+          <MetricCard icon={Users} label="Utilisateurs" value={users.length} />
+          <MetricCard
+            icon={UserPlus}
+            label="Apporteurs"
+            tone="primary"
+            value={users.filter((user) => user.role === "CONTRIBUTOR").length}
+          />
+          <MetricCard
+            detail="Apporteurs prêts pour l’émission"
+            icon={Percent}
+            label="Commissions configurées"
+            tone="success"
+            value={configuredContributors}
+          />
         </div>
-      </section>
-    </main>
-  );
-}
 
-function Header({ title }: { title: string }) {
-  return (
-    <header className="border-b border-border">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
-        <div>
-          <Link className="text-sm font-black uppercase text-primary" href="/">
-            Horus
-          </Link>
-          <h1 className="text-2xl font-black">{title}</h1>
+        {error ? <AlertMessage>{error}</AlertMessage> : null}
+
+        <div className="grid items-start gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
+          <CreateUserPanel
+            canCreateAdminRoles={canCreateAdminRoles}
+            disabled={!auth?.authenticated}
+            onCreated={refresh}
+          />
+
+          <section className="app-surface overflow-hidden">
+            {isLoading ? (
+              <LoadingState label="Chargement des utilisateurs" />
+            ) : !auth?.authenticated ? (
+              <EmptyState
+                action={<PageAction href="/login">Se connecter</PageAction>}
+                title="Session requise"
+              />
+            ) : users.length ? (
+              <div className="overflow-x-auto">
+                <table className="app-table app-table-responsive">
+                  <thead>
+                    <tr>
+                      <th>Utilisateur</th>
+                      <th>Rôle</th>
+                      <th>Groupe</th>
+                      <th>Prime RC</th>
+                      <th>Police</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {users.map((user) => (
+                      <UserRow key={user.id} onSaved={refresh} user={user} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState title="Aucun utilisateur accessible" />
+            )}
+          </section>
         </div>
-        <nav className="flex gap-4 text-sm font-black">
-          <Link href="/contracts/new">Nouveau contrat</Link>
-          <Link href="/contracts">Contrats</Link>
-          <Link href="/commissions">Commissions</Link>
-          <Link href="/login">Connexion</Link>
-        </nav>
       </div>
-    </header>
+    </AppShell>
   );
 }
 
@@ -166,6 +193,7 @@ function CreateUserPanel({
     organization: "",
   });
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const visibleRoles = useMemo(
     () => roles.filter((role) => canCreateAdminRoles || !role.value.startsWith("ADMIN")),
     [canCreateAdminRoles],
@@ -174,6 +202,7 @@ function CreateUserPanel({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    setIsSubmitting(true);
     const payload: CreateUserPayload = {
       username: form.username,
       password: form.password,
@@ -196,31 +225,43 @@ function CreateUserPanel({
       });
       await onCreated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Creation impossible.");
+      setError(err instanceof Error ? err.message : "Création impossible.");
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
   return (
-    <aside className="rounded-md border border-border p-5">
-      <h2 className="text-lg font-black">Nouveau compte</h2>
-      <form className="mt-5 space-y-4" onSubmit={handleSubmit}>
+    <aside className="app-surface p-5">
+      <div className="flex items-center gap-3">
+        <span className="flex size-10 items-center justify-center rounded-md bg-primary text-white">
+          <UserPlus size={20} />
+        </span>
+        <div>
+          <h2 className="font-extrabold">Nouveau compte</h2>
+          <p className="text-sm font-medium text-black/45">Accès et rattachement</p>
+        </div>
+      </div>
+      <form className="mt-5 space-y-3.5" onSubmit={handleSubmit}>
         <Field
           disabled={disabled}
-          label="Utilisateur"
+          label="Identifiant"
           onChange={(value) => setForm({ ...form, username: value })}
+          required
           value={form.username}
         />
         <Field
           disabled={disabled}
           label="Mot de passe"
           onChange={(value) => setForm({ ...form, password: value })}
+          required
           type="password"
           value={form.password}
         />
         <div className="grid grid-cols-2 gap-3">
           <Field
             disabled={disabled}
-            label="Prenom"
+            label="Prénom"
             onChange={(value) => setForm({ ...form, first_name: value })}
             value={form.first_name}
           />
@@ -235,12 +276,13 @@ function CreateUserPanel({
           disabled={disabled}
           label="Email"
           onChange={(value) => setForm({ ...form, email: value })}
+          type="email"
           value={form.email}
         />
         <label className="block">
-          <span className="text-sm font-black">Role</span>
+          <span className="text-xs font-extrabold uppercase text-black/52">Rôle</span>
           <select
-            className="mt-2 h-11 w-full rounded-md border border-border bg-white px-3 font-bold outline-none focus:border-primary"
+            className="app-field mt-1.5"
             disabled={disabled}
             onChange={(event) => setForm({ ...form, role: event.target.value })}
             value={form.role}
@@ -254,17 +296,19 @@ function CreateUserPanel({
         </label>
         <Field
           disabled={disabled}
-          label="Groupe ID"
+          label="Identifiant groupe"
           onChange={(value) => setForm({ ...form, organization: value })}
+          type="number"
           value={form.organization}
         />
-        {error ? <ErrorMessage message={error} /> : null}
+        {error ? <AlertMessage>{error}</AlertMessage> : null}
         <button
-          className="h-11 w-full rounded-md bg-primary font-black text-white disabled:bg-black/30"
-          disabled={disabled}
+          className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary font-extrabold text-white hover:bg-[var(--primary-strong)] disabled:bg-black/25"
+          disabled={disabled || isSubmitting}
           type="submit"
         >
-          Creer
+          <Plus size={17} />
+          {isSubmitting ? "Création..." : "Créer le compte"}
         </button>
       </form>
     </aside>
@@ -275,9 +319,11 @@ function UserRow({ user, onSaved }: { user: ManagedUser; onSaved: () => Promise<
   const [percent, setPercent] = useState(user.commission_percent_on_prime_rc ?? "");
   const [fixed, setFixed] = useState(user.commission_fixed_on_policy_fee?.toString() ?? "");
   const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   async function saveCommission() {
     setError("");
+    setIsSaving(true);
     try {
       await updateUserCommission(user.id, {
         commission_percent_on_prime_rc: percent === "" ? null : percent,
@@ -285,41 +331,60 @@ function UserRow({ user, onSaved }: { user: ManagedUser; onSaved: () => Promise<
       });
       await onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Mise a jour impossible.");
+      setError(err instanceof Error ? err.message : "Mise à jour impossible.");
+    } finally {
+      setIsSaving(false);
     }
   }
 
   return (
-    <tr className="border-t border-border align-top">
-      <td className="px-4 py-3">
-        <p className="font-black">{user.username}</p>
-        <p className="text-xs font-bold text-black/50">{user.email || "Sans email"}</p>
-        {error ? <p className="mt-2 text-xs font-bold text-primary">{error}</p> : null}
+    <tr>
+      <td data-label="Utilisateur">
+        <div>
+          <p className="font-extrabold">{user.username}</p>
+          <p className="mt-1 text-xs font-semibold text-black/45">{user.email || "Sans email"}</p>
+          {error ? <p className="mt-2 text-xs font-bold text-red-700">{error}</p> : null}
+        </div>
       </td>
-      <td className="px-4 py-3 font-bold">{user.role}</td>
-      <td className="px-4 py-3 font-bold">{user.organization_name ?? "-"}</td>
-      <td className="px-4 py-3">
-        <input
-          className="h-10 w-28 rounded-md border border-border px-3 font-bold outline-none focus:border-primary"
-          onChange={(event) => setPercent(event.target.value)}
-          value={percent}
-        />
+      <td data-label="Rôle">
+        <StatusBadge status={user.role} />
       </td>
-      <td className="px-4 py-3">
+      <td data-label="Groupe" className="font-bold">
+        {user.organization_name ?? "-"}
+      </td>
+      <td data-label="Prime RC">
+        <div className="relative">
+          <input
+            aria-label={`Commission Prime RC de ${user.username}`}
+            className="app-field h-10 min-h-10 w-28 pr-8"
+            disabled={user.role !== "CONTRIBUTOR"}
+            onChange={(event) => setPercent(event.target.value)}
+            type="number"
+            value={percent}
+          />
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-black/40">
+            %
+          </span>
+        </div>
+      </td>
+      <td data-label="Police">
         <input
-          className="h-10 w-28 rounded-md border border-border px-3 font-bold outline-none focus:border-primary"
+          aria-label={`Commission fixe de ${user.username}`}
+          className="app-field h-10 min-h-10 w-28"
+          disabled={user.role !== "CONTRIBUTOR"}
           onChange={(event) => setFixed(event.target.value)}
+          type="number"
           value={fixed}
         />
       </td>
-      <td className="px-4 py-3">
+      <td data-label="Action">
         <button
-          className="h-10 rounded-md bg-black px-3 text-xs font-black text-white disabled:bg-black/30"
-          disabled={user.role !== "CONTRIBUTOR"}
+          className="h-10 rounded-md bg-black px-3 text-xs font-extrabold text-white hover:bg-black/80 disabled:bg-black/20"
+          disabled={user.role !== "CONTRIBUTOR" || isSaving}
           onClick={saveCommission}
           type="button"
         >
-          Sauver
+          {isSaving ? "Enregistrement..." : "Enregistrer"}
         </button>
       </td>
     </tr>
@@ -330,44 +395,28 @@ function Field({
   disabled,
   label,
   onChange,
+  required,
   type = "text",
   value,
 }: {
   disabled?: boolean;
   label: string;
   onChange: (value: string) => void;
+  required?: boolean;
   type?: string;
   value: string;
 }) {
   return (
     <label className="block">
-      <span className="text-sm font-black">{label}</span>
+      <span className="text-xs font-extrabold uppercase text-black/52">{label}</span>
       <input
-        className="mt-2 h-11 w-full rounded-md border border-border px-3 font-bold outline-none focus:border-primary disabled:bg-muted"
+        className="app-field mt-1.5"
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
+        required={required}
         type={type}
         value={value}
       />
     </label>
-  );
-}
-
-function LoginNotice() {
-  return (
-    <div className="rounded-md border border-border p-4">
-      <p className="font-black">Session requise</p>
-      <Link className="mt-2 inline-block font-black text-primary" href="/login">
-        Se connecter
-      </Link>
-    </div>
-  );
-}
-
-function ErrorMessage({ message }: { message: string }) {
-  return (
-    <p className="rounded-md border border-primary bg-white p-3 text-sm font-bold text-primary">
-      {message}
-    </p>
   );
 }

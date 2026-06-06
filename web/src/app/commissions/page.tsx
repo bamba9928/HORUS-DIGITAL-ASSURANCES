@@ -1,8 +1,17 @@
 "use client";
 
-import Link from "next/link";
+import { BadgePercent, Banknote, CircleDollarSign, RefreshCw, WalletCards } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { AppShell } from "@/components/AppShell";
+import {
+  AlertMessage,
+  EmptyState,
+  LoadingState,
+  MetricCard,
+  PageAction,
+  StatusBadge,
+} from "@/components/ui";
 import {
   fetchCurrentUser,
   listCommissionSnapshots,
@@ -11,12 +20,12 @@ import {
   type CommissionSnapshot,
 } from "@/lib/api";
 
-const statuses: CommissionSnapshot["status"][] = [
-  "PENDING",
-  "PAYABLE",
-  "PAID",
-  "CANCELLED",
-  "DISPUTED",
+const statuses: { value: CommissionSnapshot["status"]; label: string }[] = [
+  { value: "PENDING", label: "En attente" },
+  { value: "PAYABLE", label: "Payable" },
+  { value: "PAID", label: "Payée" },
+  { value: "CANCELLED", label: "Annulée" },
+  { value: "DISPUTED", label: "Contestée" },
 ];
 
 export default function CommissionsPage() {
@@ -24,6 +33,7 @@ export default function CommissionsPage() {
   const [snapshots, setSnapshots] = useState<CommissionSnapshot[]>([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [updatingId, setUpdatingId] = useState<number | null>(null);
 
   async function refresh() {
     setError("");
@@ -34,6 +44,8 @@ export default function CommissionsPage() {
       if (current.authenticated) {
         const response = await listCommissionSnapshots();
         setSnapshots(response.results);
+      } else {
+        setSnapshots([]);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Chargement impossible.");
@@ -54,10 +66,9 @@ export default function CommissionsPage() {
         setAuth(current);
         if (current.authenticated) {
           const response = await listCommissionSnapshots();
-          if (isCancelled) {
-            return;
+          if (!isCancelled) {
+            setSnapshots(response.results);
           }
-          setSnapshots(response.results);
         }
       } catch (err) {
         if (!isCancelled) {
@@ -78,123 +89,151 @@ export default function CommissionsPage() {
 
   async function updateStatus(id: number, status: CommissionSnapshot["status"]) {
     setError("");
+    setUpdatingId(id);
     try {
-      await updateCommissionSnapshotStatus(id, status);
-      await refresh();
+      const updated = await updateCommissionSnapshotStatus(id, status);
+      setSnapshots((current) =>
+        current.map((snapshot) => (snapshot.id === id ? updated : snapshot)),
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Mise a jour impossible.");
+      setError(err instanceof Error ? err.message : "Mise à jour impossible.");
+    } finally {
+      setUpdatingId(null);
     }
   }
 
   return (
-    <main className="min-h-screen bg-white text-black">
-      <header className="border-b border-border">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
-          <div>
-            <Link className="text-sm font-black uppercase text-primary" href="/">
-              Horus
-            </Link>
-            <h1 className="text-2xl font-black">Commissions</h1>
-          </div>
-          <nav className="flex gap-4 text-sm font-black">
-            <Link href="/contracts/new">Nouveau contrat</Link>
-            <Link href="/contracts">Contrats</Link>
-            <Link href="/users">Utilisateurs</Link>
-            <Link href="/login">Connexion</Link>
-          </nav>
+    <AppShell
+      actions={
+        <button
+          aria-label="Actualiser les commissions"
+          className="flex size-10 items-center justify-center rounded-md border border-border bg-white hover:bg-muted disabled:text-black/30"
+          disabled={isLoading}
+          onClick={() => void refresh()}
+          title="Actualiser"
+          type="button"
+        >
+          <RefreshCw className={isLoading ? "animate-spin" : ""} size={18} />
+        </button>
+      }
+      description="Calcul, validation et paiement des apporteurs"
+      title="Commissions"
+    >
+      <div className="space-y-5">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <MetricCard
+            icon={BadgePercent}
+            label="En attente"
+            value={countByStatus(snapshots, "PENDING")}
+          />
+          <MetricCard
+            icon={CircleDollarSign}
+            label="Payables"
+            tone="warning"
+            value={countByStatus(snapshots, "PAYABLE")}
+          />
+          <MetricCard
+            icon={WalletCards}
+            label="Payées"
+            tone="success"
+            value={countByStatus(snapshots, "PAID")}
+          />
+          <MetricCard
+            icon={Banknote}
+            label="Total commissions"
+            tone="primary"
+            value={formatMoney(totalCommission(snapshots))}
+          />
         </div>
-      </header>
 
-      <section className="mx-auto max-w-7xl px-6 py-8">
-        {isLoading ? <p className="font-bold text-black/60">Chargement...</p> : null}
-        {!isLoading && !auth?.authenticated ? (
-          <div className="rounded-md border border-border p-4">
-            <p className="font-black">Session requise</p>
-            <Link className="mt-2 inline-block font-black text-primary" href="/login">
-              Se connecter
-            </Link>
-          </div>
-        ) : null}
-        {error ? (
-          <p className="mb-4 rounded-md border border-primary p-3 text-sm font-bold text-primary">
-            {error}
-          </p>
-        ) : null}
+        {error ? <AlertMessage>{error}</AlertMessage> : null}
 
-        <div className="grid grid-cols-4 gap-4">
-          <Metric label="En attente" value={countByStatus(snapshots, "PENDING")} />
-          <Metric label="Payables" value={countByStatus(snapshots, "PAYABLE")} />
-          <Metric label="Payees" value={countByStatus(snapshots, "PAID")} />
-          <Metric label="Total commissions" value={formatMoney(totalCommission(snapshots))} />
-        </div>
-
-        <div className="mt-8 overflow-hidden rounded-md border border-border">
-          <table className="w-full border-collapse text-left text-sm">
-            <thead className="bg-muted">
-              <tr>
-                <th className="px-4 py-3 font-black">Contrat</th>
-                <th className="px-4 py-3 font-black">Apporteur</th>
-                <th className="px-4 py-3 font-black">Prime RC</th>
-                <th className="px-4 py-3 font-black">Commission</th>
-                <th className="px-4 py-3 font-black">Net Horus</th>
-                <th className="px-4 py-3 font-black">Statut</th>
-              </tr>
-            </thead>
-            <tbody>
-              {snapshots.map((snapshot) => (
-                <tr className="border-t border-border" key={snapshot.id}>
-                  <td className="px-4 py-3 font-black">#{snapshot.contract}</td>
-                  <td className="px-4 py-3">
-                    <p className="font-black">{snapshot.contributor_username}</p>
-                    <p className="text-xs font-bold text-black/50">{snapshot.organization_name}</p>
-                  </td>
-                  <td className="px-4 py-3 font-bold">{formatMoney(snapshot.prime_rc_ass)}</td>
-                  <td className="px-4 py-3">
-                    <p className="font-black">{formatMoney(snapshot.commission_total)}</p>
-                    <p className="text-xs font-bold text-black/50">
-                      {snapshot.commission_percent_used}% +{" "}
-                      {formatMoney(snapshot.commission_fixed_policy_fee_used)}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3 font-bold">{formatMoney(snapshot.net_to_horus)}</td>
-                  <td className="px-4 py-3">
-                    <select
-                      className="h-10 rounded-md border border-border bg-white px-3 font-bold outline-none focus:border-primary"
-                      onChange={(event) =>
-                        updateStatus(snapshot.id, event.target.value as CommissionSnapshot["status"])
-                      }
-                      value={snapshot.status}
-                    >
-                      {statuses.map((status) => (
-                        <option key={status} value={status}>
-                          {status}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                </tr>
-              ))}
-              {!snapshots.length && !isLoading ? (
-                <tr>
-                  <td className="px-4 py-6 font-bold text-black/50" colSpan={6}>
-                    Aucune commission calculee.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-md border border-border p-4">
-      <p className="text-sm font-bold text-black/60">{label}</p>
-      <p className="mt-2 text-2xl font-black">{value}</p>
-    </div>
+        <section className="app-surface overflow-hidden">
+          {isLoading ? (
+            <LoadingState label="Chargement des commissions" />
+          ) : !auth?.authenticated ? (
+            <EmptyState
+              action={<PageAction href="/login">Se connecter</PageAction>}
+              title="Session requise"
+            />
+          ) : snapshots.length ? (
+            <div className="overflow-x-auto">
+              <table className="app-table app-table-responsive">
+                <thead>
+                  <tr>
+                    <th>Contrat</th>
+                    <th>Apporteur</th>
+                    <th>Prime RC</th>
+                    <th>Commission</th>
+                    <th>Net Horus</th>
+                    <th>Statut</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {snapshots.map((snapshot) => (
+                    <tr key={snapshot.id}>
+                      <td data-label="Contrat">
+                        <a className="font-extrabold text-primary" href={`/contracts/${snapshot.contract}`}>
+                          #{snapshot.contract}
+                        </a>
+                      </td>
+                      <td data-label="Apporteur">
+                        <div>
+                          <p className="font-extrabold">{snapshot.contributor_username}</p>
+                          <p className="mt-1 text-xs font-semibold text-black/45">
+                            {snapshot.organization_name}
+                          </p>
+                        </div>
+                      </td>
+                      <td data-label="Prime RC" className="font-bold">
+                        {formatMoney(snapshot.prime_rc_ass)}
+                      </td>
+                      <td data-label="Commission">
+                        <div>
+                          <p className="font-extrabold">{formatMoney(snapshot.commission_total)}</p>
+                          <p className="mt-1 text-xs font-semibold text-black/45">
+                            {snapshot.commission_percent_used}% +{" "}
+                            {formatMoney(snapshot.commission_fixed_policy_fee_used)}
+                          </p>
+                        </div>
+                      </td>
+                      <td data-label="Net Horus" className="font-extrabold">
+                        {formatMoney(snapshot.net_to_horus)}
+                      </td>
+                      <td data-label="Statut">
+                        <div className="flex items-center gap-2">
+                          <StatusBadge status={snapshot.status} />
+                          <select
+                            aria-label={`Modifier le statut de la commission ${snapshot.id}`}
+                            className="app-field h-9 min-h-9 w-auto py-0 text-xs"
+                            disabled={updatingId === snapshot.id}
+                            onChange={(event) =>
+                              updateStatus(
+                                snapshot.id,
+                                event.target.value as CommissionSnapshot["status"],
+                              )
+                            }
+                            value={snapshot.status}
+                          >
+                            {statuses.map((status) => (
+                              <option key={status.value} value={status.value}>
+                                {status.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState title="Aucune commission calculée" />
+          )}
+        </section>
+      </div>
+    </AppShell>
   );
 }
 
@@ -207,5 +246,5 @@ function totalCommission(snapshots: CommissionSnapshot[]) {
 }
 
 function formatMoney(value: number) {
-  return new Intl.NumberFormat("fr-FR").format(value) + " FCFA";
+  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value) + " FCFA";
 }

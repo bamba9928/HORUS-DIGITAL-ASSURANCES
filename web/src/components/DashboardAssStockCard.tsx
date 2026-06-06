@@ -1,8 +1,10 @@
 "use client";
 
+import { ArrowRight, QrCode, RefreshCw, ServerCog } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { StatusBadge } from "@/components/ui";
 import { fetchAssStockQr, fetchCurrentUser, type AssStockQr, type AuthState } from "@/lib/api";
 
 export function DashboardAssStockCard() {
@@ -66,52 +68,83 @@ export function DashboardAssStockCard() {
   }, []);
 
   return (
-    <div className="rounded-md border border-border bg-white p-5">
+    <section className="app-surface flex min-h-full flex-col p-5 sm:p-6">
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-sm font-black uppercase text-primary">ASS</p>
-          <h2 className="mt-1 text-xl font-black">Stock QR</h2>
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 items-center justify-center rounded-md bg-primary text-white">
+            <QrCode size={20} />
+          </span>
+          <div>
+            <p className="text-xs font-extrabold uppercase text-black/45">ASS</p>
+            <h2 className="font-extrabold">Stock QR</h2>
+          </div>
         </div>
         <button
-          className="h-10 rounded-md bg-black px-4 text-sm font-black text-white disabled:bg-black/30"
+          aria-label="Actualiser le stock QR"
+          className="flex size-10 items-center justify-center rounded-md border border-border bg-white text-black transition hover:bg-muted disabled:text-black/25"
           disabled={isLoading}
           onClick={refresh}
+          title="Actualiser"
           type="button"
         >
-          Actualiser
+          <RefreshCw className={isLoading ? "animate-spin" : ""} size={18} />
         </button>
       </div>
 
-      <div className="mt-5 grid grid-cols-3 gap-4">
-        <StockMetric
-          label="Disponibles"
-          value={stock?.available_qr === null || stock?.available_qr === undefined ? "-" : stock.available_qr}
-        />
-        <StockMetric label="Mode" value={stock?.mode ?? "-"} />
-        <StockMetric label="Statut" value={stock?.operation_status || "-"} />
+      <div className="mt-7 flex items-end justify-between gap-4">
+        <div>
+          <p className="text-sm font-bold text-black/48">QR disponibles</p>
+          <p className="mt-1 text-4xl font-black">
+            {stock?.available_qr === null || stock?.available_qr === undefined
+              ? "-"
+              : stock.available_qr}
+          </p>
+        </div>
+        {stock?.operation_status ? <StatusBadge status={stock.operation_status} /> : null}
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-4">
-        <p className="text-sm font-bold text-black/60">
+      <div className="mt-6 grid grid-cols-2 gap-3">
+        <StockMetric icon={ServerCog} label="Mode" value={stock?.mode ?? "-"} />
+        <StockMetric
+          icon={QrCode}
+          label="Disponibilité"
+          value={stock?.available_qr ? "Active" : "-"}
+        />
+      </div>
+
+      <div className="mt-auto flex items-center justify-between gap-4 pt-6">
+        <p className="line-clamp-2 text-sm font-medium text-black/48">
           {isLoading
             ? "Chargement..."
             : stock?.operation_message ||
               error ||
-              (auth?.authenticated ? "Aucun controle disponible." : "Session admin ou finance requise.")}
+              (auth?.authenticated ? "Contrôle indisponible." : "Session requise.")}
         </p>
-        <Link className="text-sm font-black text-primary" href="/integrations/ass">
-          Details
+        <Link className="inline-flex shrink-0 items-center gap-1 text-sm font-extrabold text-primary" href="/integrations/ass">
+          Détails
+          <ArrowRight size={15} />
         </Link>
       </div>
-    </div>
+    </section>
   );
 }
 
-function StockMetric({ label, value }: { label: string; value: string | number }) {
+function StockMetric({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof QrCode;
+  label: string;
+  value: string | number;
+}) {
   return (
-    <div className="rounded-md bg-muted p-4">
-      <p className="text-xs font-black uppercase text-black/50">{label}</p>
-      <p className="mt-2 text-2xl font-black">{value}</p>
+    <div className="rounded-md bg-muted p-3.5">
+      <div className="flex items-center gap-2 text-black/45">
+        <Icon size={15} />
+        <p className="text-xs font-extrabold uppercase">{label}</p>
+      </div>
+      <p className="mt-2 font-extrabold capitalize">{value}</p>
     </div>
   );
 }

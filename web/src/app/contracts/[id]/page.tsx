@@ -1,9 +1,21 @@
 "use client";
 
+import {
+  ArrowLeft,
+  Banknote,
+  Calculator,
+  CheckCircle2,
+  ExternalLink,
+  FilePenLine,
+  Send,
+  ShieldCheck,
+} from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { AppShell } from "@/components/AppShell";
+import { AlertMessage, MetricCard, StatusBadge, humanize } from "@/components/ui";
 import {
   calculateContractQuote,
   confirmContractPayment,
@@ -124,68 +136,75 @@ export default function ContractDetailPage() {
   }
 
   return (
-    <main className="min-h-screen bg-white text-black">
-      <header className="border-b border-border">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
-          <div>
-            <Link className="text-sm font-black uppercase text-primary" href="/">
-              Horus
-            </Link>
-            <h1 className="text-2xl font-black">Contrat #{params.id}</h1>
-          </div>
-          <nav className="flex gap-4 text-sm font-black">
-            <Link href="/contracts">Contrats</Link>
-            <Link href="/contracts/new">Nouveau contrat</Link>
-            <Link href="/commissions">Commissions</Link>
-          </nav>
-        </div>
-      </header>
-
-      <section className="mx-auto max-w-7xl px-6 py-8">
-        {!hasValidContractId ? <ErrorMessage message="Identifiant contrat invalide." /> : null}
-        {isLoading ? <p className="font-bold text-black/60">Chargement...</p> : null}
-        {error ? <ErrorMessage message={error} /> : null}
+    <AppShell
+      actions={
+        <Link
+          aria-label="Retour aux contrats"
+          className="flex h-10 items-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-extrabold hover:bg-muted"
+          href="/contracts"
+        >
+          <ArrowLeft size={17} />
+          <span className="hidden sm:inline">Retour</span>
+        </Link>
+      }
+      description={contract ? contract.vehicle_label || humanize(contract.contract_type) : "Détail du dossier"}
+      title={`Contrat #${params.id}`}
+    >
+      <div className="space-y-5">
+        {!hasValidContractId ? <AlertMessage>Identifiant contrat invalide.</AlertMessage> : null}
+        {isLoading ? <p className="font-bold text-black/50">Chargement...</p> : null}
+        {error ? <AlertMessage>{error}</AlertMessage> : null}
         {contract ? (
-          <div className="grid grid-cols-[1fr_360px] gap-6">
-            <div className="space-y-6">
-              <Panel title="Resume">
-                <div className="grid grid-cols-3 gap-4">
-                  <Field label="Type" value={contract.contract_type} />
-                  <Field label="Statut Horus" value={contract.internal_status} />
-                  <Field label="Statut ASS" value={contract.ass_status || "-"} />
-                  <Field label="Vehicule" value={contract.vehicle_label || "-"} />
-                  <Field label="Apporteur" value={contract.contributor_username} />
-                  <Field label="Groupe" value={contract.organization_name} />
+          <>
+            <section className="app-surface p-5 sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge status={contract.internal_status} />
+                    {contract.ass_status ? <StatusBadge status={contract.ass_status} /> : null}
+                  </div>
+                  <h2 className="mt-4 text-xl font-black">
+                    {contract.vehicle_label || humanize(contract.contract_type)}
+                  </h2>
+                  <p className="mt-1 text-sm font-semibold text-black/48">
+                    {contract.contributor_username} · {contract.organization_name}
+                  </p>
                 </div>
-              </Panel>
-
-              <Panel title="Montants">
-                <div className="grid grid-cols-4 gap-4">
-                  <Metric label="Prime RC" value={formatNullableMoney(contract.prime_rc_ass)} />
-                  <Metric label="Police ASS" value={formatMoney(contract.cout_police_ass)} />
-                  <Metric label="TTC ASS" value={formatNullableMoney(contract.ttc_ass)} />
-                  <Metric label="A payer test" value={payableAmount === null ? "-" : formatMoney(payableAmount)} />
+                <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-right sm:grid-cols-3">
+                  <Field label="Type" value={humanize(contract.contract_type)} />
+                  <Field label="Immatriculation" value={contract.immatriculation || "-"} />
+                  <Field label="Créé le" value={formatDate(contract.created_at)} />
                 </div>
-              </Panel>
+              </div>
+            </section>
 
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+              <MetricCard icon={Banknote} label="Prime RC" value={formatNullableMoney(contract.prime_rc_ass)} />
+              <MetricCard icon={ShieldCheck} label="Police ASS" value={formatMoney(contract.cout_police_ass)} />
+              <MetricCard icon={Banknote} label="TTC ASS" tone="primary" value={formatNullableMoney(contract.ttc_ass)} />
+              <MetricCard icon={CheckCircle2} label="Montant attendu" tone="success" value={payableAmount === null ? "-" : formatMoney(payableAmount)} />
+            </div>
+
+            <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+              <div className="space-y-5">
               <Panel title="Paiements">
-                <div className="overflow-hidden rounded-md border border-border">
-                  <table className="w-full border-collapse text-left text-sm">
-                    <thead className="bg-muted">
+                <div className="overflow-x-auto">
+                  <table className="app-table app-table-responsive">
+                    <thead>
                       <tr>
-                        <th className="px-4 py-3 font-black">Reference</th>
-                        <th className="px-4 py-3 font-black">Montant</th>
-                        <th className="px-4 py-3 font-black">Statut</th>
-                        <th className="px-4 py-3 font-black">Date</th>
+                        <th>Référence</th>
+                        <th>Montant</th>
+                        <th>Statut</th>
+                        <th>Date</th>
                       </tr>
                     </thead>
                     <tbody>
                       {contract.payments.map((payment) => (
-                        <tr className="border-t border-border" key={payment.id}>
-                          <td className="px-4 py-3 font-bold">{payment.external_reference || "-"}</td>
-                          <td className="px-4 py-3 font-bold">{formatMoney(payment.amount)}</td>
-                          <td className="px-4 py-3 font-bold">{payment.status}</td>
-                          <td className="px-4 py-3 font-bold">{formatDate(payment.created_at)}</td>
+                        <tr key={payment.id}>
+                          <td className="font-bold" data-label="Référence">{payment.external_reference || "-"}</td>
+                          <td className="font-extrabold" data-label="Montant">{formatMoney(payment.amount)}</td>
+                          <td data-label="Statut"><StatusBadge status={payment.status} /></td>
+                          <td className="font-semibold text-black/58" data-label="Date">{formatDate(payment.created_at)}</td>
                         </tr>
                       ))}
                       {!contract.payments.length ? (
@@ -202,43 +221,32 @@ export default function ContractDetailPage() {
 
               <Panel title="Commission snapshot">
                 {contract.commission_snapshot ? (
-                  <div className="grid grid-cols-4 gap-4">
-                    <Metric
-                      label="Commission"
-                      value={formatMoney(contract.commission_snapshot.commission_total)}
-                    />
-                    <Metric
-                      label="Net Horus"
-                      value={formatMoney(contract.commission_snapshot.net_to_horus)}
-                    />
-                    <Metric
-                      label="Prime RC"
-                      value={formatMoney(contract.commission_snapshot.commission_prime_rc_amount)}
-                    />
-                    <Metric
-                      label="Police"
-                      value={formatMoney(contract.commission_snapshot.commission_policy_fee_amount)}
-                    />
+                  <div className="grid grid-cols-2 gap-x-8 gap-y-5 sm:grid-cols-4">
+                    <Field label="Commission" value={formatMoney(contract.commission_snapshot.commission_total)} />
+                    <Field label="Net Horus" value={formatMoney(contract.commission_snapshot.net_to_horus)} />
+                    <Field label="Part Prime RC" value={formatMoney(contract.commission_snapshot.commission_prime_rc_amount)} />
+                    <Field label="Part police" value={formatMoney(contract.commission_snapshot.commission_policy_fee_amount)} />
                   </div>
                 ) : (
-                  <p className="font-bold text-black/60">Aucun snapshot commission.</p>
+                  <p className="font-bold text-black/48">Aucun snapshot commission.</p>
                 )}
               </Panel>
             </div>
 
-            <aside className="space-y-6">
+            <aside className="space-y-5 xl:sticky xl:top-24">
               <Panel title="Actions">
                 <div className="space-y-3">
                   {contract.internal_status === "DRAFT" ? (
                     <Link
-                      className="flex h-11 w-full items-center justify-center rounded-md bg-primary px-4 font-black text-white"
+                      className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 font-extrabold text-white hover:bg-[var(--primary-strong)]"
                       href={`/contracts/new?draftId=${contract.id}`}
                     >
+                      <FilePenLine size={17} />
                       Reprendre brouillon
                     </Link>
                   ) : null}
                   <button
-                    className="h-11 w-full rounded-md border border-black px-4 font-black text-black disabled:border-black/20 disabled:text-black/30"
+                    className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-border bg-white px-4 font-extrabold hover:bg-muted disabled:text-black/30"
                     disabled={
                       isActionLoading ||
                       !["DRAFT", "QUOTE_READY"].includes(contract.internal_status)
@@ -246,10 +254,11 @@ export default function ContractDetailPage() {
                     onClick={calculateQuote}
                     type="button"
                   >
+                    <Calculator size={17} />
                     Calculer devis
                   </button>
                   <button
-                    className="h-11 w-full rounded-md bg-black px-4 font-black text-white disabled:bg-black/30"
+                    className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-black px-4 font-extrabold text-white hover:bg-black/80 disabled:bg-black/25"
                     disabled={
                       isActionLoading ||
                       payableAmount === null ||
@@ -258,15 +267,17 @@ export default function ContractDetailPage() {
                     onClick={confirmPayment}
                     type="button"
                   >
-                    Confirmer paiement test
+                    <Banknote size={17} />
+                    Confirmer paiement
                   </button>
                   <button
-                    className="h-11 w-full rounded-md bg-primary px-4 font-black text-white disabled:bg-black/30"
+                    className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 font-extrabold text-white hover:bg-[var(--primary-strong)] disabled:bg-black/25"
                     disabled={isActionLoading || contract.internal_status !== "PAID"}
                     onClick={emitContract}
                     type="button"
                   >
-                    Emettre le contrat ASS
+                    <Send size={17} />
+                    Émettre le contrat
                   </button>
                 </div>
               </Panel>
@@ -301,34 +312,28 @@ export default function ContractDetailPage() {
               />
             </aside>
           </div>
+          </>
         ) : null}
-      </section>
-    </main>
+      </div>
+    </AppShell>
   );
 }
 
 function Panel({ children, title }: { children: React.ReactNode; title: string }) {
   return (
-    <section className="rounded-md border border-border p-5">
-      <h2 className="text-lg font-black">{title}</h2>
-      <div className="mt-4">{children}</div>
+    <section className="app-surface overflow-hidden">
+      <div className="border-b border-border px-5 py-4">
+        <h2 className="font-extrabold">{title}</h2>
+      </div>
+      <div className="p-5">{children}</div>
     </section>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-md bg-muted p-4">
-      <p className="text-xs font-black uppercase text-black/50">{label}</p>
-      <p className="mt-2 text-xl font-black">{value}</p>
-    </div>
   );
 }
 
 function Field({ label, value }: { label: string; value: string | number }) {
   return (
     <div>
-      <p className="text-xs font-black uppercase text-black/50">{label}</p>
+      <p className="text-xs font-extrabold uppercase text-black/45">{label}</p>
       <p className="mt-1 font-bold">{value}</p>
     </div>
   );
@@ -396,22 +401,24 @@ function AttestationsPanel({
               <div className="flex flex-wrap gap-3 text-sm font-black">
                 {attestation.link_attestation_digitale ? (
                   <a
-                    className="text-primary"
+                    className="inline-flex items-center gap-1 text-primary"
                     href={attestation.link_attestation_digitale}
                     rel="noreferrer"
                     target="_blank"
                   >
-                    Attestation digitale
+                    Attestation
+                    <ExternalLink size={13} />
                   </a>
                 ) : null}
                 {attestation.link_attestation_cedeao ? (
                   <a
-                    className="text-primary"
+                    className="inline-flex items-center gap-1 text-primary"
                     href={attestation.link_attestation_cedeao}
                     rel="noreferrer"
                     target="_blank"
                   >
                     Carte brune
+                    <ExternalLink size={13} />
                   </a>
                 ) : null}
               </div>
@@ -422,14 +429,6 @@ function AttestationsPanel({
         <p className="font-bold text-black/60">Aucune attestation emise.</p>
       )}
     </Panel>
-  );
-}
-
-function ErrorMessage({ message }: { message: string }) {
-  return (
-    <p className="mb-4 rounded-md border border-primary bg-white p-3 text-sm font-bold text-primary">
-      {message}
-    </p>
   );
 }
 

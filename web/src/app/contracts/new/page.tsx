@@ -1,9 +1,11 @@
 "use client";
 
-import Link from "next/link";
+import { Check, Circle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { AppShell } from "@/components/AppShell";
 import { SelectSearch } from "@/components/SelectSearch";
+import { AlertMessage, StatusBadge } from "@/components/ui";
 import {
   calculateContractQuote,
   confirmContractPayment,
@@ -632,42 +634,32 @@ export default function NewContractPage() {
   }
 
   return (
-    <main className="min-h-screen bg-white text-black">
-      <header className="border-b border-border">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
-          <div>
-            <Link className="text-sm font-black text-primary" href="/">
-              Dashboard
-            </Link>
-            <h1 className="mt-1 text-2xl font-black">Nouveau contrat ASS</h1>
-            {isEditingDraft ? (
-              <p className="mt-1 text-sm font-black text-black/60">
-                Reprise du brouillon #{savedDraftId}
-              </p>
-            ) : null}
-          </div>
-          <span className="rounded-md border border-primary px-3 py-1 text-sm font-black text-primary">
-            Mode test
-          </span>
-        </div>
-      </header>
-
-      <div className="mx-auto grid max-w-7xl grid-cols-[240px_1fr] gap-8 px-6 py-8 max-lg:grid-cols-1">
-        <aside className="space-y-3 border-r border-border pr-6">
+    <AppShell
+      actions={<StatusBadge status="MODE TEST" />}
+      description={isEditingDraft ? `Reprise du brouillon #${savedDraftId}` : "Souscription et émission ASS"}
+      title="Nouveau contrat"
+    >
+      <div className="grid items-start gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <aside className="app-surface sticky top-24 hidden p-3 lg:block">
           {[
             "Informations",
             "Options",
-            "Resume",
-            "Paiement / emission",
+            "Résumé",
+            "Paiement",
           ].map((item, index) => {
               const active = step === index + 1;
+              const completed = step > index + 1;
               const disabled =
                 (index === 1 && !canCalculateQuote) ||
                 (index >= 2 && !quote);
               return (
                 <button
-                  className={`block w-full rounded-md px-3 py-3 text-left text-sm font-black ${
-                    active ? "bg-black text-white" : "bg-white hover:bg-muted"
+                  className={`flex w-full items-center gap-3 rounded-md px-3 py-3 text-left text-sm font-extrabold transition ${
+                    active
+                      ? "bg-primary text-white"
+                      : completed
+                        ? "text-emerald-700 hover:bg-emerald-50"
+                        : "bg-white text-black/58 hover:bg-muted"
                   }`}
                   disabled={disabled}
                   key={item}
@@ -680,18 +672,49 @@ export default function NewContractPage() {
                   }}
                   type="button"
                 >
-                  {index + 1}. {item}
+                  <span
+                    className={`flex size-7 shrink-0 items-center justify-center rounded-full border text-xs ${
+                      active
+                        ? "border-white/40 bg-white/15"
+                        : completed
+                          ? "border-emerald-200 bg-emerald-50"
+                          : "border-border"
+                    }`}
+                  >
+                    {completed ? <Check size={14} /> : index + 1}
+                  </span>
+                  {item}
                 </button>
               );
             })}
         </aside>
 
-        <section className="space-y-6">
-          {error ? (
-            <div className="rounded-md border border-primary bg-primary/5 px-4 py-3 text-sm font-bold text-primary">
-              {error}
-            </div>
-          ) : null}
+        <section className="min-w-0 space-y-4">
+          <div className="app-surface grid grid-cols-4 gap-1 p-1.5 lg:hidden">
+            {["Informations", "Options", "Résumé", "Paiement"].map((item, index) => {
+              const active = step === index + 1;
+              return (
+                <button
+                  className={`flex h-11 min-w-0 items-center justify-center gap-1 rounded-md px-1 text-[10px] font-extrabold sm:text-xs ${
+                    active ? "bg-primary text-white" : "text-black/48"
+                  }`}
+                  disabled={(index === 1 && !canCalculateQuote) || (index >= 2 && !quote)}
+                  key={item}
+                  onClick={() => setStep(index + 1)}
+                  type="button"
+                >
+                  {active ? <Circle fill="currentColor" size={9} /> : null}
+                  <span className="truncate">
+                    {index + 1}. {index === 0 ? "Infos" : item}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {error ? <AlertMessage>{error}</AlertMessage> : null}
+
+          <div className="app-surface p-5 sm:p-6">
 
           {step === 1 ? (
             <div className="max-w-6xl space-y-6">
@@ -930,9 +953,10 @@ export default function NewContractPage() {
               </button>
             </div>
           ) : null}
+          </div>
         </section>
       </div>
-    </main>
+    </AppShell>
   );
 }
 

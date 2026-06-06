@@ -1,5 +1,6 @@
 "use client";
 
+import { Check, ChevronDown, Plus, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { SelectOption } from "@/lib/api";
@@ -72,36 +73,38 @@ export function SelectSearch({
   }, []);
 
   return (
-    <div className="block" ref={containerRef}>
-      <span className="text-sm font-black">{label}</span>
+    <div className="relative block" ref={containerRef}>
+      <span className="text-xs font-extrabold uppercase text-black/52">{label}</span>
       {helper ? (
-        <span className="mt-1 block text-xs font-semibold text-black/55">{helper}</span>
+        <span className="mt-1 block text-xs font-semibold text-black/48">{helper}</span>
       ) : null}
       <button
-        className="mt-2 flex h-11 w-full items-center justify-between rounded-md border border-border px-3 text-left text-sm font-bold outline-none focus:border-primary disabled:bg-muted disabled:text-black/35"
+        className="app-field mt-1.5 flex items-center justify-between text-left"
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
-        <span>{selected?.label ?? placeholder}</span>
-        <span aria-hidden="true" className="text-xs">
-          {open ? "Fermer" : "Ouvrir"}
-        </span>
+        <span className={selected ? "" : "text-black/40"}>{selected?.label ?? placeholder}</span>
+        <ChevronDown className={`shrink-0 text-black/45 transition ${open ? "rotate-180" : ""}`} size={17} />
       </button>
       {open ? (
-        <div className="mt-2 rounded-md border border-border bg-white">
-          <input
-            className="h-10 w-full border-b border-border px-3 text-sm font-bold outline-none focus:border-primary"
-            disabled={disabled}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder={placeholder}
-            type="search"
-            value={search}
-          />
+        <div className="absolute inset-x-0 top-full z-40 mt-1.5 overflow-hidden rounded-md border border-border bg-white shadow-xl">
+          <label className="relative block border-b border-border">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/38" size={16} />
+            <input
+              autoFocus
+              className="h-11 w-full pl-9 pr-3 text-sm font-bold outline-none"
+              disabled={disabled}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={placeholder}
+              type="search"
+              value={search}
+            />
+          </label>
           <div className="max-h-44 overflow-auto">
             {canCreate ? (
               <button
-                className="block w-full border-b border-border px-3 py-2 text-left text-sm font-black text-primary disabled:text-black/35"
+                className="flex w-full items-center gap-2 border-b border-border px-3 py-2.5 text-left text-sm font-extrabold text-primary hover:bg-muted disabled:text-black/35"
                 disabled={creating}
                 onClick={async () => {
                   const labelToCreate = search.trim();
@@ -119,6 +122,7 @@ export function SelectSearch({
                 }}
                 type="button"
               >
+                <Plus size={15} />
                 {creating ? "Ajout..." : `${createLabel} "${search.trim()}"`}
               </button>
             ) : null}
@@ -128,7 +132,7 @@ export function SelectSearch({
                 const active = optionValue === value;
                 return (
                   <button
-                    className={`block w-full px-3 py-2 text-left text-sm font-bold ${
+                    className={`flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm font-bold ${
                       active ? "bg-primary text-white" : "hover:bg-muted"
                     } disabled:text-black/35`}
                     disabled={disabled || option.enabled === false}
@@ -140,8 +144,11 @@ export function SelectSearch({
                     }}
                     type="button"
                   >
-                    {option.label}
-                    {option.enabled === false ? " - A venir" : ""}
+                    <span>
+                      {option.label}
+                      {option.enabled === false ? " - À venir" : ""}
+                    </span>
+                    {active ? <Check size={15} /> : null}
                   </button>
                 );
               })

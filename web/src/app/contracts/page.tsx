@@ -1,9 +1,26 @@
 "use client";
 
+import {
+  Banknote,
+  FilePlus2,
+  Files,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { AppShell } from "@/components/AppShell";
+import {
+  AlertMessage,
+  EmptyState,
+  MetricCard,
+  PageAction,
+  StatusBadge,
+  humanize,
+} from "@/components/ui";
 import {
   listContracts,
   type ContractInternalStatus,
@@ -11,21 +28,21 @@ import {
 } from "@/lib/api";
 
 const statuses: { label: string; value: ContractInternalStatus | "" }[] = [
-  { label: "Tous", value: "" },
+  { label: "Tous les statuts", value: "" },
   { label: "Brouillons", value: "DRAFT" },
-  { label: "Devis prets", value: "QUOTE_READY" },
-  { label: "Paiement en attente", value: "PAYMENT_PENDING" },
-  { label: "Payes", value: "PAID" },
-  { label: "Emis", value: "ISSUED" },
-  { label: "Annules", value: "CANCELLED" },
+  { label: "Devis prêts", value: "QUOTE_READY" },
+  { label: "Paiement attendu", value: "PAYMENT_PENDING" },
+  { label: "Payés", value: "PAID" },
+  { label: "Émis", value: "ISSUED" },
+  { label: "Annulés", value: "CANCELLED" },
 ];
 
 const contractTypes = [
-  { label: "Tous types", value: "" },
-  { label: "Auto mono", value: "AUTO_MONO" },
+  { label: "Tous les types", value: "" },
+  { label: "Automobile", value: "AUTO_MONO" },
   { label: "Moto", value: "MOTO" },
   { label: "Flotte", value: "FLEET" },
-  { label: "Bus ecole", value: "BUS_SCHOOL" },
+  { label: "Bus école", value: "BUS_SCHOOL" },
   { label: "Garage", value: "GARAGE" },
 ];
 
@@ -34,6 +51,7 @@ export default function ContractsPage() {
   const [contracts, setContracts] = useState<ContractListItem[]>([]);
   const [status, setStatus] = useState<ContractInternalStatus | "">("");
   const [contractType, setContractType] = useState("");
+  const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
@@ -80,9 +98,31 @@ export default function ContractsPage() {
     };
   }, []);
 
+  const visibleContracts = useMemo(() => {
+    const normalized = search.trim().toLowerCase();
+    if (!normalized) {
+      return contracts;
+    }
+    return contracts.filter((contract) =>
+      [
+        contract.id,
+        contract.vehicle_label,
+        contract.immatriculation,
+        contract.contributor_username,
+        contract.organization_name,
+        contract.attestation_number,
+        contract.reference_externe,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalized),
+    );
+  }, [contracts, search]);
+
   const totals = useMemo(
     () => ({
       count: contracts.length,
+      issued: contracts.filter((contract) => contract.internal_status === "ISSUED").length,
       primeRc: contracts.reduce((total, contract) => total + (contract.prime_rc_ass ?? 0), 0),
       ttc: contracts.reduce((total, contract) => total + (contract.ttc_ass ?? 0), 0),
     }),
@@ -100,167 +140,174 @@ export default function ContractsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-white text-black">
-      <header className="border-b border-border">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
-          <div>
-            <Link className="text-sm font-black uppercase text-primary" href="/">
-              Horus
-            </Link>
-            <h1 className="text-2xl font-black">Contrats</h1>
-          </div>
-          <nav className="flex gap-4 text-sm font-black">
-            <Link href="/contracts/new">Nouveau contrat</Link>
-            <Link href="/commissions">Commissions</Link>
-            <Link href="/integrations/ass">Integration ASS</Link>
-            <Link href="/login">Connexion</Link>
-          </nav>
-        </div>
-      </header>
-
-      <section className="mx-auto max-w-7xl px-6 py-8">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div className="grid grid-cols-3 gap-4">
-            <Metric label="Contrats" value={isLoading ? "-" : totals.count} />
-            <Metric label="Prime RC" value={formatMoney(totals.primeRc)} />
-            <Metric label="TTC" value={formatMoney(totals.ttc)} />
-          </div>
-
-          <div className="flex gap-3">
-            <label className="block">
-              <span className="text-xs font-black uppercase text-black/50">Statut</span>
-              <select
-                className="mt-2 h-11 rounded-md border border-border bg-white px-3 font-bold outline-none focus:border-primary"
-                onChange={(event) => updateStatus(event.target.value as ContractInternalStatus | "")}
-                value={status}
-              >
-                {statuses.map((item) => (
-                  <option key={item.label} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
-              <span className="text-xs font-black uppercase text-black/50">Type</span>
-              <select
-                className="mt-2 h-11 rounded-md border border-border bg-white px-3 font-bold outline-none focus:border-primary"
-                onChange={(event) => updateContractType(event.target.value)}
-                value={contractType}
-              >
-                {contractTypes.map((item) => (
-                  <option key={item.label} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+    <AppShell
+      actions={<PageAction href="/contracts/new" icon={FilePlus2}>Nouveau contrat</PageAction>}
+      description="Recherche, suivi et émission des dossiers"
+      title="Contrats"
+    >
+      <div className="space-y-5">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <MetricCard icon={Files} label="Dossiers" value={isLoading ? "-" : totals.count} />
+          <MetricCard icon={ShieldCheck} label="Émis" tone="success" value={isLoading ? "-" : totals.issued} />
+          <MetricCard icon={Banknote} label="Prime RC" value={formatMoney(totals.primeRc)} />
+          <MetricCard icon={Banknote} label="TTC encaissé" tone="primary" value={formatMoney(totals.ttc)} />
         </div>
 
-        {error ? (
-          <p className="mt-4 rounded-md border border-primary p-3 text-sm font-bold text-primary">
-            {error}
-          </p>
-        ) : null}
+        {error ? <AlertMessage>{error}</AlertMessage> : null}
 
-        <div className="mt-6 overflow-hidden rounded-md border border-border">
-          <table className="w-full border-collapse text-left text-sm">
-            <thead className="bg-muted">
-              <tr>
-                <th className="px-4 py-3 font-black">Contrat</th>
-                <th className="px-4 py-3 font-black">Vehicule</th>
-                <th className="px-4 py-3 font-black">Apporteur</th>
-                <th className="px-4 py-3 font-black">Prime RC</th>
-                <th className="px-4 py-3 font-black">TTC</th>
-                <th className="px-4 py-3 font-black">Attestation</th>
-                <th className="px-4 py-3 font-black">Mise a jour</th>
-              </tr>
-            </thead>
-            <tbody>
-              {contracts.map((contract) => (
-                <tr
-                  className="cursor-pointer border-t border-border align-top hover:bg-muted"
-                  key={contract.id}
-                  onClick={() => router.push(`/contracts/${contract.id}`)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      router.push(`/contracts/${contract.id}`);
-                    }
-                  }}
-                  role="link"
-                  tabIndex={0}
-                >
-                  <td className="px-4 py-3">
-                    <Link
-                      className="font-black text-primary"
-                      href={`/contracts/${contract.id}`}
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      #{contract.id}
-                    </Link>
-                    <p className="text-xs font-bold text-black/50">{contract.contract_type}</p>
-                    <StatusBadge status={contract.internal_status} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="font-bold">{contract.vehicle_label || "-"}</p>
-                    <p className="text-xs font-bold text-black/50">
-                      {contract.immatriculation || "-"}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="font-bold">{contract.contributor_username}</p>
-                    <p className="text-xs font-bold text-black/50">{contract.organization_name}</p>
-                  </td>
-                  <td className="px-4 py-3 font-bold">
-                    {contract.prime_rc_ass === null ? "-" : formatMoney(contract.prime_rc_ass)}
-                  </td>
-                  <td className="px-4 py-3 font-bold">
-                    {contract.ttc_ass === null ? "-" : formatMoney(contract.ttc_ass)}
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="font-bold">{contract.attestation_number || "-"}</p>
-                    <p className="text-xs font-bold text-black/50">
-                      {contract.reference_externe || "-"}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3 font-bold">{formatDate(contract.updated_at)}</td>
-                </tr>
+        <section className="app-surface overflow-hidden">
+          <div className="grid gap-3 border-b border-border p-4 md:grid-cols-[minmax(220px,1fr)_180px_180px_auto]">
+            <label className="relative block">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/38"
+                size={17}
+              />
+              <input
+                aria-label="Rechercher un contrat"
+                className="app-field app-field-with-icon"
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Rechercher par véhicule, apporteur, attestation..."
+                type="search"
+                value={search}
+              />
+            </label>
+            <select
+              aria-label="Filtrer par statut"
+              className="app-field"
+              onChange={(event) => updateStatus(event.target.value as ContractInternalStatus | "")}
+              value={status}
+            >
+              {statuses.map((item) => (
+                <option key={item.label} value={item.value}>
+                  {item.label}
+                </option>
               ))}
-              {!contracts.length ? (
-                <tr>
-                  <td className="px-4 py-6 font-bold text-black/50" colSpan={7}>
-                    {isLoading ? "Chargement..." : "Aucun contrat trouve."}
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </main>
-  );
-}
+            </select>
+            <select
+              aria-label="Filtrer par type"
+              className="app-field"
+              onChange={(event) => updateContractType(event.target.value)}
+              value={contractType}
+            >
+              {contractTypes.map((item) => (
+                <option key={item.label} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <button
+              aria-label="Actualiser les contrats"
+              className="flex size-11 items-center justify-center rounded-md border border-border bg-white hover:bg-muted disabled:text-black/30"
+              disabled={isLoading}
+              onClick={() => void refresh()}
+              title="Actualiser"
+              type="button"
+            >
+              <RefreshCw className={isLoading ? "animate-spin" : ""} size={18} />
+            </button>
+          </div>
 
-function Metric({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="min-w-40 rounded-md border border-border p-4">
-      <p className="text-sm font-bold text-black/60">{label}</p>
-      <p className="mt-2 text-2xl font-black">{value}</p>
-    </div>
-  );
-}
-
-function StatusBadge({ status }: { status: ContractInternalStatus }) {
-  return (
-    <span className="mt-2 inline-flex rounded-md bg-black px-2 py-1 text-xs font-black text-white">
-      {status}
-    </span>
+          {visibleContracts.length ? (
+            <div className="overflow-x-auto">
+              <table className="app-table app-table-responsive">
+                <thead>
+                  <tr>
+                    <th>Dossier</th>
+                    <th>Véhicule</th>
+                    <th>Apporteur</th>
+                    <th>Montants</th>
+                    <th>Attestation</th>
+                    <th>Mise à jour</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleContracts.map((contract) => (
+                    <tr
+                      className="cursor-pointer"
+                      key={contract.id}
+                      onClick={() => router.push(`/contracts/${contract.id}`)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          router.push(`/contracts/${contract.id}`);
+                        }
+                      }}
+                      role="link"
+                      tabIndex={0}
+                    >
+                      <td data-label="Dossier">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Link
+                              className="font-extrabold text-primary"
+                              href={`/contracts/${contract.id}`}
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              #{contract.id}
+                            </Link>
+                            <StatusBadge status={contract.internal_status} />
+                          </div>
+                          <p className="mt-1 text-xs font-bold text-black/45">
+                            {humanize(contract.contract_type)}
+                          </p>
+                        </div>
+                      </td>
+                      <td data-label="Véhicule">
+                        <div>
+                          <p className="font-extrabold">{contract.vehicle_label || "Non renseigné"}</p>
+                          <p className="mt-1 text-xs font-semibold text-black/45">
+                            {contract.immatriculation || "Sans immatriculation"}
+                          </p>
+                        </div>
+                      </td>
+                      <td data-label="Apporteur">
+                        <div>
+                          <p className="font-bold">{contract.contributor_username}</p>
+                          <p className="mt-1 text-xs font-semibold text-black/45">
+                            {contract.organization_name}
+                          </p>
+                        </div>
+                      </td>
+                      <td data-label="Montants">
+                        <div>
+                          <p className="font-extrabold">
+                            {contract.ttc_ass === null ? "-" : formatMoney(contract.ttc_ass)}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold text-black/45">
+                            RC {contract.prime_rc_ass === null ? "-" : formatMoney(contract.prime_rc_ass)}
+                          </p>
+                        </div>
+                      </td>
+                      <td data-label="Attestation">
+                        <div>
+                          <p className="font-bold">{contract.attestation_number || "-"}</p>
+                          <p className="mt-1 max-w-40 truncate text-xs font-semibold text-black/45">
+                            {contract.reference_externe || "Non émise"}
+                          </p>
+                        </div>
+                      </td>
+                      <td data-label="Mise à jour" className="whitespace-nowrap font-semibold text-black/60">
+                        {formatDate(contract.updated_at)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState
+              action={<PageAction href="/contracts/new" icon={FilePlus2}>Créer un contrat</PageAction>}
+              description={search ? "Modifiez votre recherche ou les filtres." : undefined}
+              title={isLoading ? "Chargement des contrats" : "Aucun contrat trouvé"}
+            />
+          )}
+        </section>
+      </div>
+    </AppShell>
   );
 }
 
 function formatMoney(value: number) {
-  return new Intl.NumberFormat("fr-FR").format(value) + " FCFA";
+  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value) + " FCFA";
 }
 
 function formatDate(value: string) {

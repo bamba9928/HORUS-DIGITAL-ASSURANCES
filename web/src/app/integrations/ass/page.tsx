@@ -1,8 +1,16 @@
 "use client";
 
-import Link from "next/link";
+import { KeyRound, QrCode, RefreshCw, ServerCog, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { AppShell } from "@/components/AppShell";
+import {
+  AlertMessage,
+  EmptyState,
+  MetricCard,
+  PageAction,
+  StatusBadge,
+} from "@/components/ui";
 import { fetchAssStockQr, fetchCurrentUser, type AssStockQr, type AuthState } from "@/lib/api";
 
 export default function AssIntegrationPage() {
@@ -18,11 +26,12 @@ export default function AssIntegrationPage() {
       const current = await fetchCurrentUser();
       setAuth(current);
       if (current.authenticated) {
-        const response = await fetchAssStockQr();
-        setStock(response);
+        setStock(await fetchAssStockQr());
+      } else {
+        setStock(null);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Controle ASS impossible.");
+      setError(err instanceof Error ? err.message : "Contrôle ASS impossible.");
       setStock(null);
     } finally {
       setIsLoading(false);
@@ -41,15 +50,13 @@ export default function AssIntegrationPage() {
         setAuth(current);
         if (current.authenticated) {
           const response = await fetchAssStockQr();
-          if (isCancelled) {
-            return;
+          if (!isCancelled) {
+            setStock(response);
           }
-          setStock(response);
         }
       } catch (err) {
         if (!isCancelled) {
-          setError(err instanceof Error ? err.message : "Controle ASS impossible.");
-          setStock(null);
+          setError(err instanceof Error ? err.message : "Contrôle ASS impossible.");
         }
       } finally {
         if (!isCancelled) {
@@ -65,103 +72,123 @@ export default function AssIntegrationPage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-white text-black">
-      <header className="border-b border-border">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
-          <div>
-            <Link className="text-sm font-black uppercase text-primary" href="/">
-              Horus
-            </Link>
-            <h1 className="text-2xl font-black">Integration ASS</h1>
-          </div>
-          <nav className="flex gap-4 text-sm font-black">
-            <Link href="/contracts/new">Nouveau contrat</Link>
-            <Link href="/contracts">Contrats</Link>
-            <Link href="/commissions">Commissions</Link>
-            <Link href="/users">Utilisateurs</Link>
-            <Link href="/login">Connexion</Link>
-          </nav>
-        </div>
-      </header>
+    <AppShell
+      actions={
+        <button
+          aria-label="Actualiser le statut ASS"
+          className="flex size-10 items-center justify-center rounded-md border border-border bg-white hover:bg-muted disabled:text-black/30"
+          disabled={isLoading || !auth?.authenticated}
+          onClick={() => void refresh()}
+          title="Actualiser"
+          type="button"
+        >
+          <RefreshCw className={isLoading ? "animate-spin" : ""} size={18} />
+        </button>
+      }
+      description="Supervision de la connexion partenaire"
+      title="Intégration ASS"
+    >
+      <div className="space-y-5">
+        {error ? <AlertMessage>{error}</AlertMessage> : null}
 
-      <section className="mx-auto max-w-5xl px-6 py-8">
-        {!auth?.authenticated && !isLoading ? <LoginNotice /> : null}
-        {error ? <ErrorMessage message={error} /> : null}
-
-        <div className="grid grid-cols-[1fr_280px] gap-6">
-          <div className="rounded-md border border-border p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-black">Stock QR ASS</h2>
-                <p className="mt-2 max-w-2xl text-sm font-bold text-black/60">
-                  Controle interne Horus. Le frontend appelle seulement le backend Horus.
-                </p>
-              </div>
-              <button
-                className="h-11 rounded-md bg-primary px-4 text-sm font-black text-white disabled:bg-black/30"
-                disabled={isLoading || !auth?.authenticated}
-                onClick={refresh}
-                type="button"
-              >
-                Actualiser
-              </button>
-            </div>
-
-            <div className="mt-8 grid grid-cols-3 gap-4">
-              <Metric
-                label="QR disponibles"
-                value={stock?.available_qr === null || stock?.available_qr === undefined ? "-" : stock.available_qr}
+        {!isLoading && !auth?.authenticated ? (
+          <section className="app-surface">
+            <EmptyState
+              action={<PageAction href="/login">Se connecter</PageAction>}
+              title="Session requise"
+            />
+          </section>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+              <MetricCard
+                detail="Attestations disponibles"
+                icon={QrCode}
+                label="Stock QR"
+                tone="primary"
+                value={
+                  stock?.available_qr === null || stock?.available_qr === undefined
+                    ? "-"
+                    : stock.available_qr
+                }
               />
-              <Metric label="Mode" value={stock?.mode ?? "-"} />
-              <Metric label="Statut ASS" value={stock?.operation_status || "-"} />
+              <MetricCard
+                detail="Configuration active"
+                icon={ServerCog}
+                label="Mode"
+                value={stock?.mode ?? "-"}
+              />
+              <MetricCard
+                detail={stock?.operation_message || "En attente de contrôle"}
+                icon={ShieldCheck}
+                label="Statut"
+                tone={stock?.operation_status === "SUCCESS" ? "success" : "warning"}
+                value={stock?.operation_status || "-"}
+              />
             </div>
 
-            <div className="mt-6 rounded-md bg-muted p-4">
-              <p className="text-sm font-black">Message</p>
-              <p className="mt-1 text-sm font-bold text-black/60">
-                {isLoading ? "Chargement..." : stock?.operation_message || "-"}
-              </p>
-            </div>
-          </div>
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(300px,0.8fr)]">
+              <section className="app-surface p-5 sm:p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-extrabold uppercase text-black/45">Connexion</p>
+                    <h2 className="mt-1 text-lg font-extrabold">État du service partenaire</h2>
+                  </div>
+                  {stock?.operation_status ? <StatusBadge status={stock.operation_status} /> : null}
+                </div>
+                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                  <InfoRow label="Environnement" value={stock?.mode === "real" ? "Réel" : "Mock"} />
+                  <InfoRow
+                    label="Stock disponible"
+                    value={
+                      stock?.available_qr === null || stock?.available_qr === undefined
+                        ? "Indisponible"
+                        : `${stock.available_qr} QR`
+                    }
+                  />
+                  <InfoRow label="Dernier statut" value={stock?.operation_status || "-"} />
+                  <InfoRow label="Message" value={stock?.operation_message || "-"} />
+                </div>
+              </section>
 
-          <aside className="rounded-md border border-border p-5">
-            <h2 className="text-lg font-black">Garde-fous</h2>
-            <div className="mt-4 space-y-3 text-sm font-bold text-black/65">
-              <p>Les appels ASS reels restent desactives par defaut.</p>
-              <p>Le mot de passe ASS reste cote backend Horus.</p>
-              <p>Emission contrat et controle stock QR restent separes.</p>
+              <section className="app-surface p-5 sm:p-6">
+                <div className="flex items-center gap-3">
+                  <span className="flex size-10 items-center justify-center rounded-md bg-black text-white">
+                    <KeyRound size={19} />
+                  </span>
+                  <div>
+                    <p className="font-extrabold">Sécurité</p>
+                    <p className="text-sm font-medium text-black/45">Accès partenaire protégé</p>
+                  </div>
+                </div>
+                <div className="mt-5 space-y-3">
+                  <SecurityRow label="Secrets" value="Backend uniquement" />
+                  <SecurityRow label="Appels réels" value="Activation explicite" />
+                  <SecurityRow label="Authentification" value="Session Horus" />
+                </div>
+              </section>
             </div>
-          </aside>
-        </div>
-      </section>
-    </main>
+          </>
+        )}
+      </div>
+    </AppShell>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string | number }) {
+function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-border p-4">
-      <p className="text-sm font-bold text-black/60">{label}</p>
-      <p className="mt-2 text-2xl font-black">{value}</p>
+    <div className="rounded-md bg-muted p-4">
+      <p className="text-xs font-extrabold uppercase text-black/45">{label}</p>
+      <p className="mt-2 font-bold">{value}</p>
     </div>
   );
 }
 
-function LoginNotice() {
+function SecurityRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="mb-4 rounded-md border border-border p-4">
-      <p className="font-black">Session requise</p>
-      <Link className="mt-2 inline-block font-black text-primary" href="/login">
-        Se connecter
-      </Link>
+    <div className="flex items-center justify-between gap-4 border-b border-border pb-3 last:border-0 last:pb-0">
+      <span className="text-sm font-semibold text-black/48">{label}</span>
+      <span className="text-right text-sm font-extrabold">{value}</span>
     </div>
-  );
-}
-
-function ErrorMessage({ message }: { message: string }) {
-  return (
-    <p className="mb-4 rounded-md border border-primary bg-white p-3 text-sm font-bold text-primary">
-      {message}
-    </p>
   );
 }
