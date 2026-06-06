@@ -2,8 +2,8 @@ CONTRACT_TYPES = [
     {"value": "AUTO_MONO", "label": "Auto mono", "enabled": True},
     {"value": "MOTO", "label": "Moto", "enabled": True},
     {"value": "FLEET", "label": "Flotte", "enabled": True},
-    {"value": "BUS_SCHOOL", "label": "Bus ecole", "enabled": False},
-    {"value": "GARAGE", "label": "Garage", "enabled": False},
+    {"value": "BUS_SCHOOL", "label": "Bus ecole", "enabled": True},
+    {"value": "GARAGE", "label": "Garage", "enabled": True},
 ]
 
 GUARANTEES = [

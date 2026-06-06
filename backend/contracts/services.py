@@ -11,7 +11,7 @@ from commissions.models import CommissionSnapshot
 from commissions.services import CommissionNotConfiguredError, build_commission_snapshot_values
 from contracts.models import Contract
 from integrations.ass.client import AssClient
-from integrations.ass.constants import ASS_POLICY_FEE, ASS_SUCCESS_STATUS
+from integrations.ass.constants import ASS_CANCEL_METHODS, ASS_POLICY_FEE, ASS_SUCCESS_STATUS
 from payments.services import has_confirmed_payment
 
 
@@ -20,6 +20,10 @@ class QuoteCalculationError(ValueError):
 
 
 class ContractIssueError(ValueError):
+    pass
+
+
+class ContractCancelError(ValueError):
     pass
 
 
@@ -80,6 +84,30 @@ def calculate_contract_quote(contract, ass_client=None):
             "prime_rc_ass": prime_rc_ass,
             "policy_fee_ass": ASS_POLICY_FEE,
             "items": items + trailer_items,
+            "warnings": [],
+        }
+    elif contract.contract_type == Contract.ContractType.BUS_SCHOOL:
+        request_payload = build_bus_rc_payload(contract.draft_payload.get("vehicle", {}))
+        ass_response = ass_client.calculate_bus_rc(request_payload)
+        prime_rc_ass = extract_prime_rc(ass_response)
+        response_payload = ass_response
+        quote = {
+            "type": "BUS_SCHOOL",
+            "prime_rc_ass": prime_rc_ass,
+            "policy_fee_ass": ASS_POLICY_FEE,
+            "items": [],
+            "warnings": [],
+        }
+    elif contract.contract_type == Contract.ContractType.GARAGE:
+        request_payload = build_garage_rc_payload(contract.draft_payload.get("garage", {}))
+        ass_response = ass_client.calculate_garage_rc(request_payload)
+        prime_rc_ass = extract_prime_rc(ass_response)
+        response_payload = ass_response
+        quote = {
+            "type": "GARAGE",
+            "prime_rc_ass": prime_rc_ass,
+            "policy_fee_ass": ASS_POLICY_FEE,
+            "items": [],
             "warnings": [],
         }
     else:
@@ -154,6 +182,14 @@ def issue_contract(contract, ass_client=None):
             "remorques": trailer_responses,
         }
         issue_data = fleet_issue_items[0]
+    elif contract.contract_type == Contract.ContractType.BUS_SCHOOL:
+        request_payload = build_bus_issue_payload(contract, reference)
+        ass_response = ass_client.issue_bus_contract(request_payload)
+        issue_data = extract_issue_data(ass_response)
+    elif contract.contract_type == Contract.ContractType.GARAGE:
+        request_payload = build_garage_issue_payload(contract, reference)
+        ass_response = ass_client.issue_garage_contract(request_payload)
+        issue_data = extract_issue_data(ass_response)
     else:
         raise ContractIssueError("Ce type de contrat n'est pas encore actif pour emission.")
 
@@ -211,6 +247,43 @@ def issue_contract(contract, ass_client=None):
         "date_expiration": contract.date_expiration.isoformat() if contract.date_expiration else None,
         "link_attestation_digitale": contract.link_attestation_digitale,
         "link_attestation_cedeao": contract.link_attestation_cedeao,
+    }
+
+
+@transaction.atomic
+def cancel_contract(contract, method, motif="", ass_client=None):
+    ass_client = ass_client or AssClient()
+    if contract.internal_status != Contract.InternalStatus.ISSUED:
+        raise ContractCancelError("Seuls les contrats emis peuvent etre annules.")
+    if method not in ASS_CANCEL_METHODS:
+        raise ContractCancelError(
+            f"Methode invalide. Valeurs acceptees: {', '.join(sorted(ASS_CANCEL_METHODS))}"
+        )
+    if not contract.reference_trx_partner:
+        raise ContractCancelError("Reference de transaction requise pour l'annulation.")
+
+    request_payload = {
+        "referenceTrxPartner": contract.reference_trx_partner,
+        "methode": method,
+        "motif": motif,
+    }
+    ass_response = ass_client.cancel_attestation(request_payload)
+    if not is_success_response(ass_response):
+        raise ContractCancelError(response_message(ass_response, "Annulation ASS echouee."))
+
+    contract.internal_status = Contract.InternalStatus.CANCELLED
+    contract.ass_status = Contract.AssStatus.CANCELLED
+    contract.save(update_fields=["internal_status", "ass_status", "updated_at"])
+
+    snapshot = getattr(contract, "commission_snapshot", None)
+    if snapshot is not None:
+        snapshot.status = CommissionSnapshot.Status.CANCELLED
+        snapshot.save(update_fields=["status", "updated_at"])
+
+    return {
+        "contract_id": contract.id,
+        "internal_status": contract.internal_status,
+        "ass_status": contract.ass_status,
     }
 
 
@@ -508,6 +581,71 @@ def build_fleet_trailer_issue_payloads(
             )
 
     return payloads
+
+
+def build_bus_rc_payload(vehicle):
+    return {
+        "puissanceFiscale": to_int(vehicle.get("fiscalPower"), default=1),
+        "duree": to_int(vehicle.get("duration"), default=1),
+        "periodicite": vehicle_periodicity(vehicle),
+        "genre": vehicle.get("subcategory"),
+        "energie": vehicle.get("energy"),
+        "nombrePlace": to_int(vehicle.get("seats"), default=1),
+    }
+
+
+def build_bus_issue_payload(contract, reference):
+    vehicle = contract.draft_payload.get("vehicle", {})
+    duration = to_int(vehicle.get("duration"), default=1)
+    periodicity = vehicle_periodicity(vehicle)
+    policyholder = policyholder_payload(contract.draft_payload)
+    insured = insured_payload(contract.draft_payload)
+    return {
+        "responsabiliteCivile": contract.prime_rc_ass,
+        "dateEffet": vehicle.get("effectDate"),
+        "dateExpiration": calculate_expiration_date(vehicle.get("effectDate"), duration, periodicity),
+        "duree": duration,
+        "periodicite": periodicity,
+        "police": f"HORUS-BUS-{contract.id}",
+        "referenceTrxPartner": reference,
+        "souscripteur": policyholder,
+        "assure": insured,
+        "vehicule": {
+            **build_issue_vehicle_payload(vehicle),
+            "nombrePlace": to_int(vehicle.get("seats"), default=1),
+        },
+    }
+
+
+def build_garage_rc_payload(garage):
+    return {
+        "duree": to_int(garage.get("duration"), default=1),
+        "periodicite": vehicle_periodicity(garage),
+        "genre": garage.get("subcategory"),
+        "nombreCarte": to_int(garage.get("nombreCarte"), default=1),
+    }
+
+
+def build_garage_issue_payload(contract, reference):
+    garage = contract.draft_payload.get("garage", {})
+    duration = to_int(garage.get("duration"), default=1)
+    periodicity = vehicle_periodicity(garage)
+    policyholder = policyholder_payload(contract.draft_payload)
+    insured = insured_payload(contract.draft_payload)
+    return {
+        "responsabiliteCivile": contract.prime_rc_ass,
+        "dateEffet": garage.get("effectDate"),
+        "dateExpiration": calculate_expiration_date(garage.get("effectDate"), duration, periodicity),
+        "duree": duration,
+        "periodicite": periodicity,
+        "genre": garage.get("subcategory"),
+        "nombreCarte": to_int(garage.get("nombreCarte"), default=1),
+        "immatriculation": garage.get("registration") or "",
+        "police": f"HORUS-GARAGE-{contract.id}",
+        "referenceTrxPartner": reference,
+        "souscripteur": policyholder,
+        "assure": insured,
+    }
 
 
 def extract_prime_rc(ass_response):

@@ -9,6 +9,7 @@ import {
   FilePenLine,
   Send,
   ShieldCheck,
+  XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -18,9 +19,11 @@ import { AppShell } from "@/components/AppShell";
 import { AlertMessage, MetricCard, StatusBadge, humanize } from "@/components/ui";
 import {
   calculateContractQuote,
+  cancelContract,
   confirmContractPayment,
   fetchContractDetail,
   issueContract,
+  type CancelMethod,
   type ContractQuote,
   type ContractDetail,
   type IssueResult,
@@ -36,6 +39,9 @@ export default function ContractDetailPage() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(hasValidContractId);
   const [isActionLoading, setIsActionLoading] = useState(false);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [cancelMethod, setCancelMethod] = useState<CancelMethod>("ANNULER");
+  const [cancelMotif, setCancelMotif] = useState("");
 
   async function refresh() {
     setError("");
@@ -130,6 +136,22 @@ export default function ContractDetailPage() {
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Emission impossible.");
+    } finally {
+      setIsActionLoading(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!contract) return;
+    setError("");
+    setIsActionLoading(true);
+    setShowCancelDialog(false);
+    try {
+      await cancelContract(contract.id, cancelMethod, cancelMotif);
+      setCancelMotif("");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Annulation impossible.");
     } finally {
       setIsActionLoading(false);
     }
@@ -279,6 +301,17 @@ export default function ContractDetailPage() {
                     <Send size={17} />
                     Émettre le contrat
                   </button>
+                  {contract.internal_status === "ISSUED" ? (
+                    <button
+                      className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-red-300 bg-red-50 px-4 font-extrabold text-red-700 hover:bg-red-100 disabled:opacity-40"
+                      disabled={isActionLoading}
+                      onClick={() => setShowCancelDialog(true)}
+                      type="button"
+                    >
+                      <XCircle size={17} />
+                      Annuler le contrat
+                    </button>
+                  ) : null}
                 </div>
               </Panel>
 
@@ -315,6 +348,62 @@ export default function ContractDetailPage() {
           </>
         ) : null}
       </div>
+
+      {showCancelDialog ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-black">Annuler le contrat</h3>
+            <p className="mt-1 text-sm font-semibold text-black/50">
+              Cette action est irréversible. L'attestation sera annulée auprès de l'ASS.
+            </p>
+            <div className="mt-5 space-y-4">
+              <div>
+                <label className="mb-1.5 block text-xs font-extrabold uppercase text-black/50">
+                  Méthode
+                </label>
+                <select
+                  className="h-10 w-full rounded-md border border-border bg-white px-3 text-sm font-semibold"
+                  onChange={(e) => setCancelMethod(e.target.value as CancelMethod)}
+                  value={cancelMethod}
+                >
+                  <option value="ANNULER">Annuler</option>
+                  <option value="RESILIER">Résilier</option>
+                  <option value="SUSPENDRE">Suspendre</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-extrabold uppercase text-black/50">
+                  Motif (optionnel)
+                </label>
+                <input
+                  className="h-10 w-full rounded-md border border-border bg-white px-3 text-sm font-semibold"
+                  onChange={(e) => setCancelMotif(e.target.value)}
+                  placeholder="Ex: Erreur de saisie"
+                  type="text"
+                  value={cancelMotif}
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex gap-3">
+              <button
+                className="flex h-10 flex-1 items-center justify-center rounded-md border border-border font-extrabold hover:bg-muted"
+                onClick={() => setShowCancelDialog(false)}
+                type="button"
+              >
+                Annuler
+              </button>
+              <button
+                className="flex h-10 flex-1 items-center justify-center gap-2 rounded-md bg-red-600 font-extrabold text-white hover:bg-red-700"
+                onClick={handleCancel}
+                type="button"
+              >
+                <XCircle size={16} />
+                Confirmer annulation
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </AppShell>
   );
 }

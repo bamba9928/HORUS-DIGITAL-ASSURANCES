@@ -2,12 +2,17 @@ import requests
 from django.conf import settings
 
 from integrations.ass.constants import (
+    ASS_ENDPOINT_CANCEL_ATTESTATION,
     ASS_ENDPOINT_ISSUE_AUTO,
+    ASS_ENDPOINT_ISSUE_BUS,
     ASS_ENDPOINT_ISSUE_FLEET,
+    ASS_ENDPOINT_ISSUE_GARAGE,
     ASS_ENDPOINT_ISSUE_MOTO,
     ASS_ENDPOINT_ISSUE_TRAILER,
     ASS_ENDPOINT_RC_AUTO,
+    ASS_ENDPOINT_RC_BUS,
     ASS_ENDPOINT_RC_FLEET,
+    ASS_ENDPOINT_RC_GARAGE,
     ASS_ENDPOINT_RC_MOTO,
     ASS_ENDPOINT_RC_TRAILER,
     ASS_ENDPOINT_STOCK_QR,
@@ -58,6 +63,16 @@ class AssClient:
             return self._mock_trailer_rc_response(payload)
         return self._post(ASS_ENDPOINT_RC_TRAILER, payload)
 
+    def calculate_bus_rc(self, payload):
+        if settings.ASS_MOCK_ENABLED:
+            return self._mock_bus_rc_response(payload)
+        return self._post(ASS_ENDPOINT_RC_BUS, payload)
+
+    def calculate_garage_rc(self, payload):
+        if settings.ASS_MOCK_ENABLED:
+            return self._mock_garage_rc_response(payload)
+        return self._post(ASS_ENDPOINT_RC_GARAGE, payload)
+
     def issue_auto_contract(self, payload):
         if settings.ASS_MOCK_ENABLED:
             return self._mock_issue_response(payload)
@@ -77,6 +92,21 @@ class AssClient:
         if settings.ASS_MOCK_ENABLED:
             return self._mock_trailer_issue_response(payload)
         return self._post(ASS_ENDPOINT_ISSUE_TRAILER, payload)
+
+    def issue_bus_contract(self, payload):
+        if settings.ASS_MOCK_ENABLED:
+            return self._mock_issue_response(payload)
+        return self._post(ASS_ENDPOINT_ISSUE_BUS, payload)
+
+    def issue_garage_contract(self, payload):
+        if settings.ASS_MOCK_ENABLED:
+            return self._mock_garage_issue_response(payload)
+        return self._post(ASS_ENDPOINT_ISSUE_GARAGE, payload)
+
+    def cancel_attestation(self, payload):
+        if settings.ASS_MOCK_ENABLED:
+            return self._mock_cancel_response(payload)
+        return self._post(ASS_ENDPOINT_CANCEL_ATTESTATION, payload)
 
     def stock_qr(self, payload=None):
         if settings.ASS_MOCK_ENABLED:
@@ -158,6 +188,29 @@ class AssClient:
             "data": prime,
         }
 
+    def _mock_bus_rc_response(self, payload):
+        puissance = int(payload.get("puissanceFiscale") or 1)
+        places = int(payload.get("nombrePlace") or 1)
+        duree = int(payload.get("duree") or 1)
+        prime = max(50000, puissance * places * duree * 500)
+        return {
+            "code": 2000,
+            "operationStatus": ASS_SUCCESS_STATUS,
+            "operationMessage": "Operation mockee avec succes.",
+            "data": prime,
+        }
+
+    def _mock_garage_rc_response(self, payload):
+        cartes = int(payload.get("nombreCarte") or 1)
+        duree = int(payload.get("duree") or 1)
+        prime = max(30000, cartes * duree * 20000)
+        return {
+            "code": 2000,
+            "operationStatus": ASS_SUCCESS_STATUS,
+            "operationMessage": "Operation mockee avec succes.",
+            "data": prime,
+        }
+
     def _mock_issue_response(self, payload):
         reference = payload.get("referenceTrxPartner", "MOCK-REFERENCE")
         immatriculation = (payload.get("vehicule") or {}).get("immatriculation", "")
@@ -214,6 +267,29 @@ class AssClient:
                 "linkCarteBrune": f"https://example.test/cedeao/{attestation_number}",
                 "immatriculation": payload.get("immatriculation", ""),
             },
+        }
+
+    def _mock_garage_issue_response(self, payload):
+        reference = payload.get("referenceTrxPartner", "MOCK-GARAGE-REFERENCE")
+        attestation_number = f"SNGAR-{reference[-8:]}"
+        return {
+            "operationStatus": ASS_SUCCESS_STATUS,
+            "operationMessage": "Emission garage mockee avec succes.",
+            "data": {
+                "referenceExterne": reference,
+                "attestationNumber": attestation_number,
+                "secureKey": "MOCK-GARAGE-SECURE-KEY",
+                "dateExpiration": "2026-09-01T23:59:59",
+                "linkAttestation": f"https://example.test/attestation/{attestation_number}",
+                "linkCarteBrune": f"https://example.test/cedeao/{attestation_number}",
+                "immatriculation": payload.get("immatriculation", ""),
+            },
+        }
+
+    def _mock_cancel_response(self, payload):
+        return {
+            "operationStatus": ASS_SUCCESS_STATUS,
+            "operationMessage": "Attestation annulee avec succes (mock).",
         }
 
     def _mock_verify_registration_response(self, payload):

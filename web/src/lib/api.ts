@@ -495,3 +495,22 @@ export async function issueContract(contractId: number) {
     method: "POST",
   });
 }
+
+export type CancelMethod = "ANNULER" | "RESILIER" | "SUSPENDRE";
+
+export type CancelResult = {
+  contract_id: number;
+  internal_status: "CANCELLED";
+  ass_status: "ANNULE";
+};
+
+export async function cancelContract(
+  contractId: number,
+  method: CancelMethod,
+  motif = "",
+) {
+  return fetchApi<CancelResult>(`/contracts/${contractId}/cancel/`, {
+    method: "POST",
+    body: JSON.stringify({ methode: method, motif }),
+  });
+}

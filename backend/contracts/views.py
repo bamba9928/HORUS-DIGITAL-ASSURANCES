@@ -9,9 +9,11 @@ from contracts.models import Contract
 from contracts.serializers import ContractDetailSerializer, ContractDraftSerializer, ContractListSerializer
 from commissions.services import CommissionNotConfiguredError
 from contracts.services import (
+    ContractCancelError,
     ContractIssueError,
     QuoteCalculationError,
     calculate_contract_quote,
+    cancel_contract,
     issue_contract,
 )
 from payments.services import PaymentConfirmationError, confirm_manual_payment
@@ -175,6 +177,21 @@ class ContractIssueView(AuthenticatedContractMixin, APIView):
         try:
             result = issue_contract(contract)
         except (ContractIssueError, CommissionNotConfiguredError, ValidationError) as exc:
+            return Response({"detail": str(exc)}, status=400)
+
+        return Response(result)
+
+
+class ContractCancelView(AuthenticatedContractMixin, APIView):
+    def post(self, request, pk):
+        contract = get_object_or_404(get_contract_queryset_for_user(request.user), pk=pk)
+
+        method = request.data.get("methode", "")
+        motif = request.data.get("motif", "")
+
+        try:
+            result = cancel_contract(contract, method=method, motif=motif)
+        except (ContractCancelError, ValidationError) as exc:
             return Response({"detail": str(exc)}, status=400)
 
         return Response(result)

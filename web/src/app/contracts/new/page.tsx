@@ -125,10 +125,30 @@ const emptyPerson: PersonForm = {
   address: "",
 };
 
+type GarageForm = {
+  subcategory: string;
+  nombreCarte: string;
+  registration: string;
+  effectDate: string;
+  duration: string;
+  periodicity: string;
+  personType: string;
+};
+
 const emptyGuaranteeOptions: GuaranteeOptionsForm = {
   garantiesOptPT: "",
   garantiesOptAR: "",
   garantiesOptAS: "",
+};
+
+const emptyGarage: GarageForm = {
+  subcategory: "",
+  nombreCarte: "1",
+  registration: "",
+  effectDate: "",
+  duration: "1",
+  periodicity: "MOIS",
+  personType: "PHYSIQUE",
 };
 
 const durationOptions = Array.from({ length: 12 }, (_, index) => ({
@@ -170,6 +190,7 @@ export default function NewContractPage() {
   const [payment, setPayment] = useState<ConfirmedPayment | null>(null);
   const [issueResult, setIssueResult] = useState<IssueResult | null>(null);
   const [autoSaveState, setAutoSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [garage, setGarage] = useState<GarageForm>(emptyGarage);
   const [registrationVerification, setRegistrationVerification] =
     useState<AssRegistrationVerification | null>(null);
   const [verifyingRegistration, setVerifyingRegistration] = useState(false);
@@ -234,6 +255,7 @@ export default function NewContractPage() {
         savedDraftIdRef.current = draft.id;
         setVehicle(hydratedPayload.vehicle);
         setFleetVehicles(hydratedPayload.fleetVehicles);
+        setGarage(hydratedPayload.garage);
         setSelectedGuarantees(hydratedPayload.selectedGuarantees);
         setGuaranteeOptions(hydratedPayload.guaranteeOptions);
         setPolicyholder(hydratedPayload.policyholder);
@@ -279,11 +301,11 @@ export default function NewContractPage() {
   const displayContractTypes = useMemo(
     () =>
       contractTypes
-        .filter((option) => ["AUTO_MONO", "FLEET"].includes(String(option.value)))
+        .filter((option) =>
+          ["AUTO_MONO", "FLEET", "BUS_SCHOOL", "GARAGE"].includes(String(option.value)),
+        )
         .map((option) =>
-          option.value === "AUTO_MONO"
-            ? { ...option, label: "Auto mono" }
-            : option,
+          option.value === "AUTO_MONO" ? { ...option, label: "Auto mono" } : option,
         ),
     [contractTypes],
   );
@@ -296,7 +318,9 @@ export default function NewContractPage() {
   );
 
   const isFleet = contractType === "FLEET";
-  const isMoto = !isFleet && vehicle.category === "C5";
+  const isBusSchool = contractType === "BUS_SCHOOL";
+  const isGarage = contractType === "GARAGE";
+  const isMoto = !isFleet && !isBusSchool && !isGarage && vehicle.category === "C5";
   const effectiveContractType = isMoto ? "MOTO" : contractType;
   const canSaveVehicle = Boolean(
     vehicle.brand &&
@@ -307,7 +331,15 @@ export default function NewContractPage() {
       vehicle.duration &&
       vehicle.periodicity &&
       vehicle.registration &&
-      (isMoto ? vehicle.cylindree : vehicle.fiscalPower),
+      (isMoto ? vehicle.cylindree : vehicle.fiscalPower) &&
+      (isBusSchool ? vehicle.seats : true),
+  );
+  const canSaveGarage = Boolean(
+    garage.subcategory &&
+      garage.nombreCarte &&
+      garage.effectDate &&
+      garage.duration &&
+      garage.periodicity,
   );
   const canSaveTrailer = Boolean(
     trailerTargetVehicleId &&
@@ -321,7 +353,11 @@ export default function NewContractPage() {
   );
   const canCalculateQuote = Boolean(
     selectedContractType?.enabled &&
-      (isFleet ? fleetVehicles.length : canSaveVehicle) &&
+      (isFleet
+        ? fleetVehicles.length
+        : isGarage
+          ? canSaveGarage
+          : canSaveVehicle) &&
       canContinueParties,
   );
   const hasDraftContent = Boolean(
@@ -343,7 +379,10 @@ export default function NewContractPage() {
       fleetVehicles.length ||
       selectedGuarantees.length,
   );
-  const canAutoSave = hasDraftContent && (!isFleet || fleetVehicles.length > 0);
+  const canAutoSave =
+    hasDraftContent &&
+    (!isFleet || fleetVehicles.length > 0) &&
+    (!isGarage || canSaveGarage);
 
   function clearCalculatedState() {
     setQuote(null);
@@ -372,6 +411,11 @@ export default function NewContractPage() {
       }
       return next;
     });
+  }
+
+  function updateGarage(field: keyof GarageForm, value: string) {
+    clearCalculatedState();
+    setGarage((current) => ({ ...current, [field]: value }));
   }
 
   async function verifyRegistration() {
@@ -420,6 +464,7 @@ export default function NewContractPage() {
     const nextDraftId = isEditingDraft ? savedDraftIdRef.current : null;
     setContractType(value);
     setVehicle(defaultVehicleForm());
+    setGarage(emptyGarage);
     setFleetVehicles([]);
     setSelectedGuarantees([]);
     setGuaranteeOptions(emptyGuaranteeOptions);
@@ -590,7 +635,9 @@ export default function NewContractPage() {
           contract_type: effectiveContractType,
           draft_payload: buildDraftPayload({
             isFleet,
+            isGarage,
             fleetVehicles,
+            garage,
             guaranteeOptions,
             vehicle,
             selectedGuarantees,
@@ -622,9 +669,11 @@ export default function NewContractPage() {
   }, [
     effectiveContractType,
     fleetVehicles,
+    garage,
     guaranteeOptions,
     insured,
     isFleet,
+    isGarage,
     policyholder,
     sameAsPolicyholder,
     selectedGuarantees,
@@ -778,19 +827,28 @@ export default function NewContractPage() {
                 policyholder={policyholder}
               />
 
-              <VehicleFields
-                brands={brands}
-                categories={categories}
-                energies={energies}
-                isMoto={isMoto}
-                onCreateBrand={addVehicleBrand}
-                onVerifyRegistration={verifyRegistration}
-                registrationVerification={registrationVerification}
-                subcategories={subcategories}
-                updateVehicle={updateVehicle}
-                vehicle={vehicle}
-                verifyingRegistration={verifyingRegistration}
-              />
+              {isGarage ? (
+                <GarageFields
+                  garage={garage}
+                  subcategories={subcategories}
+                  updateGarage={updateGarage}
+                />
+              ) : (
+                <VehicleFields
+                  brands={brands}
+                  categories={categories}
+                  energies={energies}
+                  isBusSchool={isBusSchool}
+                  isMoto={isMoto}
+                  onCreateBrand={addVehicleBrand}
+                  onVerifyRegistration={verifyRegistration}
+                  registrationVerification={registrationVerification}
+                  subcategories={subcategories}
+                  updateVehicle={updateVehicle}
+                  vehicle={vehicle}
+                  verifyingRegistration={verifyingRegistration}
+                />
+              )}
 
               {isFleet ? (
                 <div className="app-surface flex flex-wrap items-center justify-between gap-3 p-4">
@@ -1117,10 +1175,64 @@ function PersonFields({
   );
 }
 
+function GarageFields({
+  garage,
+  subcategories,
+  updateGarage,
+}: {
+  garage: GarageForm;
+  subcategories: SelectOption[];
+  updateGarage: (field: keyof GarageForm, value: string) => void;
+}) {
+  return (
+    <>
+      <FormBlock title="Garage">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <SelectField
+            label="Genre ASS (sous-catégorie)"
+            onChange={(value) => updateGarage("subcategory", value)}
+            options={subcategories}
+            value={garage.subcategory}
+          />
+          <TextField
+            helper="Nombre de cartes grises gérées par le garage"
+            label="Nombre de cartes"
+            onChange={(value) => updateGarage("nombreCarte", value)}
+            type="number"
+            value={garage.nombreCarte}
+          />
+          <TextField
+            label="Immatriculation (optionnel)"
+            onChange={(value) => updateGarage("registration", value)}
+            value={garage.registration}
+          />
+        </div>
+      </FormBlock>
+      <FormBlock title="Couverture">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <TextField
+            label="Date d'effet"
+            onChange={(value) => updateGarage("effectDate", value)}
+            type="date"
+            value={garage.effectDate}
+          />
+          <SelectField
+            label="Durée"
+            onChange={(value) => updateGarage("duration", value)}
+            options={durationOptions}
+            value={garage.duration}
+          />
+        </div>
+      </FormBlock>
+    </>
+  );
+}
+
 function VehicleFields({
   brands,
   categories,
   energies,
+  isBusSchool,
   isMoto,
   onCreateBrand,
   onVerifyRegistration,
@@ -1133,6 +1245,7 @@ function VehicleFields({
   brands: SelectOption[];
   categories: SelectOption[];
   energies: SelectOption[];
+  isBusSchool: boolean;
   isMoto: boolean;
   onCreateBrand: (label: string) => Promise<SelectOption | undefined>;
   onVerifyRegistration: () => void;
@@ -1144,7 +1257,7 @@ function VehicleFields({
 }) {
   return (
     <>
-      <FormBlock title={isMoto ? "Moto" : "Véhicule"}>
+      <FormBlock title={isMoto ? "Moto" : isBusSchool ? "Bus école" : "Véhicule"}>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <SelectSearch
             createLabel="Ajouter la marque"
@@ -1908,25 +2021,27 @@ function defaultVehicleForm(): VehicleForm {
 }
 
 function toDisplayContractType(contractType: string) {
-  return contractType === "MOTO" || contractType === "BUS_SCHOOL" || contractType === "GARAGE"
-    ? "AUTO_MONO"
-    : contractType;
+  return contractType === "MOTO" ? "AUTO_MONO" : contractType;
 }
 
 function buildDraftPayload({
   fleetVehicles,
+  garage,
   guaranteeOptions,
   insured,
   isFleet,
+  isGarage,
   policyholder,
   sameAsPolicyholder,
   selectedGuarantees,
   vehicle,
 }: {
   fleetVehicles: FleetVehicle[];
+  garage: GarageForm;
   guaranteeOptions: GuaranteeOptionsForm;
   insured: PersonForm;
   isFleet: boolean;
+  isGarage: boolean;
   policyholder: PersonForm;
   sameAsPolicyholder: boolean;
   selectedGuarantees: number[];
@@ -1950,6 +2065,13 @@ function buildDraftPayload({
       fleet: {
         vehicles: fleetVehicles.map(normalizeVehicleForPayload),
       },
+      ...partyPayload,
+    };
+  }
+
+  if (isGarage) {
+    return {
+      garage,
       ...partyPayload,
     };
   }
@@ -1997,6 +2119,17 @@ function hydrateDraftPayload(contractType: string, draftPayload: Record<string, 
     return {
       vehicle: defaultVehicleForm(),
       fleetVehicles,
+      garage: emptyGarage,
+      ...commonPayload,
+    };
+  }
+
+  if (contractType === "GARAGE") {
+    const garagePayload = readObject(draftPayload.garage);
+    return {
+      vehicle: defaultVehicleForm(),
+      fleetVehicles: [],
+      garage: toGarageFormFromPayload(garagePayload),
       ...commonPayload,
     };
   }
@@ -2004,6 +2137,7 @@ function hydrateDraftPayload(contractType: string, draftPayload: Record<string, 
   return {
     vehicle: toVehicleFormFromPayload(draftPayload.vehicle),
     fleetVehicles: [],
+    garage: emptyGarage,
     ...commonPayload,
   };
 }
@@ -2234,6 +2368,22 @@ function toTrailerFormFromPayload(value: unknown): TrailerForm {
       "dateMiseEnCirculation",
     ]),
     value: readText(payload, ["value", "valeur"]),
+  };
+}
+
+function toGarageFormFromPayload(value: unknown): GarageForm {
+  const payload = readObject(value);
+  if (!payload) {
+    return emptyGarage;
+  }
+  return {
+    subcategory: readText(payload, ["subcategory", "genre"]),
+    nombreCarte: readText(payload, ["nombreCarte", "nombre_carte"], emptyGarage.nombreCarte),
+    registration: readText(payload, ["registration", "immatriculation"]),
+    effectDate: readText(payload, ["effectDate", "dateEffet"]),
+    duration: readText(payload, ["duration", "duree"], emptyGarage.duration),
+    periodicity: readText(payload, ["periodicity", "periodicite"], emptyGarage.periodicity),
+    personType: readText(payload, ["personType", "typePersonne"], emptyGarage.personType),
   };
 }
 
