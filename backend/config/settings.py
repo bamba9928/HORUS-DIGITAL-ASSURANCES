@@ -107,13 +107,13 @@ REST_FRAMEWORK = {
 
 CORS_ALLOWED_ORIGINS = config(
     "CORS_ALLOWED_ORIGINS",
-    default="http://localhost:3000",
+    default="http://localhost:3000,http://127.0.0.1:3000",
     cast=lambda value: [item.strip() for item in value.split(",") if item.strip()],
 )
 CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = config(
     "CSRF_TRUSTED_ORIGINS",
-    default="http://localhost:3000",
+    default="http://localhost:3000,http://127.0.0.1:3000",
     cast=lambda value: [item.strip() for item in value.split(",") if item.strip()],
 )
 

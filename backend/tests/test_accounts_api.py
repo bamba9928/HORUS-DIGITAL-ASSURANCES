@@ -10,6 +10,17 @@ from integrations.ass.constants import ASS_POLICY_FEE
 from organizations.models import Organization
 
 
+@pytest.mark.parametrize(
+    "origin",
+    ["http://localhost:3000", "http://127.0.0.1:3000"],
+)
+def test_auth_endpoint_allows_local_frontend_origins(client, origin):
+    response = client.get("/api/accounts/auth/me/", HTTP_ORIGIN=origin)
+
+    assert response.status_code == 200
+    assert response.headers["Access-Control-Allow-Origin"] == origin
+
+
 @pytest.mark.django_db
 def test_auth_login_me_logout_flow():
     organization = Organization.objects.create(name="Groupe Auth", code="AUTH")

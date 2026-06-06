@@ -1,7 +1,7 @@
 "use client";
 
-import { Check, Circle } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Check, CloudCheck, LoaderCircle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { SelectSearch } from "@/components/SelectSearch";
@@ -169,10 +169,13 @@ export default function NewContractPage() {
   const [quote, setQuote] = useState<ContractQuote | null>(null);
   const [payment, setPayment] = useState<ConfirmedPayment | null>(null);
   const [issueResult, setIssueResult] = useState<IssueResult | null>(null);
+  const [autoSaveState, setAutoSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [registrationVerification, setRegistrationVerification] =
     useState<AssRegistrationVerification | null>(null);
   const [verifyingRegistration, setVerifyingRegistration] = useState(false);
   const [error, setError] = useState("");
+  const savedDraftIdRef = useRef<number | null>(null);
+  const draftSavePromiseRef = useRef<Promise<number | null> | null>(null);
   const isEditingDraft = savedDraftId !== null && !quote && !payment && !issueResult;
 
   useEffect(() => {
@@ -228,6 +231,7 @@ export default function NewContractPage() {
         const hydratedPayload = hydrateDraftPayload(draft.contract_type, draft.draft_payload);
         setContractType(toDisplayContractType(draft.contract_type));
         setSavedDraftId(draft.id);
+        savedDraftIdRef.current = draft.id;
         setVehicle(hydratedPayload.vehicle);
         setFleetVehicles(hydratedPayload.fleetVehicles);
         setSelectedGuarantees(hydratedPayload.selectedGuarantees);
@@ -320,6 +324,26 @@ export default function NewContractPage() {
       (isFleet ? fleetVehicles.length : canSaveVehicle) &&
       canContinueParties,
   );
+  const hasDraftContent = Boolean(
+    Object.values(policyholder).some((value) => value.trim()) ||
+      Object.values(insured).some((value) => value.trim()) ||
+      [
+        vehicle.brand,
+        vehicle.model,
+        vehicle.category,
+        vehicle.subcategory,
+        vehicle.registration,
+        vehicle.energy,
+        vehicle.fiscalPower,
+        vehicle.seats,
+        vehicle.firstCirculationDate,
+        vehicle.effectDate,
+        vehicle.cylindree,
+      ].some((value) => value.trim()) ||
+      fleetVehicles.length ||
+      selectedGuarantees.length,
+  );
+  const canAutoSave = hasDraftContent && (!isFleet || fleetVehicles.length > 0);
 
   function clearCalculatedState() {
     setQuote(null);
@@ -393,7 +417,7 @@ export default function NewContractPage() {
   }
 
   function resetContractType(value: string) {
-    const nextDraftId = isEditingDraft ? savedDraftId : null;
+    const nextDraftId = isEditingDraft ? savedDraftIdRef.current : null;
     setContractType(value);
     setVehicle(defaultVehicleForm());
     setFleetVehicles([]);
@@ -406,6 +430,7 @@ export default function NewContractPage() {
     setTrailerTargetVehicleId("");
     setTrailerForm(emptyTrailer);
     setSavedDraftId(nextDraftId);
+    savedDraftIdRef.current = nextDraftId;
     setRegistrationVerification(null);
     setQuote(null);
     setPayment(null);
@@ -549,36 +574,72 @@ export default function NewContractPage() {
     );
   }
 
-  async function saveDraft() {
-    setSaving(true);
-    setError("");
-    try {
-      const payload = {
-        contract_type: effectiveContractType,
-        draft_payload: buildDraftPayload({
-          isFleet,
-          fleetVehicles,
-          guaranteeOptions,
-          vehicle,
-          selectedGuarantees,
-          policyholder,
-          insured,
-          sameAsPolicyholder,
-        }),
-      };
-      const draft =
-        isEditingDraft && savedDraftId
-          ? await updateContractDraft(savedDraftId, payload)
-          : await createContractDraft(payload);
-      setSavedDraftId(draft.id);
-      return draft.id;
-    } catch (apiError) {
-      setError(apiError instanceof Error ? apiError.message : "Erreur inconnue");
-      return null;
-    } finally {
-      setSaving(false);
+  const saveDraft = useCallback(async (silent = false) => {
+    if (draftSavePromiseRef.current) {
+      return draftSavePromiseRef.current;
     }
-  }
+
+    const operation = async () => {
+      setSaving(true);
+      setAutoSaveState("saving");
+      if (!silent) {
+        setError("");
+      }
+      try {
+        const payload = {
+          contract_type: effectiveContractType,
+          draft_payload: buildDraftPayload({
+            isFleet,
+            fleetVehicles,
+            guaranteeOptions,
+            vehicle,
+            selectedGuarantees,
+            policyholder,
+            insured,
+            sameAsPolicyholder,
+          }),
+        };
+        const currentDraftId = savedDraftIdRef.current;
+        const draft = currentDraftId
+          ? await updateContractDraft(currentDraftId, payload)
+          : await createContractDraft(payload);
+        savedDraftIdRef.current = draft.id;
+        setSavedDraftId(draft.id);
+        setAutoSaveState("saved");
+        return draft.id;
+      } catch (apiError) {
+        setAutoSaveState("error");
+        setError(apiError instanceof Error ? apiError.message : "Erreur inconnue");
+        return null;
+      } finally {
+        setSaving(false);
+        draftSavePromiseRef.current = null;
+      }
+    };
+
+    draftSavePromiseRef.current = operation();
+    return draftSavePromiseRef.current;
+  }, [
+    effectiveContractType,
+    fleetVehicles,
+    guaranteeOptions,
+    insured,
+    isFleet,
+    policyholder,
+    sameAsPolicyholder,
+    selectedGuarantees,
+    vehicle,
+  ]);
+
+  useEffect(() => {
+    if (!canAutoSave || payment || issueResult) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      void saveDraft(true);
+    }, 900);
+    return () => window.clearTimeout(timeout);
+  }, [canAutoSave, issueResult, payment, saveDraft]);
 
   async function calculateQuote() {
     setQuoting(true);
@@ -639,14 +700,15 @@ export default function NewContractPage() {
       description={isEditingDraft ? `Reprise du brouillon #${savedDraftId}` : "Souscription et émission ASS"}
       title="Nouveau contrat"
     >
-      <div className="grid items-start gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <aside className="app-surface sticky top-24 hidden p-3 lg:block">
-          {[
-            "Informations",
-            "Options",
-            "Résumé",
-            "Paiement",
-          ].map((item, index) => {
+      <div className="space-y-5">
+        <section className="app-surface p-2 sm:p-3">
+          <div className="grid grid-cols-4 gap-1 sm:gap-2">
+            {[
+              { label: "Informations", shortLabel: "Infos" },
+              { label: "Options", shortLabel: "Options" },
+              { label: "Résumé", shortLabel: "Résumé" },
+              { label: "Paiement", shortLabel: "Paiement" },
+            ].map((item, index) => {
               const active = step === index + 1;
               const completed = step > index + 1;
               const disabled =
@@ -654,15 +716,15 @@ export default function NewContractPage() {
                 (index >= 2 && !quote);
               return (
                 <button
-                  className={`flex w-full items-center gap-3 rounded-md px-3 py-3 text-left text-sm font-extrabold transition ${
+                  className={`flex h-12 min-w-0 items-center justify-center gap-2 rounded-md px-2 text-xs font-extrabold transition sm:h-14 sm:text-sm ${
                     active
-                      ? "bg-primary text-white"
+                      ? "bg-primary text-white shadow-sm"
                       : completed
-                        ? "text-emerald-700 hover:bg-emerald-50"
-                        : "bg-white text-black/58 hover:bg-muted"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "text-black/48 hover:bg-muted"
                   }`}
                   disabled={disabled}
-                  key={item}
+                  key={item.label}
                   onClick={() => {
                     if (index === 1) {
                       void continueToOptions();
@@ -673,82 +735,48 @@ export default function NewContractPage() {
                   type="button"
                 >
                   <span
-                    className={`flex size-7 shrink-0 items-center justify-center rounded-full border text-xs ${
+                    className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[10px] sm:size-7 sm:text-xs ${
                       active
                         ? "border-white/40 bg-white/15"
                         : completed
-                          ? "border-emerald-200 bg-emerald-50"
-                          : "border-border"
+                          ? "border-emerald-200 bg-white"
+                          : "border-border bg-white"
                     }`}
                   >
                     {completed ? <Check size={14} /> : index + 1}
                   </span>
-                  {item}
-                </button>
-              );
-            })}
-        </aside>
-
-        <section className="min-w-0 space-y-4">
-          <div className="app-surface grid grid-cols-4 gap-1 p-1.5 lg:hidden">
-            {["Informations", "Options", "Résumé", "Paiement"].map((item, index) => {
-              const active = step === index + 1;
-              return (
-                <button
-                  className={`flex h-11 min-w-0 items-center justify-center gap-1 rounded-md px-1 text-[10px] font-extrabold sm:text-xs ${
-                    active ? "bg-primary text-white" : "text-black/48"
-                  }`}
-                  disabled={(index === 1 && !canCalculateQuote) || (index >= 2 && !quote)}
-                  key={item}
-                  onClick={() => setStep(index + 1)}
-                  type="button"
-                >
-                  {active ? <Circle fill="currentColor" size={9} /> : null}
-                  <span className="truncate">
-                    {index + 1}. {index === 0 ? "Infos" : item}
-                  </span>
+                  <span className="hidden truncate sm:inline">{item.label}</span>
+                  <span className="truncate sm:hidden">{item.shortLabel}</span>
                 </button>
               );
             })}
           </div>
+        </section>
 
+        <section className="min-w-0 space-y-4">
           {error ? <AlertMessage>{error}</AlertMessage> : null}
 
-          <div className="app-surface p-5 sm:p-6">
-
           {step === 1 ? (
-            <div className="max-w-6xl space-y-6">
-              <div>
-                <h2 className="text-xl font-black">Informations principales</h2>
-                <p className="mt-1 text-sm font-semibold text-black/60">
-                  Client, assure, vehicule et periode de couverture sur un seul formulaire.
-                </p>
+            <div className="space-y-4">
+              <div className="flex min-h-6 items-center justify-end px-1">
+                <AutoSaveIndicator draftId={savedDraftId} state={autoSaveState} />
               </div>
 
-              <div className="grid grid-cols-2 gap-5 max-md:grid-cols-1">
-                <SelectSearch
-                  helper="Remorque reste rattachee a un vehicule dans le parcours flotte."
+              <FormBlock title="Type de contrat">
+                <div className="max-w-md">
+                  <SelectField
                   label="Type de contrat"
                   onChange={resetContractType}
                   options={displayContractTypes}
                   value={contractType}
                 />
-              </div>
+                </div>
+              </FormBlock>
 
               <PersonSection
                 onPolicyholderChange={updatePolicyholder}
                 policyholder={policyholder}
               />
-
-              <div>
-                <h3 className="text-lg font-black">
-                  {isFleet ? "Vehicule a ajouter a la flotte" : "Informations vehicule"}
-                </h3>
-                <p className="mt-1 text-sm font-semibold text-black/60">
-                  La Prime RC sera calculee par ASS a partir de la categorie, du genre ASS,
-                  de la puissance fiscale et de la periode.
-                </p>
-              </div>
 
               <VehicleFields
                 brands={brands}
@@ -764,8 +792,11 @@ export default function NewContractPage() {
                 verifyingRegistration={verifyingRegistration}
               />
 
-              <div className="flex flex-wrap gap-3">
-                {isFleet ? (
+              {isFleet ? (
+                <div className="app-surface flex flex-wrap items-center justify-between gap-3 p-4">
+                  <p className="text-sm font-bold text-black/55">
+                    {editingVehicleId ? "Modification du véhicule sélectionné" : "Ajoutez ce véhicule à la flotte"}
+                  </p>
                   <button
                     className="h-11 rounded-md bg-primary px-5 text-sm font-black text-white disabled:bg-black/20"
                     disabled={!canSaveVehicle}
@@ -774,10 +805,8 @@ export default function NewContractPage() {
                   >
                     {editingVehicleId ? "Mettre a jour le vehicule" : "Ajouter le vehicule"}
                   </button>
-                ) : (
-                  null
-                )}
-              </div>
+                </div>
+              ) : null}
 
               {isFleet ? (
                 <FleetSection
@@ -798,21 +827,22 @@ export default function NewContractPage() {
                 />
               ) : null}
 
-              <div className="flex flex-wrap gap-3 border-t border-border pt-5">
+              <div className="app-surface flex flex-wrap items-center justify-between gap-3 p-4">
+                <AutoSaveIndicator draftId={savedDraftId} state={autoSaveState} />
                 <button
                   className="h-11 rounded-md bg-primary px-5 text-sm font-black text-white disabled:bg-black/20"
                   disabled={saving || !canCalculateQuote}
                   onClick={continueToOptions}
                   type="button"
                 >
-                  {saving ? "Sauvegarde..." : "SUIVANT : OPTIONS ET GARANTIES"}
+                  {saving ? "Enregistrement..." : "Suivant : options et garanties"}
                 </button>
               </div>
             </div>
           ) : null}
 
           {step === 2 ? (
-            <div className="max-w-5xl space-y-6">
+            <div className="app-surface max-w-5xl space-y-6 p-5 sm:p-6">
               <div>
                 <h2 className="text-xl font-black">Options et garanties</h2>
                 <p className="mt-1 text-sm font-semibold text-black/60">
@@ -873,7 +903,7 @@ export default function NewContractPage() {
           ) : null}
 
           {step === 3 ? (
-            <div className="max-w-5xl space-y-6">
+            <div className="app-surface max-w-5xl space-y-6 p-5 sm:p-6">
               <div>
                 <h2 className="text-xl font-black">Resume avant validation</h2>
                 <p className="mt-1 text-sm font-semibold text-black/60">
@@ -922,7 +952,7 @@ export default function NewContractPage() {
           ) : null}
 
           {step === 4 ? (
-            <div className="max-w-5xl space-y-6">
+            <div className="app-surface max-w-5xl space-y-6 p-5 sm:p-6">
               <div>
                 <h2 className="text-xl font-black">Paiement / emission</h2>
                 <p className="mt-1 text-sm font-semibold text-black/60">
@@ -953,7 +983,6 @@ export default function NewContractPage() {
               </button>
             </div>
           ) : null}
-          </div>
         </section>
       </div>
     </AppShell>
@@ -1015,10 +1044,9 @@ function GuaranteeSelector({
       {visibleOptionReferentials.length ? (
         <div className="rounded-md border border-border p-5">
           <h3 className="text-base font-black">Options de garanties</h3>
-          <div className="mt-4 grid grid-cols-2 gap-5">
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
             {visibleOptionReferentials.map((referential) => (
-              <SelectSearch
-                helper={referential.helper}
+              <SelectField
                 key={referential.field}
                 label={referential.label}
                 onChange={(value) => onOptionChange(referential.field, value)}
@@ -1041,31 +1069,25 @@ function PersonSection({
   policyholder: PersonForm;
 }) {
   return (
-    <div className="space-y-6">
+    <FormBlock title="Client">
       <PersonFields
         onChange={onPolicyholderChange}
         person={policyholder}
-        title="Informations client"
       />
-    </div>
+    </FormBlock>
   );
 }
 
 function PersonFields({
   onChange,
   person,
-  title,
 }: {
   onChange: (field: keyof PersonForm, value: string) => void;
   person: PersonForm;
-  title: string;
 }) {
   return (
-    <div className="rounded-md border border-border p-5">
-      <h3 className="text-lg font-black">{title}</h3>
-      <div className="mt-5 grid grid-cols-2 gap-5 max-md:grid-cols-1">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <TextField
-          helper="Nom ou raison sociale."
           label="Nom"
           onChange={(value) => onChange("lastName", value)}
           value={person.lastName}
@@ -1091,7 +1113,6 @@ function PersonFields({
           onChange={(value) => onChange("address", value)}
           value={person.address}
         />
-      </div>
     </div>
   );
 }
@@ -1122,36 +1143,36 @@ function VehicleFields({
   verifyingRegistration: boolean;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-5 max-md:grid-cols-1">
-      <SelectSearch
-        createLabel="Ajouter la marque"
-        label="Marque"
-        onCreate={onCreateBrand}
-        onChange={(value) => updateVehicle("brand", value)}
-        options={brands}
-        value={vehicle.brand}
-      />
-      <TextField
-        label="Modele"
-        onChange={(value) => updateVehicle("model", value)}
-        value={vehicle.model}
-      />
-      <SelectSearch
-        label="Categorie"
-        helper="La categorie filtre les sous-categories disponibles."
-        onChange={(value) => updateVehicle("category", value)}
-        options={categories}
-        value={vehicle.category}
-      />
-      <SelectSearch
-        disabled={!vehicle.category}
-        label="Sous-categorie ASS"
-        helper="Cette valeur mappe vers le champ genre ASS."
-        onChange={(value) => updateVehicle("subcategory", value)}
-        options={subcategories}
-        value={vehicle.subcategory}
-      />
-      <div>
+    <>
+      <FormBlock title={isMoto ? "Moto" : "Véhicule"}>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <SelectSearch
+            createLabel="Ajouter la marque"
+            label="Marque"
+            onCreate={onCreateBrand}
+            onChange={(value) => updateVehicle("brand", value)}
+            options={brands}
+            value={vehicle.brand}
+          />
+          <TextField
+            label="Modèle"
+            onChange={(value) => updateVehicle("model", value)}
+            value={vehicle.model}
+          />
+          <SelectField
+            label="Catégorie"
+            onChange={(value) => updateVehicle("category", value)}
+            options={categories}
+            value={vehicle.category}
+          />
+          <SelectField
+            disabled={!vehicle.category}
+            label="Sous-catégorie ASS"
+            onChange={(value) => updateVehicle("subcategory", value)}
+            options={subcategories}
+            value={vehicle.subcategory}
+          />
+          <div>
         <TextField
           label="Immatriculation"
           onChange={(value) => updateVehicle("registration", value)}
@@ -1172,63 +1193,59 @@ function VehicleFields({
             </p>
           ) : null}
         </div>
-      </div>
-      <SelectSearch
-        label="Energie"
-        onChange={(value) => updateVehicle("energy", value)}
-        options={energies}
-        value={vehicle.energy}
-      />
-      {!isMoto ? (
-        <TextField
-          label="Puissance fiscale"
-          onChange={(value) => updateVehicle("fiscalPower", value)}
-          value={vehicle.fiscalPower}
-        />
-      ) : null}
-      {isMoto ? (
-        <TextField
-          label="Cylindree"
-          onChange={(value) => updateVehicle("cylindree", value)}
-          value={vehicle.cylindree}
-        />
-      ) : (
-        <TextField
-          label="Nombre de places"
-          onChange={(value) => updateVehicle("seats", value)}
-          value={vehicle.seats}
-        />
-      )}
-      <TextField
-        label="Date de mise en circulation"
-        onChange={(value) => updateVehicle("firstCirculationDate", value)}
-        type="date"
-        value={vehicle.firstCirculationDate}
-      />
-      <TextField
-        label="Date d'effet"
-        onChange={(value) => updateVehicle("effectDate", value)}
-        type="date"
-        value={vehicle.effectDate}
-      />
-      <SelectSearch
-        label="Duree"
-        helper="Periodicite MOIS appliquee par defaut."
-        onChange={(value) => updateVehicle("duration", value)}
-        options={durationOptions}
-        value={vehicle.duration}
-      />
-      <div className="rounded-md border border-border bg-muted px-3 py-3">
-        <span className="text-sm font-black">Date d&apos;expiration estimee</span>
-        <p className="mt-2 text-sm font-black">
-          {calculateExpirationDateText(
-            vehicle.effectDate,
-            vehicle.duration,
-            vehicle.periodicity,
+          </div>
+          <SelectField
+            label="Énergie"
+            onChange={(value) => updateVehicle("energy", value)}
+            options={energies}
+            value={vehicle.energy}
+          />
+          {!isMoto ? (
+            <TextField
+              label="Puissance fiscale"
+              onChange={(value) => updateVehicle("fiscalPower", value)}
+              value={vehicle.fiscalPower}
+            />
+          ) : null}
+          {isMoto ? (
+            <TextField
+              label="Cylindrée"
+              onChange={(value) => updateVehicle("cylindree", value)}
+              value={vehicle.cylindree}
+            />
+          ) : (
+            <TextField
+              label="Nombre de places"
+              onChange={(value) => updateVehicle("seats", value)}
+              value={vehicle.seats}
+            />
           )}
-        </p>
-      </div>
-    </div>
+          <TextField
+            label="Mise en circulation"
+            onChange={(value) => updateVehicle("firstCirculationDate", value)}
+            type="date"
+            value={vehicle.firstCirculationDate}
+          />
+        </div>
+      </FormBlock>
+
+      <FormBlock title="Couverture">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <TextField
+            label="Date d'effet"
+            onChange={(value) => updateVehicle("effectDate", value)}
+            type="date"
+            value={vehicle.effectDate}
+          />
+          <SelectField
+            label="Durée"
+            onChange={(value) => updateVehicle("duration", value)}
+            options={durationOptions}
+            value={vehicle.duration}
+          />
+        </div>
+      </FormBlock>
+    </>
   );
 }
 
@@ -1355,7 +1372,7 @@ function FleetSection({
           <div className="mb-5 rounded-md bg-muted px-3 py-3 text-sm font-black">
             Tracteur : {vehicleLabel(selectedTrailerTarget)}
           </div>
-          <div className="grid grid-cols-2 gap-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <SelectSearch
               createLabel="Ajouter la marque"
               label="Marque remorque"
@@ -1369,14 +1386,14 @@ function FleetSection({
               onChange={(value) => updateTrailer("model", value)}
               value={trailerForm.model}
             />
-            <SelectSearch
-              label="Categorie remorque"
+            <SelectField
+              label="Catégorie remorque"
               onChange={(value) => updateTrailer("category", value)}
               options={trailerCategories}
               value={trailerForm.category}
             />
-            <SelectSearch
-              label="Sous-categorie remorque"
+            <SelectField
+              label="Sous-catégorie remorque"
               onChange={(value) => updateTrailer("subcategory", value)}
               options={trailerSubcategories}
               value={trailerForm.subcategory}
@@ -1733,6 +1750,97 @@ function IssuePanel({ issueResult }: { issueResult: IssueResult }) {
         ) : null}
       </div>
     </div>
+  );
+}
+
+function FormBlock({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="app-surface overflow-hidden">
+      <div className="border-b border-border bg-[#fafafb] px-5 py-3.5">
+        <h2 className="text-base font-black">{title}</h2>
+      </div>
+      <div className="p-5 sm:p-6">{children}</div>
+    </section>
+  );
+}
+
+function SelectField({
+  label,
+  options,
+  value,
+  disabled = false,
+  onChange,
+}: {
+  label: string;
+  options: SelectOption[];
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs font-extrabold uppercase text-black/52">{label}</span>
+      <select
+        className="app-field mt-1.5"
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
+      >
+        <option value="">Sélectionner...</option>
+        {options.map((option) => (
+          <option
+            disabled={option.enabled === false}
+            key={option.value}
+            value={String(option.value)}
+          >
+            {option.label}
+            {option.enabled === false ? " - À venir" : ""}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function AutoSaveIndicator({
+  draftId,
+  state,
+}: {
+  draftId: number | null;
+  state: "idle" | "saving" | "saved" | "error";
+}) {
+  if (state === "idle" && !draftId) {
+    return (
+      <span className="text-xs font-bold text-black/42">
+        Brouillon enregistré automatiquement
+      </span>
+    );
+  }
+
+  if (state === "saving") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-black/48">
+        <LoaderCircle className="animate-spin" size={14} />
+        Enregistrement automatique...
+      </span>
+    );
+  }
+
+  if (state === "error") {
+    return <span className="text-xs font-bold text-red-700">Brouillon non enregistré</span>;
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700">
+      <CloudCheck size={15} />
+      Brouillon #{draftId} enregistré
+    </span>
   );
 }
 

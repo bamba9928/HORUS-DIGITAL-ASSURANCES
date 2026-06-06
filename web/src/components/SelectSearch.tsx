@@ -22,7 +22,7 @@ export function SelectSearch({
   helper,
   options,
   value,
-  placeholder = "Rechercher",
+  placeholder = "Sélectionner...",
   disabled = false,
   createLabel = "Ajouter",
   onCreate,
@@ -96,7 +96,7 @@ export function SelectSearch({
               className="h-11 w-full pl-9 pr-3 text-sm font-bold outline-none"
               disabled={disabled}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder={placeholder}
+              placeholder="Rechercher dans la liste"
               type="search"
               value={search}
             />

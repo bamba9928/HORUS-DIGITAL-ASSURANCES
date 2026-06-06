@@ -24,21 +24,33 @@ type ApiListResponse<T> = {
   warning?: string;
 };
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
+function getApiBaseUrl() {
+  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
+    return process.env.NEXT_PUBLIC_API_BASE_URL;
+  }
+  if (typeof window !== "undefined") {
+    return `${window.location.protocol}//${window.location.hostname}:8000/api`;
+  }
+  return "http://localhost:8000/api";
+}
 
 export async function fetchApi<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method ?? "GET";
   const csrfToken = isUnsafeMethod(method) ? getCookie("csrftoken") : null;
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(csrfToken ? { "X-CSRFToken": csrfToken } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${getApiBaseUrl()}${path}`, {
+      ...init,
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(csrfToken ? { "X-CSRFToken": csrfToken } : {}),
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch {
+    throw new Error("API inaccessible. Vérifiez que le serveur backend est démarré.");
+  }
 
   if (!response.ok) {
     const detail = await parseApiError(response);

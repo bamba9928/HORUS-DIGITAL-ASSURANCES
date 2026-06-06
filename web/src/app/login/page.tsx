@@ -71,7 +71,7 @@ export default function LoginPage() {
                 <input
                   autoComplete="username"
                   autoFocus
-                  className="app-field pl-10"
+                  className="app-field app-field-with-icon"
                   onChange={(event) => setUsername(event.target.value)}
                   required
                   value={username}
@@ -88,7 +88,7 @@ export default function LoginPage() {
                 />
                 <input
                   autoComplete="current-password"
-                  className="app-field px-10"
+                  className="app-field app-field-with-icon pr-10"
                   onChange={(event) => setPassword(event.target.value)}
                   required
                   type={showPassword ? "text" : "password"}
