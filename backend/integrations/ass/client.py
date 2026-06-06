@@ -147,7 +147,7 @@ class AssClient:
             "code": 2000,
             "operationStatus": ASS_SUCCESS_STATUS,
             "operationMessage": "Operation mockee avec succes.",
-            "data": prime,
+            "data": _build_rc_breakdown(prime),
         }
 
     def _mock_moto_rc_response(self, payload):
@@ -158,7 +158,7 @@ class AssClient:
             "code": 2000,
             "operationStatus": ASS_SUCCESS_STATUS,
             "operationMessage": "Operation mockee avec succes.",
-            "data": prime,
+            "data": _build_rc_breakdown(prime),
         }
 
     def _mock_fleet_rc_response(self, payload):
@@ -168,7 +168,7 @@ class AssClient:
             items.append(
                 {
                     "requestId": request.get("requestId"),
-                    "responsabiliteCivile": rc_response["data"],
+                    "responsabiliteCivile": rc_response["data"]["responsabiliteCivile"],
                 }
             )
         return {
@@ -185,7 +185,7 @@ class AssClient:
             "code": 2000,
             "operationStatus": ASS_SUCCESS_STATUS,
             "operationMessage": "Operation mockee avec succes.",
-            "data": prime,
+            "data": _build_rc_breakdown(prime),
         }
 
     def _mock_bus_rc_response(self, payload):
@@ -197,7 +197,7 @@ class AssClient:
             "code": 2000,
             "operationStatus": ASS_SUCCESS_STATUS,
             "operationMessage": "Operation mockee avec succes.",
-            "data": prime,
+            "data": _build_rc_breakdown(prime),
         }
 
     def _mock_garage_rc_response(self, payload):
@@ -208,7 +208,7 @@ class AssClient:
             "code": 2000,
             "operationStatus": ASS_SUCCESS_STATUS,
             "operationMessage": "Operation mockee avec succes.",
-            "data": prime,
+            "data": _build_rc_breakdown(prime),
         }
 
     def _mock_issue_response(self, payload):
@@ -303,3 +303,26 @@ class AssClient:
                 "isRegistered": is_registered,
             },
         }
+
+
+def _build_rc_breakdown(prime_rc):
+    """
+    Construit un objet breakdown conforme a la structure reelle de l'API ASS.
+    Champs retournes par l'API lors d'une simulation de tarif RC.
+    """
+    taxe = round(prime_rc * 0.17)
+    cedeao = 300
+    fonds_garantie = round(prime_rc * 0.025)
+    prime_ag = 0
+    prime_totale = prime_rc + ASS_POLICY_FEE + taxe + cedeao + fonds_garantie + prime_ag
+    return {
+        "responsabiliteCivile": prime_rc,
+        "coutPolice": ASS_POLICY_FEE,
+        "taxe": taxe,
+        "cedeao": cedeao,
+        "reduction": 0,
+        "primeAG": prime_ag,
+        "fondsGarantie": fonds_garantie,
+        "primeTotale": prime_totale,
+    }
+

@@ -56,32 +56,23 @@ export default function CommissionsPage() {
 
   useEffect(() => {
     let isCancelled = false;
-
-    async function loadInitialData() {
+    async function load() {
       try {
         const current = await fetchCurrentUser();
-        if (isCancelled) {
-          return;
-        }
+        if (isCancelled) return;
         setAuth(current);
         if (current.authenticated) {
           const response = await listCommissionSnapshots();
-          if (!isCancelled) {
-            setSnapshots(response.results);
-          }
+          if (!isCancelled) setSnapshots(response.results);
         }
       } catch (err) {
-        if (!isCancelled) {
+        if (!isCancelled)
           setError(err instanceof Error ? err.message : "Chargement impossible.");
-        }
       } finally {
-        if (!isCancelled) {
-          setIsLoading(false);
-        }
+        if (!isCancelled) setIsLoading(false);
       }
     }
-
-    void loadInitialData();
+    void load();
     return () => {
       isCancelled = true;
     };
@@ -92,9 +83,7 @@ export default function CommissionsPage() {
     setUpdatingId(id);
     try {
       const updated = await updateCommissionSnapshotStatus(id, status);
-      setSnapshots((current) =>
-        current.map((snapshot) => (snapshot.id === id ? updated : snapshot)),
-      );
+      setSnapshots((prev) => prev.map((s) => (s.id === id ? updated : s)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Mise à jour impossible.");
     } finally {
@@ -102,47 +91,53 @@ export default function CommissionsPage() {
     }
   }
 
+  const pendingCount = countByStatus(snapshots, "PENDING");
+  const payableCount = countByStatus(snapshots, "PAYABLE");
+  const paidCount = countByStatus(snapshots, "PAID");
+  const totalCommissionAmount = totalCommission(snapshots);
+
   return (
     <AppShell
       actions={
         <button
-          aria-label="Actualiser les commissions"
-          className="flex size-10 items-center justify-center rounded-md border border-border bg-white hover:bg-muted disabled:text-black/30"
+          aria-label="Actualiser"
+          className="flex size-9 items-center justify-center rounded-[9px] border border-border bg-white text-black/45 shadow-xs transition hover:bg-muted hover:text-black disabled:opacity-30"
           disabled={isLoading}
           onClick={() => void refresh()}
           title="Actualiser"
           type="button"
         >
-          <RefreshCw className={isLoading ? "animate-spin" : ""} size={18} />
+          <RefreshCw className={isLoading ? "animate-spin" : ""} size={15} />
         </button>
       }
-      description="Calcul, validation et paiement des apporteurs"
+      description="Calcul, validation et paiement"
       title="Commissions"
     >
       <div className="space-y-5">
+        {/* ── KPI row ────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
           <MetricCard
             icon={BadgePercent}
             label="En attente"
-            value={countByStatus(snapshots, "PENDING")}
+            value={isLoading ? "—" : pendingCount}
           />
           <MetricCard
             icon={CircleDollarSign}
             label="Payables"
             tone="warning"
-            value={countByStatus(snapshots, "PAYABLE")}
+            value={isLoading ? "—" : payableCount}
           />
           <MetricCard
             icon={WalletCards}
             label="Payées"
             tone="success"
-            value={countByStatus(snapshots, "PAID")}
+            value={isLoading ? "—" : paidCount}
           />
           <MetricCard
             icon={Banknote}
             label="Total commissions"
             tone="primary"
-            value={formatMoney(totalCommission(snapshots))}
+            value={isLoading ? "—" : formatMoney(totalCommissionAmount)}
           />
         </div>
 
@@ -172,52 +167,79 @@ export default function CommissionsPage() {
                 <tbody>
                   {snapshots.map((snapshot) => (
                     <tr key={snapshot.id}>
+                      {/* Contrat */}
                       <td data-label="Contrat">
-                        <a className="font-extrabold text-primary" href={`/contracts/${snapshot.contract}`}>
+                        <a
+                          className="text-sm font-extrabold text-primary hover:underline"
+                          href={`/contracts/${snapshot.contract}`}
+                        >
                           #{snapshot.contract}
                         </a>
                       </td>
+
+                      {/* Apporteur */}
                       <td data-label="Apporteur">
-                        <div>
-                          <p className="font-extrabold">{snapshot.contributor_username}</p>
-                          <p className="mt-1 text-xs font-semibold text-black/45">
-                            {snapshot.organization_name}
-                          </p>
+                        <div className="flex items-center gap-2.5">
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-black text-primary">
+                            {initials(snapshot.contributor_username)}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate font-extrabold">
+                              {snapshot.contributor_username}
+                            </p>
+                            <p className="mt-0.5 truncate text-xs text-black/40">
+                              {snapshot.organization_name}
+                            </p>
+                          </div>
                         </div>
                       </td>
-                      <td data-label="Prime RC" className="font-bold">
+
+                      {/* Prime RC */}
+                      <td
+                        className="font-bold tabular-nums"
+                        data-label="Prime RC"
+                      >
                         {formatMoney(snapshot.prime_rc_ass)}
                       </td>
+
+                      {/* Commission */}
                       <td data-label="Commission">
-                        <div>
-                          <p className="font-extrabold">{formatMoney(snapshot.commission_total)}</p>
-                          <p className="mt-1 text-xs font-semibold text-black/45">
-                            {snapshot.commission_percent_used}% +{" "}
-                            {formatMoney(snapshot.commission_fixed_policy_fee_used)}
-                          </p>
-                        </div>
+                        <p className="font-extrabold tabular-nums">
+                          {formatMoney(snapshot.commission_total)}
+                        </p>
+                        <p className="mt-0.5 text-xs text-black/40">
+                          {snapshot.commission_percent_used}% +{" "}
+                          {formatMoney(snapshot.commission_fixed_policy_fee_used)}
+                        </p>
                       </td>
-                      <td data-label="Net Horus" className="font-extrabold">
+
+                      {/* Net Horus */}
+                      <td
+                        className="font-extrabold tabular-nums"
+                        data-label="Net Horus"
+                      >
                         {formatMoney(snapshot.net_to_horus)}
                       </td>
+
+                      {/* Statut */}
                       <td data-label="Statut">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <StatusBadge status={snapshot.status} />
                           <select
-                            aria-label={`Modifier le statut de la commission ${snapshot.id}`}
-                            className="app-field h-9 min-h-9 w-auto py-0 text-xs"
+                            aria-label={`Statut commission ${snapshot.id}`}
+                            className="app-field h-8 min-h-0 w-auto rounded-lg py-0 text-xs"
                             disabled={updatingId === snapshot.id}
-                            onChange={(event) =>
+                            onChange={(e) =>
                               updateStatus(
                                 snapshot.id,
-                                event.target.value as CommissionSnapshot["status"],
+                                e.target.value as CommissionSnapshot["status"],
                               )
                             }
                             value={snapshot.status}
                           >
-                            {statuses.map((status) => (
-                              <option key={status.value} value={status.value}>
-                                {status.label}
+                            {statuses.map((s) => (
+                              <option key={s.value} value={s.value}>
+                                {s.label}
                               </option>
                             ))}
                           </select>
@@ -237,12 +259,19 @@ export default function CommissionsPage() {
   );
 }
 
+/* ── Helpers ─────────────────────────────────────────────────────── */
+function initials(username: string) {
+  const parts = username.split(/[._-]/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return username.slice(0, 2).toUpperCase();
+}
+
 function countByStatus(snapshots: CommissionSnapshot[], status: CommissionSnapshot["status"]) {
-  return snapshots.filter((snapshot) => snapshot.status === status).length;
+  return snapshots.filter((s) => s.status === status).length;
 }
 
 function totalCommission(snapshots: CommissionSnapshot[]) {
-  return snapshots.reduce((total, snapshot) => total + snapshot.commission_total, 0);
+  return snapshots.reduce((t, s) => t + s.commission_total, 0);
 }
 
 function formatMoney(value: number) {

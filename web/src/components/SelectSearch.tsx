@@ -74,18 +74,18 @@ export function SelectSearch({
 
   return (
     <div className="relative block" ref={containerRef}>
-      <span className="text-xs font-extrabold uppercase text-black/52">{label}</span>
+      <span className="text-xs font-extrabold uppercase tracking-wide text-primary">{label}</span>
       {helper ? (
         <span className="mt-1 block text-xs font-semibold text-black/48">{helper}</span>
       ) : null}
       <button
-        className="app-field mt-1.5 flex items-center justify-between text-left"
+        className="app-field mt-1.5 flex items-center justify-between border-primary/30 bg-primary/5 text-left font-semibold text-primary"
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
-        <span className={selected ? "" : "text-black/40"}>{selected?.label ?? placeholder}</span>
-        <ChevronDown className={`shrink-0 text-black/45 transition ${open ? "rotate-180" : ""}`} size={17} />
+        <span className={selected ? "" : "text-primary/55"}>{selected?.label ?? placeholder}</span>
+        <ChevronDown className={`shrink-0 text-primary/65 transition ${open ? "rotate-180" : ""}`} size={17} />
       </button>
       {open ? (
         <div className="absolute inset-x-0 top-full z-40 mt-1.5 overflow-hidden rounded-md border border-border bg-white shadow-xl">

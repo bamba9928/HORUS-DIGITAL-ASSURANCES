@@ -40,14 +40,9 @@ def calculate_contract_quote(contract, ass_client=None):
         )
         ass_response = ass_client.calculate_auto_rc(request_payload)
         prime_rc_ass = extract_prime_rc(ass_response)
+        breakdown = extract_rc_breakdown(ass_response)
         response_payload = ass_response
-        quote = {
-            "type": "AUTO_MONO",
-            "prime_rc_ass": prime_rc_ass,
-            "policy_fee_ass": ASS_POLICY_FEE,
-            "items": [],
-            "warnings": [],
-        }
+        quote = _build_quote("AUTO_MONO", prime_rc_ass, breakdown, [])
     elif contract.contract_type == Contract.ContractType.MOTO:
         request_payload = build_moto_rc_payload(
             contract.draft_payload.get("vehicle", {}),
@@ -56,14 +51,9 @@ def calculate_contract_quote(contract, ass_client=None):
         )
         ass_response = ass_client.calculate_moto_rc(request_payload)
         prime_rc_ass = extract_prime_rc(ass_response)
+        breakdown = extract_rc_breakdown(ass_response)
         response_payload = ass_response
-        quote = {
-            "type": "MOTO",
-            "prime_rc_ass": prime_rc_ass,
-            "policy_fee_ass": ASS_POLICY_FEE,
-            "items": [],
-            "warnings": [],
-        }
+        quote = _build_quote("MOTO", prime_rc_ass, breakdown, [])
     elif contract.contract_type == Contract.ContractType.FLEET:
         fleet_request_payload = build_fleet_rc_payload(contract.draft_payload)
         fleet_response = ass_client.calculate_fleet_rc(fleet_request_payload)
@@ -79,42 +69,30 @@ def calculate_contract_quote(contract, ass_client=None):
             "remorques": trailer_quote["responses"],
         }
         prime_rc_ass = sum(item["prime_rc_ass"] for item in items + trailer_items)
-        quote = {
-            "type": "FLEET",
-            "prime_rc_ass": prime_rc_ass,
-            "policy_fee_ass": ASS_POLICY_FEE,
-            "items": items + trailer_items,
-            "warnings": [],
-        }
+        quote = _build_quote("FLEET", prime_rc_ass, None, items + trailer_items)
     elif contract.contract_type == Contract.ContractType.BUS_SCHOOL:
         request_payload = build_bus_rc_payload(contract.draft_payload.get("vehicle", {}))
         ass_response = ass_client.calculate_bus_rc(request_payload)
         prime_rc_ass = extract_prime_rc(ass_response)
+        breakdown = extract_rc_breakdown(ass_response)
         response_payload = ass_response
-        quote = {
-            "type": "BUS_SCHOOL",
-            "prime_rc_ass": prime_rc_ass,
-            "policy_fee_ass": ASS_POLICY_FEE,
-            "items": [],
-            "warnings": [],
-        }
+        quote = _build_quote("BUS_SCHOOL", prime_rc_ass, breakdown, [])
     elif contract.contract_type == Contract.ContractType.GARAGE:
         request_payload = build_garage_rc_payload(contract.draft_payload.get("garage", {}))
         ass_response = ass_client.calculate_garage_rc(request_payload)
         prime_rc_ass = extract_prime_rc(ass_response)
+        breakdown = extract_rc_breakdown(ass_response)
         response_payload = ass_response
-        quote = {
-            "type": "GARAGE",
-            "prime_rc_ass": prime_rc_ass,
-            "policy_fee_ass": ASS_POLICY_FEE,
-            "items": [],
-            "warnings": [],
-        }
+        quote = _build_quote("GARAGE", prime_rc_ass, breakdown, [])
     else:
         raise QuoteCalculationError("Ce type de contrat n'est pas encore actif pour le devis.")
 
+    # Le cout_police vient du breakdown si disponible (sinon constante)
+    cout_police = (quote.get("cout_police") or ASS_POLICY_FEE)
+    # ttc_ass reste None jusqu'au paiement confirme (mis a jour par confirm_manual_payment)
+
     contract.prime_rc_ass = prime_rc_ass
-    contract.cout_police_ass = ASS_POLICY_FEE
+    contract.cout_police_ass = cout_police
     contract.ttc_ass = None
     contract.internal_status = Contract.InternalStatus.QUOTE_READY
     contract.ass_request_payload = request_payload
@@ -131,6 +109,30 @@ def calculate_contract_quote(contract, ass_client=None):
         ]
     )
 
+    return quote
+
+
+def _build_quote(contract_type, prime_rc_ass, breakdown, items):
+    """
+    Construit le dict quote avec les champs de base + breakdown ASS si disponible.
+    """
+    quote = {
+        "type": contract_type,
+        "prime_rc_ass": prime_rc_ass,
+        "policy_fee_ass": breakdown["cout_police"] if breakdown and breakdown.get("cout_police") else ASS_POLICY_FEE,
+        "items": items,
+        "warnings": [],
+    }
+    if breakdown:
+        quote.update({
+            "taxe": breakdown.get("taxe", 0),
+            "cedeao": breakdown.get("cedeao", 0),
+            "reduction": breakdown.get("reduction", 0),
+            "prime_ag": breakdown.get("prime_ag", 0),
+            "fonds_garantie": breakdown.get("fonds_garantie", 0),
+            "cout_police": breakdown.get("cout_police", ASS_POLICY_FEE),
+            "prime_totale": breakdown.get("prime_totale"),
+        })
     return quote
 
 
@@ -649,12 +651,53 @@ def build_garage_issue_payload(contract, reference):
 
 
 def extract_prime_rc(ass_response):
+    """
+    Extrait la Prime RC depuis la reponse ASS.
+    Supporte deux formats :
+    - data: int  (ancien format / mock simplifie)
+    - data: dict (format reel ASS avec breakdown complet)
+    """
     if not is_success_response(ass_response):
         raise QuoteCalculationError(response_message(ass_response, "Calcul ASS echoue."))
+    data = ass_response.get("data")
+    if data is None:
+        raise QuoteCalculationError("Reponse ASS invalide : champ 'data' manquant.")
+    if isinstance(data, dict):
+        try:
+            return int(data["responsabiliteCivile"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise QuoteCalculationError("Reponse ASS invalide : 'responsabiliteCivile' manquant.") from exc
     try:
-        return int(ass_response["data"])
-    except (KeyError, TypeError, ValueError) as exc:
+        return int(data)
+    except (TypeError, ValueError) as exc:
         raise QuoteCalculationError("Reponse ASS invalide pour la Prime RC.") from exc
+
+
+def extract_rc_breakdown(ass_response):
+    """
+    Extrait le detail complet du tarif RC depuis la reponse ASS.
+    Retourne un dict avec tous les champs de ventilation (taxe, cedeao, etc.).
+    Retourne None si la reponse ne contient pas de breakdown (ancien format).
+    """
+    data = ass_response.get("data") if isinstance(ass_response, dict) else None
+    if not isinstance(data, dict):
+        return None
+    return {
+        "taxe": _safe_int(data.get("taxe")),
+        "cedeao": _safe_int(data.get("cedeao")),
+        "reduction": _safe_int(data.get("reduction")),
+        "prime_ag": _safe_int(data.get("primeAG")),
+        "fonds_garantie": _safe_int(data.get("fondsGarantie")),
+        "cout_police": _safe_int(data.get("coutPolice")),
+        "prime_totale": _safe_int(data.get("primeTotale")),
+    }
+
+
+def _safe_int(value, default=0):
+    try:
+        return int(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
 
 
 def extract_fleet_items(ass_response):

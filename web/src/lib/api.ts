@@ -444,6 +444,14 @@ export type ContractQuote = {
   policy_fee_ass: number;
   items: QuoteItem[];
   warnings: string[];
+  // Breakdown complet retourné par l'API ASS réelle
+  taxe?: number;
+  cedeao?: number;
+  reduction?: number;
+  prime_ag?: number;
+  fonds_garantie?: number;
+  cout_police?: number;
+  prime_totale?: number;
 };
 
 export async function calculateContractQuote(contractId: number) {

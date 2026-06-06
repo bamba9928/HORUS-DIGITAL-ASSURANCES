@@ -1,6 +1,21 @@
 "use client";
 
-import { Check, CloudCheck, LoaderCircle } from "lucide-react";
+import {
+  Bike,
+  BusFront,
+  CalendarRange,
+  CarFront,
+  Check,
+  CloudCheck,
+  CreditCard,
+  FileCheck,
+  FileText,
+  LoaderCircle,
+  ShieldCheck,
+  UserRound,
+  Warehouse,
+  type LucideIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
@@ -84,6 +99,8 @@ type FleetVehicle = VehicleForm & {
   trailers: Trailer[];
 };
 
+const DEFAULT_FIRST_CIRCULATION_DATE = "2000-01-01";
+
 const emptyVehicle: VehicleForm = {
   brand: "",
   model: "",
@@ -94,13 +111,13 @@ const emptyVehicle: VehicleForm = {
   energy: "",
   fiscalPower: "",
   seats: "",
-  firstCirculationDate: "",
+  firstCirculationDate: DEFAULT_FIRST_CIRCULATION_DATE,
   newValue: "0",
   currentValue: "0",
   cylindree: "",
   motoUsage: "non_commerciale",
   effectDate: "",
-  duration: "1",
+  duration: "",
   periodicity: "MOIS",
   personType: "PHYSIQUE",
 };
@@ -143,10 +160,10 @@ const emptyGuaranteeOptions: GuaranteeOptionsForm = {
 
 const emptyGarage: GarageForm = {
   subcategory: "",
-  nombreCarte: "1",
+  nombreCarte: "",
   registration: "",
   effectDate: "",
-  duration: "1",
+  duration: "",
   periodicity: "MOIS",
   personType: "PHYSIQUE",
 };
@@ -750,57 +767,84 @@ export default function NewContractPage() {
       title="Nouveau contrat"
     >
       <div className="space-y-5">
-        <section className="app-surface p-2 sm:p-3">
-          <div className="grid grid-cols-4 gap-1 sm:gap-2">
-            {[
-              { label: "Informations", shortLabel: "Infos" },
-              { label: "Options", shortLabel: "Options" },
-              { label: "Résumé", shortLabel: "Résumé" },
-              { label: "Paiement", shortLabel: "Paiement" },
-            ].map((item, index) => {
-              const active = step === index + 1;
-              const completed = step > index + 1;
-              const disabled =
-                (index === 1 && !canCalculateQuote) ||
-                (index >= 2 && !quote);
-              return (
-                <button
-                  className={`flex h-12 min-w-0 items-center justify-center gap-2 rounded-md px-2 text-xs font-extrabold transition sm:h-14 sm:text-sm ${
-                    active
-                      ? "bg-primary text-white shadow-sm"
-                      : completed
-                        ? "bg-emerald-50 text-emerald-700"
-                        : "text-black/48 hover:bg-muted"
-                  }`}
-                  disabled={disabled}
-                  key={item.label}
-                  onClick={() => {
-                    if (index === 1) {
-                      void continueToOptions();
-                      return;
-                    }
-                    setStep(index + 1);
-                  }}
-                  type="button"
-                >
-                  <span
-                    className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-[10px] sm:size-7 sm:text-xs ${
+        {/* ── Sticky stepper ───────────────────────────────────── */}
+        <div className="sticky top-[58px] z-20 -mx-4 sm:-mx-6 lg:-mx-8 bg-background/95 px-4 pb-2 pt-1 backdrop-blur-sm sm:px-6 lg:px-8">
+          <section className="app-surface overflow-hidden shadow-md">
+            <div className="grid grid-cols-4 divide-x divide-border">
+              {(
+                [
+                  { label: "Informations", icon: FileText },
+                  { label: "Options",      icon: ShieldCheck },
+                  { label: "Résumé",       icon: FileCheck },
+                  { label: "Paiement",     icon: CreditCard },
+                ] as { label: string; icon: LucideIcon }[]
+              ).map((item, index) => {
+                const active = step === index + 1;
+                const completed = step > index + 1;
+                const disabled =
+                  (index === 1 && !canCalculateQuote) ||
+                  (index >= 2 && !quote);
+                const Icon = item.icon;
+                return (
+                  <button
+                    className={`group flex flex-col items-center justify-center gap-1 px-2 py-3 transition disabled:cursor-not-allowed sm:flex-row sm:justify-start sm:gap-3 sm:px-5 sm:py-4 ${
                       active
-                        ? "border-white/40 bg-white/15"
+                        ? "bg-gradient-to-br from-primary to-[var(--primary-strong)] text-white"
                         : completed
-                          ? "border-emerald-200 bg-white"
-                          : "border-border bg-white"
+                          ? "bg-emerald-50/70 text-emerald-700 hover:bg-emerald-50"
+                          : "text-black/35 hover:bg-muted hover:text-black/60 disabled:hover:bg-transparent"
                     }`}
+                    disabled={disabled}
+                    key={item.label}
+                    onClick={() => {
+                      if (index === 1) {
+                        void continueToOptions();
+                        return;
+                      }
+                      setStep(index + 1);
+                    }}
+                    type="button"
                   >
-                    {completed ? <Check size={14} /> : index + 1}
-                  </span>
-                  <span className="hidden truncate sm:inline">{item.label}</span>
-                  <span className="truncate sm:hidden">{item.shortLabel}</span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
+                    {/* Icon container */}
+                    <span
+                      className={`flex size-8 shrink-0 items-center justify-center rounded-xl transition sm:size-9 ${
+                        active
+                          ? "bg-white/18"
+                          : completed
+                            ? "bg-emerald-100 text-emerald-600"
+                            : "bg-muted"
+                      }`}
+                    >
+                      {completed ? (
+                        <Check size={15} strokeWidth={2.5} />
+                      ) : (
+                        <Icon size={16} strokeWidth={active ? 2.1 : 1.8} />
+                      )}
+                    </span>
+
+                    {/* Text */}
+                    <div className="min-w-0 text-center sm:text-left">
+                      <p
+                        className={`hidden text-[9px] font-black uppercase tracking-wider sm:block ${
+                          active ? "text-white/55" : "opacity-45"
+                        }`}
+                      >
+                        Étape {index + 1}
+                      </p>
+                      <p
+                        className={`truncate text-[10px] font-extrabold leading-tight sm:text-[13px] ${
+                          active ? "text-white" : ""
+                        }`}
+                      >
+                        {item.label}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </div>
 
         <section className="min-w-0 space-y-4">
           {error ? <AlertMessage>{error}</AlertMessage> : null}
@@ -811,14 +855,15 @@ export default function NewContractPage() {
                 <AutoSaveIndicator draftId={savedDraftId} state={autoSaveState} />
               </div>
 
-              <FormBlock title="Type de contrat">
+              <FormBlock icon={FileText} title="Type de contrat">
                 <div className="max-w-md">
                   <SelectField
-                  label="Type de contrat"
-                  onChange={resetContractType}
-                  options={displayContractTypes}
-                  value={contractType}
-                />
+                    label="Type de contrat"
+                    onChange={resetContractType}
+                    options={displayContractTypes}
+                    placeholder="Choisir un type de contrat"
+                    value={contractType}
+                  />
                 </div>
               </FormBlock>
 
@@ -852,16 +897,16 @@ export default function NewContractPage() {
 
               {isFleet ? (
                 <div className="app-surface flex flex-wrap items-center justify-between gap-3 p-4">
-                  <p className="text-sm font-bold text-black/55">
+                  <p className="text-sm font-semibold text-black/50">
                     {editingVehicleId ? "Modification du véhicule sélectionné" : "Ajoutez ce véhicule à la flotte"}
                   </p>
                   <button
-                    className="h-11 rounded-md bg-primary px-5 text-sm font-black text-white disabled:bg-black/20"
+                    className="h-10 rounded-lg bg-primary px-5 text-sm font-extrabold text-white shadow-sm shadow-primary/20 transition hover:bg-[var(--primary-strong)] disabled:bg-black/20 disabled:shadow-none"
                     disabled={!canSaveVehicle}
                     onClick={saveFleetVehicle}
                     type="button"
                   >
-                    {editingVehicleId ? "Mettre a jour le vehicule" : "Ajouter le vehicule"}
+                    {editingVehicleId ? "Mettre à jour le véhicule" : "Ajouter le véhicule"}
                   </button>
                 </div>
               ) : null}
@@ -888,30 +933,29 @@ export default function NewContractPage() {
               <div className="app-surface flex flex-wrap items-center justify-between gap-3 p-4">
                 <AutoSaveIndicator draftId={savedDraftId} state={autoSaveState} />
                 <button
-                  className="h-11 rounded-md bg-primary px-5 text-sm font-black text-white disabled:bg-black/20"
+                  className="h-10 rounded-lg bg-primary px-5 text-sm font-extrabold text-white shadow-sm shadow-primary/20 transition hover:bg-[var(--primary-strong)] disabled:bg-black/20 disabled:shadow-none"
                   disabled={saving || !canCalculateQuote}
                   onClick={continueToOptions}
                   type="button"
                 >
-                  {saving ? "Enregistrement..." : "Suivant : options et garanties"}
+                  {saving ? "Enregistrement…" : "Suivant — options et garanties"}
                 </button>
               </div>
             </div>
           ) : null}
 
           {step === 2 ? (
-            <div className="app-surface max-w-5xl space-y-6 p-5 sm:p-6">
-              <div>
-                <h2 className="text-xl font-black">Options et garanties</h2>
-                <p className="mt-1 text-sm font-semibold text-black/60">
-                  La RC est la base obligatoire. Les options non confirmees ne sont pas affichees
-                  ni envoyees par defaut.
+            <div className="max-w-5xl space-y-5">
+              <section className="app-surface p-5 sm:p-6">
+                <h2 className="text-lg font-black">Options et garanties</h2>
+                <p className="mt-1 text-sm font-medium text-black/50">
+                  La RC est la base obligatoire incluse. Sélectionnez les garanties optionnelles.
                 </p>
-              </div>
-
-              <div className="rounded-md border border-border bg-muted p-4 text-sm font-black">
-                Responsabilite civile (RC) : garantie de base ASS.
-              </div>
+                <div className="mt-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
+                  <Check size={15} />
+                  Responsabilité civile (RC) — garantie de base ASS incluse
+                </div>
+              </section>
 
               <GuaranteeSelector
                 guarantees={guarantees}
@@ -922,55 +966,54 @@ export default function NewContractPage() {
                 selectedGuarantees={selectedGuarantees}
               />
 
-              {savedDraftId ? (
-                <div className="rounded-md border border-primary bg-primary/5 px-4 py-3 text-sm font-black text-primary">
-                  Brouillon sauvegarde #{savedDraftId}
+              <div className="app-surface flex flex-wrap items-center justify-between gap-3 p-4">
+                <AutoSaveIndicator draftId={savedDraftId} state={autoSaveState} />
+                <div className="flex gap-2.5">
+                  <button
+                    className="h-10 rounded-lg border border-border px-4 text-sm font-bold transition hover:bg-muted"
+                    onClick={() => setStep(1)}
+                    type="button"
+                  >
+                    Retour
+                  </button>
+                  <button
+                    className="h-10 rounded-lg bg-black px-5 text-sm font-extrabold text-white transition hover:bg-black/80 disabled:bg-black/20"
+                    disabled={quoting || saving || !canCalculateQuote}
+                    onClick={calculateQuote}
+                    type="button"
+                  >
+                    {quoting ? "Calcul en cours…" : "Calculer le devis ASS"}
+                  </button>
                 </div>
-              ) : null}
-
-              <div className="flex gap-3">
-                <button
-                  className="h-11 rounded-md border border-border px-5 text-sm font-black"
-                  onClick={() => setStep(1)}
-                  type="button"
-                >
-                  RETOUR
-                </button>
-                <button
-                  className="h-11 rounded-md bg-black px-5 text-sm font-black text-white disabled:bg-black/20"
-                  disabled={quoting || saving || !canCalculateQuote}
-                  onClick={calculateQuote}
-                  type="button"
-                >
-                  {quoting ? "Calcul..." : "Calculer le devis ASS"}
-                </button>
               </div>
+
               {quote ? (
                 <>
                   <QuoteResultPanel quote={quote} />
-                  <button
-                    className="h-11 rounded-md bg-primary px-5 text-sm font-black text-white"
-                    onClick={() => setStep(3)}
-                    type="button"
-                  >
-                    CONTINUER VERS RESUME
-                  </button>
+                  <div className="app-surface flex justify-end p-4">
+                    <button
+                      className="h-10 rounded-lg bg-primary px-5 text-sm font-extrabold text-white shadow-sm shadow-primary/20 transition hover:bg-[var(--primary-strong)]"
+                      onClick={() => setStep(3)}
+                      type="button"
+                    >
+                      Continuer vers le résumé
+                    </button>
+                  </div>
                 </>
               ) : null}
             </div>
           ) : null}
 
           {step === 3 ? (
-            <div className="app-surface max-w-5xl space-y-6 p-5 sm:p-6">
-              <div>
-                <h2 className="text-xl font-black">Resume avant validation</h2>
-                <p className="mt-1 text-sm font-semibold text-black/60">
-                  L&apos;emission definitive reste impossible depuis les options. Verifiez les
-                  donnees avant paiement.
+            <div className="max-w-5xl space-y-5">
+              <section className="app-surface p-5 sm:p-6">
+                <h2 className="text-lg font-black">Résumé avant validation</h2>
+                <p className="mt-1 text-sm font-medium text-black/50">
+                  Vérifiez les données avant de procéder au paiement. Le devis doit être calculé.
                 </p>
-              </div>
+              </section>
               <ContractSummary
-                contractTypeLabel={selectedContractType?.label ?? "-"}
+                contractTypeLabel={selectedContractType?.label ?? "—"}
                 fleetVehicles={fleetVehicles}
                 guaranteeOptions={guaranteeOptions}
                 guarantees={guarantees}
@@ -982,41 +1025,43 @@ export default function NewContractPage() {
                 selectedGuarantees={selectedGuarantees}
                 vehicle={vehicle}
               />
-              <div className="flex flex-wrap gap-3">
+              <div className="app-surface flex flex-wrap items-center justify-between gap-3 p-4">
+                <div className="flex gap-2.5">
+                  <button
+                    className="h-10 rounded-lg border border-border px-4 text-sm font-bold transition hover:bg-muted"
+                    onClick={() => setStep(1)}
+                    type="button"
+                  >
+                    Modifier
+                  </button>
+                  <button
+                    className="h-10 rounded-lg border border-border px-4 text-sm font-bold transition hover:bg-muted"
+                    onClick={() => setStep(2)}
+                    type="button"
+                  >
+                    Options
+                  </button>
+                </div>
                 <button
-                  className="h-11 rounded-md border border-border px-5 text-sm font-black"
-                  onClick={() => setStep(1)}
-                  type="button"
-                >
-                  MODIFIER
-                </button>
-                <button
-                  className="h-11 rounded-md border border-border px-5 text-sm font-black"
-                  onClick={() => setStep(2)}
-                  type="button"
-                >
-                  RETOUR OPTIONS
-                </button>
-                <button
-                  className="h-11 rounded-md bg-primary px-5 text-sm font-black text-white disabled:bg-black/20"
+                  className="h-10 rounded-lg bg-primary px-5 text-sm font-extrabold text-white shadow-sm shadow-primary/20 transition hover:bg-[var(--primary-strong)] disabled:bg-black/20 disabled:shadow-none"
                   disabled={!quote}
                   onClick={() => setStep(4)}
                   type="button"
                 >
-                  VALIDER ET PASSER AU PAIEMENT
+                  Valider et passer au paiement
                 </button>
               </div>
             </div>
           ) : null}
 
           {step === 4 ? (
-            <div className="app-surface max-w-5xl space-y-6 p-5 sm:p-6">
-              <div>
-                <h2 className="text-xl font-black">Paiement / emission</h2>
-                <p className="mt-1 text-sm font-semibold text-black/60">
-                  L&apos;emission ASS consomme un QR code uniquement apres paiement confirme.
+            <div className="max-w-5xl space-y-5">
+              <section className="app-surface p-5 sm:p-6">
+                <h2 className="text-lg font-black">Paiement et émission</h2>
+                <p className="mt-1 text-sm font-medium text-black/50">
+                  L&apos;émission ASS consomme un QR code uniquement après paiement confirmé.
                 </p>
-              </div>
+              </section>
               {quote ? (
                 <PaymentIssuePanel
                   issueResult={issueResult}
@@ -1028,17 +1073,19 @@ export default function NewContractPage() {
                   quote={quote}
                 />
               ) : (
-                <div className="rounded-md border border-border bg-muted p-4 text-sm font-bold text-black/60">
-                  Calculez d&apos;abord le devis ASS depuis l&apos;etape options.
+                <div className="app-surface flex items-center gap-2 p-5 text-sm font-semibold text-black/50">
+                  Calculez d&apos;abord le devis ASS depuis l&apos;étape options.
                 </div>
               )}
-              <button
-                className="h-11 rounded-md border border-border px-5 text-sm font-black"
-                onClick={() => setStep(3)}
-                type="button"
-              >
-                Retour au resume
-              </button>
+              <div className="flex">
+                <button
+                  className="h-10 rounded-lg border border-border px-4 text-sm font-bold transition hover:bg-muted"
+                  onClick={() => setStep(3)}
+                  type="button"
+                >
+                  Retour au résumé
+                </button>
+              </div>
             </div>
           ) : null}
         </section>
@@ -1127,7 +1174,7 @@ function PersonSection({
   policyholder: PersonForm;
 }) {
   return (
-    <FormBlock title="Client">
+    <FormBlock icon={UserRound} title="Client">
       <PersonFields
         onChange={onPolicyholderChange}
         person={policyholder}
@@ -1148,27 +1195,33 @@ function PersonFields({
         <TextField
           label="Nom"
           onChange={(value) => onChange("lastName", value)}
+          placeholder="Ndiaye"
           value={person.lastName}
         />
         <TextField
-          label="Prenom / contact"
+          label="Prénom"
           onChange={(value) => onChange("firstName", value)}
+          placeholder="Awa"
           value={person.firstName}
         />
         <TextField
-          label="Telephone"
+          label="Téléphone"
           onChange={(value) => onChange("phone", value)}
+          placeholder="77 123 45 67"
+          type="tel"
           value={person.phone}
         />
         <TextField
           label="Email"
           onChange={(value) => onChange("email", value)}
+          placeholder="awa.ndiaye@email.com"
           type="email"
           value={person.email}
         />
         <TextField
           label="Adresse"
           onChange={(value) => onChange("address", value)}
+          placeholder="Dakar, Plateau"
           value={person.address}
         />
     </div>
@@ -1186,41 +1239,46 @@ function GarageFields({
 }) {
   return (
     <>
-      <FormBlock title="Garage">
+      <FormBlock icon={Warehouse} title="Garage">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <SelectField
             label="Genre ASS (sous-catégorie)"
             onChange={(value) => updateGarage("subcategory", value)}
             options={subcategories}
+            placeholder="Choisir un genre ASS"
             value={garage.subcategory}
           />
           <TextField
             helper="Nombre de cartes grises gérées par le garage"
             label="Nombre de cartes"
             onChange={(value) => updateGarage("nombreCarte", value)}
+            placeholder="5"
             type="number"
             value={garage.nombreCarte}
           />
           <TextField
             label="Immatriculation (optionnel)"
             onChange={(value) => updateGarage("registration", value)}
+            placeholder="AA123BC"
             value={garage.registration}
           />
         </div>
       </FormBlock>
-      <FormBlock title="Couverture">
+      <FormBlock icon={CalendarRange} title="Couverture">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <TextField
-            label="Date d'effet"
-            onChange={(value) => updateGarage("effectDate", value)}
-            type="date"
-            value={garage.effectDate}
-          />
           <SelectField
             label="Durée"
             onChange={(value) => updateGarage("duration", value)}
             options={durationOptions}
+            placeholder="Choisir une durée"
             value={garage.duration}
+          />
+          <TextField
+            label="Date d'effet"
+            onChange={(value) => updateGarage("effectDate", value)}
+            placeholder="JJ/MM/AAAA"
+            type="date"
+            value={garage.effectDate}
           />
         </div>
       </FormBlock>
@@ -1257,7 +1315,10 @@ function VehicleFields({
 }) {
   return (
     <>
-      <FormBlock title={isMoto ? "Moto" : isBusSchool ? "Bus école" : "Véhicule"}>
+      <FormBlock
+        icon={isMoto ? Bike : isBusSchool ? BusFront : CarFront}
+        title={isMoto ? "Moto" : isBusSchool ? "Bus école" : "Véhicule"}
+      >
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <SelectSearch
             createLabel="Ajouter la marque"
@@ -1265,17 +1326,20 @@ function VehicleFields({
             onCreate={onCreateBrand}
             onChange={(value) => updateVehicle("brand", value)}
             options={brands}
+            placeholder="Rechercher ou choisir une marque"
             value={vehicle.brand}
           />
           <TextField
             label="Modèle"
             onChange={(value) => updateVehicle("model", value)}
+            placeholder="Corolla"
             value={vehicle.model}
           />
           <SelectField
             label="Catégorie"
             onChange={(value) => updateVehicle("category", value)}
             options={categories}
+            placeholder="Choisir une catégorie"
             value={vehicle.category}
           />
           <SelectField
@@ -1283,40 +1347,45 @@ function VehicleFields({
             label="Sous-catégorie ASS"
             onChange={(value) => updateVehicle("subcategory", value)}
             options={subcategories}
+            placeholder="Choisir une sous-catégorie"
             value={vehicle.subcategory}
           />
           <div>
-        <TextField
-          label="Immatriculation"
-          onChange={(value) => updateVehicle("registration", value)}
-          value={vehicle.registration}
-        />
-        <div className="mt-2 flex items-center gap-3">
-          <button
-            className="h-9 rounded-md border border-border px-3 text-xs font-black disabled:text-black/35"
-            disabled={!vehicle.registration || verifyingRegistration}
-            onClick={onVerifyRegistration}
-            type="button"
-          >
-            {verifyingRegistration ? "Verification..." : "Verifier ASS"}
-          </button>
-          {registrationVerification ? (
-            <p className="text-xs font-black text-black/60">
-              {registrationVerificationMessage(registrationVerification)}
-            </p>
-          ) : null}
-        </div>
+            <TextField
+              label="Immatriculation"
+              onChange={(value) => updateVehicle("registration", value)}
+              placeholder="AA123BC"
+              value={vehicle.registration}
+            />
+            <div className="mt-2 flex items-center gap-3">
+              <button
+                className="h-9 rounded-md border border-border px-3 text-xs font-black disabled:text-black/35"
+                disabled={!vehicle.registration || verifyingRegistration}
+                onClick={onVerifyRegistration}
+                type="button"
+              >
+                {verifyingRegistration ? "Vérification..." : "Vérifier ASS"}
+              </button>
+              {registrationVerification ? (
+                <p className="text-xs font-black text-black/60">
+                  {registrationVerificationMessage(registrationVerification)}
+                </p>
+              ) : null}
+            </div>
           </div>
           <SelectField
             label="Énergie"
             onChange={(value) => updateVehicle("energy", value)}
             options={energies}
+            placeholder="Choisir une énergie"
             value={vehicle.energy}
           />
           {!isMoto ? (
             <TextField
               label="Puissance fiscale"
               onChange={(value) => updateVehicle("fiscalPower", value)}
+              placeholder="8"
+              type="number"
               value={vehicle.fiscalPower}
             />
           ) : null}
@@ -1324,37 +1393,37 @@ function VehicleFields({
             <TextField
               label="Cylindrée"
               onChange={(value) => updateVehicle("cylindree", value)}
+              placeholder="125"
+              type="number"
               value={vehicle.cylindree}
             />
           ) : (
             <TextField
               label="Nombre de places"
               onChange={(value) => updateVehicle("seats", value)}
+              placeholder="5"
+              type="number"
               value={vehicle.seats}
             />
           )}
-          <TextField
-            label="Mise en circulation"
-            onChange={(value) => updateVehicle("firstCirculationDate", value)}
-            type="date"
-            value={vehicle.firstCirculationDate}
-          />
         </div>
       </FormBlock>
 
-      <FormBlock title="Couverture">
+      <FormBlock icon={CalendarRange} title="Couverture">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <TextField
-            label="Date d'effet"
-            onChange={(value) => updateVehicle("effectDate", value)}
-            type="date"
-            value={vehicle.effectDate}
-          />
           <SelectField
             label="Durée"
             onChange={(value) => updateVehicle("duration", value)}
             options={durationOptions}
+            placeholder="Choisir une durée"
             value={vehicle.duration}
+          />
+          <TextField
+            label="Date d'effet"
+            onChange={(value) => updateVehicle("effectDate", value)}
+            placeholder="JJ/MM/AAAA"
+            type="date"
+            value={vehicle.effectDate}
           />
         </div>
       </FormBlock>
@@ -1405,7 +1474,7 @@ function FleetSection({
       {fleetVehicles.length ? (
         <div className="grid grid-cols-2 gap-4">
           {fleetVehicles.map((fleetVehicle) => (
-            <div className="rounded-md border border-border p-4" key={fleetVehicle.id}>
+            <div className="rounded-xl border border-border bg-white p-4 shadow-sm" key={fleetVehicle.id}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-base font-black">{vehicleLabel(fleetVehicle)}</p>
@@ -1421,25 +1490,25 @@ function FleetSection({
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
-                  className="rounded-md border border-border px-3 py-2 text-xs font-black"
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-bold transition hover:bg-muted"
                   onClick={() => editFleetVehicle(fleetVehicle.id)}
                   type="button"
                 >
                   Modifier
                 </button>
                 <button
-                  className="rounded-md border border-border px-3 py-2 text-xs font-black"
+                  className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-bold text-red-600 transition hover:bg-red-50"
                   onClick={() => deleteFleetVehicle(fleetVehicle.id)}
                   type="button"
                 >
                   Supprimer
                 </button>
                 <button
-                  className="rounded-md bg-primary px-3 py-2 text-xs font-black text-white"
+                  className="rounded-lg bg-primary px-3 py-1.5 text-xs font-extrabold text-white transition hover:bg-[var(--primary-strong)]"
                   onClick={() => startTrailerForm(fleetVehicle.id)}
                   type="button"
                 >
-                  Ajouter une remorque
+                  + Remorque
                 </button>
               </div>
 
@@ -1492,44 +1561,54 @@ function FleetSection({
               onCreate={onCreateBrand}
               onChange={(value) => updateTrailer("brand", value)}
               options={brands}
+              placeholder="Rechercher ou choisir une marque"
               value={trailerForm.brand}
             />
             <TextField
-              label="Modele remorque"
+              label="Modèle remorque"
               onChange={(value) => updateTrailer("model", value)}
+              placeholder="Plateau"
               value={trailerForm.model}
             />
             <SelectField
               label="Catégorie remorque"
               onChange={(value) => updateTrailer("category", value)}
               options={trailerCategories}
+              placeholder="Choisir une catégorie"
               value={trailerForm.category}
             />
             <SelectField
               label="Sous-catégorie remorque"
               onChange={(value) => updateTrailer("subcategory", value)}
               options={trailerSubcategories}
+              placeholder="Choisir une sous-catégorie"
               value={trailerForm.subcategory}
             />
             <TextField
               label="Immatriculation remorque"
               onChange={(value) => updateTrailer("registration", value)}
+              placeholder="AA123BC"
               value={trailerForm.registration}
             />
             <TextField
               label="Charge utile"
               onChange={(value) => updateTrailer("usefulLoad", value)}
+              placeholder="1500"
+              type="number"
               value={trailerForm.usefulLoad}
             />
             <TextField
               label="Date de mise en circulation"
               onChange={(value) => updateTrailer("firstCirculationDate", value)}
+              placeholder="JJ/MM/AAAA"
               type="date"
               value={trailerForm.firstCirculationDate}
             />
             <TextField
               label="Valeur"
               onChange={(value) => updateTrailer("value", value)}
+              placeholder="2 500 000"
+              type="number"
               value={trailerForm.value}
             />
           </div>
@@ -1617,9 +1696,9 @@ function ContractSummary({
 
   return (
     <div className="space-y-5">
-      <div className="rounded-md border border-border p-5">
-        <h3 className="text-lg font-black">Informations client</h3>
-        <dl className="mt-4 grid grid-cols-2 gap-4 text-sm max-md:grid-cols-1">
+      <section className="app-surface overflow-hidden">
+        <div className="border-b border-border px-5 py-4"><h3 className="font-extrabold">Informations client</h3></div>
+        <dl className="grid grid-cols-2 gap-4 p-5 text-sm max-md:grid-cols-1">
           <SummaryItem label="Souscripteur" value={personLabel(policyholder)} />
           <SummaryItem
             label="Assure"
@@ -1629,135 +1708,182 @@ function ContractSummary({
           <SummaryItem label="Email" value={policyholder.email || "-"} />
           <SummaryItem label="Adresse" value={policyholder.address || "-"} />
         </dl>
-      </div>
+      </section>
 
-      <div className="rounded-md border border-border p-5">
-        <h3 className="text-lg font-black">Informations vehicule</h3>
+      <section className="app-surface overflow-hidden">
+        <div className="border-b border-border px-5 py-4"><h3 className="font-extrabold">Véhicule</h3></div>
         {isFleet ? (
-          <div className="mt-4">
+          <div className="p-5">
             <FleetSummary fleetVehicles={fleetVehicles} />
           </div>
         ) : (
-          <dl className="mt-4 grid grid-cols-2 gap-4 text-sm max-md:grid-cols-1">
+          <dl className="grid grid-cols-2 gap-4 p-5 text-sm max-md:grid-cols-1">
             <SummaryItem label="Type contrat" value={contractTypeLabel} />
-            <SummaryItem label="Immatriculation" value={vehicle.registration || "-"} />
-            <SummaryItem label="Categorie" value={vehicle.category || "-"} />
-            <SummaryItem label="Genre ASS" value={vehicle.subcategory || "-"} />
-            <SummaryItem label="Marque" value={vehicle.brand || "-"} />
-            <SummaryItem label="Modele" value={vehicle.model || "-"} />
-            <SummaryItem label="Energie" value={vehicle.energy || "-"} />
+            <SummaryItem label="Immatriculation" value={vehicle.registration || "—"} />
+            <SummaryItem label="Catégorie" value={vehicle.category || "—"} />
+            <SummaryItem label="Genre ASS" value={vehicle.subcategory || "—"} />
+            <SummaryItem label="Marque" value={vehicle.brand || "—"} />
+            <SummaryItem label="Modèle" value={vehicle.model || "—"} />
+            <SummaryItem label="Énergie" value={vehicle.energy || "—"} />
             <SummaryItem
-              label={vehicle.cylindree ? "Cylindree" : "Puissance fiscale"}
-              value={vehicle.cylindree || vehicle.fiscalPower || "-"}
+              label={vehicle.cylindree ? "Cylindrée" : "Puissance fiscale"}
+              value={vehicle.cylindree || vehicle.fiscalPower || "—"}
             />
-            <SummaryItem label="Nombre de places" value={vehicle.seats || "-"} />
+            <SummaryItem label="Nombre de places" value={vehicle.seats || "—"} />
           </dl>
         )}
-      </div>
+      </section>
 
-      <div className="rounded-md border border-border p-5">
-        <h3 className="text-lg font-black">Duree et dates</h3>
-        <dl className="mt-4 grid grid-cols-2 gap-4 text-sm max-md:grid-cols-1">
-          <SummaryItem label="Periodicite" value={coverageVehicle?.periodicity || "-"} />
-          <SummaryItem label="Duree" value={coverageVehicle?.duration || "-"} />
-          <SummaryItem label="Date effet" value={coverageVehicle?.effectDate || "-"} />
+      <section className="app-surface overflow-hidden">
+        <div className="border-b border-border px-5 py-4"><h3 className="font-extrabold">Durée et dates</h3></div>
+        <dl className="grid grid-cols-2 gap-4 p-5 text-sm max-md:grid-cols-1">
+          <SummaryItem label="Périodicité" value={coverageVehicle?.periodicity || "—"} />
+          <SummaryItem label="Durée" value={coverageVehicle?.duration || "—"} />
+          <SummaryItem label="Date d'effet" value={coverageVehicle?.effectDate || "—"} />
           <SummaryItem label="Date expiration" value={expirationDate} />
         </dl>
-      </div>
+      </section>
 
-      <div className="rounded-md border border-border p-5">
-        <h3 className="text-lg font-black">Garanties selectionnees</h3>
-        <dl className="mt-4 grid grid-cols-2 gap-4 text-sm max-md:grid-cols-1">
-          <SummaryItem label="Garantie de base" value="Responsabilite civile (RC)" />
+      <section className="app-surface overflow-hidden">
+        <div className="border-b border-border px-5 py-4"><h3 className="font-extrabold">Garanties sélectionnées</h3></div>
+        <dl className="grid grid-cols-2 gap-4 p-5 text-sm max-md:grid-cols-1">
+          <SummaryItem label="Garantie de base" value="Responsabilité civile (RC)" />
           <SummaryItem
             label="Garanties optionnelles"
             value={guaranteeLabels(guarantees, selectedGuarantees).join(", ") || "Aucune"}
           />
-          <SummaryItem
-            label="Options garanties"
-            value={guaranteeOptionSummary(guaranteeOptions)}
-          />
+          <SummaryItem label="Options garanties" value={guaranteeOptionSummary(guaranteeOptions)} />
         </dl>
-      </div>
+      </section>
 
       {quote ? (
         <QuoteResultPanel quote={quote} />
       ) : (
-        <div className="rounded-md border border-border bg-muted p-4 text-sm font-bold text-black/60">
-          Devis ASS non calcule.
+        <div className="app-surface flex items-center p-5 text-sm font-semibold text-black/45">
+          Devis ASS non calculé — revenez à l&apos;étape Options.
         </div>
       )}
 
-      <div className="rounded-md border border-border p-5">
-        <h3 className="text-lg font-black">Commission apporteur</h3>
-        <dl className="mt-4 grid grid-cols-2 gap-4 text-sm max-md:grid-cols-1">
-          <SummaryItem label="Commission" value="Calculee a l'emission selon configuration" />
-          <SummaryItem label="Net a verser Horus" value="Disponible apres snapshot commission" />
+      <section className="app-surface overflow-hidden">
+        <div className="border-b border-border px-5 py-4"><h3 className="font-extrabold">Commission apporteur</h3></div>
+        <dl className="grid grid-cols-2 gap-4 p-5 text-sm max-md:grid-cols-1">
+          <SummaryItem label="Commission" value="Calculée à l'émission selon configuration" />
+          <SummaryItem label="Net à verser Horus" value="Disponible après snapshot commission" />
         </dl>
-      </div>
+      </section>
     </div>
   );
 }
 
 function QuoteResultPanel({ quote }: { quote: ContractQuote }) {
   const paymentAmount = quote.prime_rc_ass + quote.policy_fee_ass;
+  const hasBreakdown = quote.prime_totale !== undefined;
 
   return (
-    <div className="rounded-md border border-primary p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h3 className="text-lg font-black">Devis ASS</h3>
-          <p className="mt-1 text-sm font-semibold text-black/60">
-            Prime RC calculee par ASS via le backend Horus.
-          </p>
-        </div>
-        <span className="rounded-md bg-primary px-3 py-1 text-sm font-black text-white">
-          Prime RC ASS
+    <section className="app-surface overflow-hidden">
+      <div className="flex items-center justify-between gap-3 border-b border-border bg-primary/5 px-5 py-4">
+        <h3 className="font-extrabold text-primary">Devis ASS calculé</h3>
+        <span className="rounded-full bg-primary px-2.5 py-1 text-[11px] font-black text-white">
+          {quote.type}
         </span>
       </div>
-
-      <dl className="mt-5 grid grid-cols-4 gap-4 max-lg:grid-cols-2 max-md:grid-cols-1">
-        <SummaryItem label="Prime RC ASS" value={`${formatAmount(quote.prime_rc_ass)} FCFA`} />
-        <SummaryItem
-          label="Cout de police ASS"
-          value={`${formatAmount(quote.policy_fee_ass)} FCFA`}
-        />
-        <SummaryItem label="Taxes / accessoires" value="Selon retour ASS" />
-        <SummaryItem label="TTC ASS" value="A confirmer" />
-        <SummaryItem label="Montant a payer" value={`${formatAmount(paymentAmount)} FCFA`} />
-      </dl>
-
-      {quote.items.length ? (
-        <div className="mt-5 rounded-md border border-border">
-          {quote.items.map((item) => (
-            <div
-              className="flex items-center justify-between border-b border-border px-4 py-3 last:border-b-0"
-              key={`${item.kind}-${item.request_id}`}
-            >
-              <div>
-                <p className="text-sm font-black">{item.label || item.request_id}</p>
-                <p className="text-xs font-bold text-black/55">
-                  {item.kind === "TRAILER" ? "Remorque" : "Vehicule"}
-                </p>
+      <div className="p-5 space-y-5">
+        {/* Section PRIMES - breakdown complet si disponible */}
+        <div>
+          <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-black/40">Primes</p>
+          {hasBreakdown ? (
+            <div className="overflow-hidden rounded-lg border border-border">
+              <div className="grid grid-cols-2 divide-x divide-border">
+                {/* Colonne gauche */}
+                <div className="divide-y divide-border">
+                  <QuoteRow label="Prime RC" value={quote.prime_rc_ass} />
+                  <QuoteRow label="Coût de la police" value={quote.cout_police ?? quote.policy_fee_ass} />
+                  <QuoteRow label="Taxe" value={quote.taxe ?? 0} />
+                  <QuoteRow label="CEDEAO" value={quote.cedeao ?? 0} />
+                </div>
+                {/* Colonne droite */}
+                <div className="divide-y divide-border">
+                  <QuoteRow label="Réduction" value={quote.reduction ?? 0} isReduction />
+                  <QuoteRow label="Prime A.G" value={quote.prime_ag ?? 0} />
+                  <QuoteRow label="Fonds de garantie" value={quote.fonds_garantie ?? 0} />
+                  <QuoteRow
+                    label="Prime Totale"
+                    value={quote.prime_totale ?? paymentAmount}
+                    isTotal
+                  />
+                </div>
               </div>
-              <p className="text-sm font-black">{formatAmount(item.prime_rc_ass)} FCFA</p>
             </div>
-          ))}
+          ) : (
+            <dl className="grid grid-cols-2 gap-4 md:grid-cols-3">
+              <SummaryItem label="Prime RC ASS" value={`${formatAmount(quote.prime_rc_ass)} FCFA`} />
+              <SummaryItem label="Coût de police" value={`${formatAmount(quote.policy_fee_ass)} FCFA`} />
+              <SummaryItem label="Total à payer" value={`${formatAmount(paymentAmount)} FCFA`} />
+            </dl>
+          )}
         </div>
-      ) : null}
 
-      {quote.warnings.length ? (
-        <div className="mt-5 space-y-2">
-          {quote.warnings.map((warning) => (
-            <p
-              className="rounded-md bg-muted px-3 py-2 text-xs font-bold text-black/65"
-              key={warning}
-            >
-              {warning}
-            </p>
-          ))}
-        </div>
-      ) : null}
+        {/* Détail flotte */}
+        {quote.items.length ? (
+          <div>
+            <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-black/40">Détail véhicules</p>
+            <div className="overflow-hidden rounded-lg border border-border">
+              {quote.items.map((item) => (
+                <div
+                  className="flex items-center justify-between border-b border-border px-4 py-3 last:border-b-0"
+                  key={`${item.kind}-${item.request_id}`}
+                >
+                  <div>
+                    <p className="text-sm font-bold">{item.label || item.request_id}</p>
+                    <p className="text-[11px] font-semibold text-black/45">
+                      {item.kind === "TRAILER" ? "Remorque" : "Véhicule"}
+                    </p>
+                  </div>
+                  <p className="font-extrabold tabular-nums">{formatAmount(item.prime_rc_ass)} FCFA</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {quote.warnings.length ? (
+          <div className="space-y-2">
+            {quote.warnings.map((warning) => (
+              <p
+                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800"
+                key={warning}
+              >
+                {warning}
+              </p>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function QuoteRow({
+  label,
+  value,
+  isReduction = false,
+  isTotal = false,
+}: {
+  label: string;
+  value: number;
+  isReduction?: boolean;
+  isTotal?: boolean;
+}) {
+  return (
+    <div className={`flex items-center justify-between px-4 py-3 ${isTotal ? "bg-primary/5" : ""}`}>
+      <span className={`text-xs font-bold ${isTotal ? "text-primary font-extrabold" : "text-black/55"}`}>
+        {label}
+      </span>
+      <span className={`tabular-nums font-extrabold ${
+        isTotal ? "text-primary" : isReduction ? "text-emerald-600" : "text-foreground"
+      }`}>
+        {isReduction && value > 0 ? "−" : ""}{formatAmount(value)} FCFA
+      </span>
     </div>
   );
 }
@@ -1783,36 +1909,38 @@ function PaymentIssuePanel({
     <div className="space-y-5">
       <QuoteResultPanel quote={quote} />
 
-      <div className="rounded-md border border-border p-5">
-        <h3 className="text-lg font-black">Paiement et emission</h3>
-        <p className="mt-1 text-sm font-semibold text-black/60">
-          L&apos;emission reste bloquee tant que le paiement test n&apos;est pas confirme.
-        </p>
-        <div className="mt-5 flex flex-wrap gap-3">
+      <section className="app-surface overflow-hidden">
+        <div className="border-b border-border px-5 py-4">
+          <h3 className="font-extrabold">Paiement et émission</h3>
+          <p className="mt-0.5 text-xs font-medium text-black/45">
+            L&apos;émission reste bloquée tant que le paiement test n&apos;est pas confirmé.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 p-5">
           <button
-            className="h-11 rounded-md bg-primary px-5 text-sm font-black text-white disabled:bg-black/20"
+            className="h-10 rounded-lg bg-primary px-5 text-sm font-extrabold text-white shadow-sm shadow-primary/20 transition hover:bg-[var(--primary-strong)] disabled:bg-black/20 disabled:shadow-none"
             disabled={Boolean(payment) || paying}
             onClick={onConfirmPayment}
             type="button"
           >
-            {paying ? "Confirmation..." : "Confirmer paiement test"}
+            {paying ? "Confirmation…" : "Confirmer paiement test"}
           </button>
           <button
-            className="h-11 rounded-md bg-black px-5 text-sm font-black text-white disabled:bg-black/20"
+            className="h-10 rounded-lg bg-black px-5 text-sm font-extrabold text-white transition hover:bg-black/80 disabled:bg-black/20"
             disabled={!payment || Boolean(issueResult) || issuing}
             onClick={onIssue}
             type="button"
           >
-            {issuing ? "Emission..." : "Emettre le contrat ASS"}
+            {issuing ? "Émission…" : "Émettre le contrat ASS"}
           </button>
+          {payment ? (
+            <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
+              <Check size={12} />
+              Paiement confirmé — {formatAmount(payment.amount)} FCFA
+            </span>
+          ) : null}
         </div>
-
-        {payment ? (
-          <p className="mt-4 rounded-md bg-muted px-3 py-2 text-sm font-black">
-            Paiement confirme : {formatAmount(payment.amount)} FCFA
-          </p>
-        ) : null}
-      </div>
+      </section>
 
       {issueResult ? <IssuePanel issueResult={issueResult} /> : null}
     </div>
@@ -1821,62 +1949,69 @@ function PaymentIssuePanel({
 
 function IssuePanel({ issueResult }: { issueResult: IssueResult }) {
   return (
-    <div className="rounded-md border border-primary bg-primary/5 p-5">
-      <div className="flex items-start justify-between gap-4">
+    <section className="app-surface overflow-hidden">
+      <div className="flex items-center gap-3 border-b border-emerald-100 bg-emerald-50 px-5 py-4">
+        <span className="flex size-9 items-center justify-center rounded-xl bg-emerald-500 text-white">
+          <Check size={18} strokeWidth={3} />
+        </span>
         <div>
-          <h3 className="text-lg font-black">Contrat emis</h3>
-          <p className="mt-1 text-sm font-semibold text-black/60">
-            Emission mockee. Aucun QR ASS reel n&apos;a ete consomme.
+          <h3 className="font-extrabold text-emerald-800">Contrat émis</h3>
+          <p className="text-xs font-medium text-emerald-700">
+            Émission mode test. <StatusBadge status={issueResult.ass_status} />
           </p>
         </div>
-        <span className="rounded-md bg-primary px-3 py-1 text-sm font-black text-white">
-          {issueResult.ass_status}
-        </span>
       </div>
-      <dl className="mt-5 grid grid-cols-2 gap-4 text-sm">
-        <SummaryItem label="Numero attestation" value={issueResult.attestation_number || "-"} />
-        <SummaryItem label="Reference externe" value={issueResult.reference_externe || "-"} />
-        <SummaryItem label="Reference Horus" value={issueResult.reference_trx_partner || "-"} />
-        <SummaryItem label="Cle de securite" value={issueResult.secure_key || "-"} />
-        <SummaryItem label="Date expiration" value={issueResult.date_expiration || "-"} />
-      </dl>
-      <div className="mt-5 flex flex-wrap gap-3">
-        {issueResult.link_attestation_digitale ? (
-          <a
-            className="rounded-md bg-black px-4 py-2 text-sm font-black text-white"
-            href={issueResult.link_attestation_digitale}
-            rel="noreferrer"
-            target="_blank"
-          >
-            Attestation digitale
-          </a>
-        ) : null}
-        {issueResult.link_attestation_cedeao ? (
-          <a
-            className="rounded-md border border-primary px-4 py-2 text-sm font-black text-primary"
-            href={issueResult.link_attestation_cedeao}
-            rel="noreferrer"
-            target="_blank"
-          >
-            Attestation CEDEAO
-          </a>
-        ) : null}
+      <div className="p-5">
+        <dl className="grid grid-cols-2 gap-4 md:grid-cols-3">
+          <SummaryItem label="N° attestation" value={issueResult.attestation_number || "—"} />
+          <SummaryItem label="Référence externe" value={issueResult.reference_externe || "—"} />
+          <SummaryItem label="Référence Horus" value={issueResult.reference_trx_partner || "—"} />
+          <SummaryItem label="Clé de sécurité" value={issueResult.secure_key || "—"} />
+          <SummaryItem label="Date expiration" value={issueResult.date_expiration || "—"} />
+        </dl>
+        <div className="mt-5 flex flex-wrap gap-2.5">
+          {issueResult.link_attestation_digitale ? (
+            <a
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-black px-4 text-sm font-extrabold text-white transition hover:bg-black/80"
+              href={issueResult.link_attestation_digitale}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Attestation digitale
+            </a>
+          ) : null}
+          {issueResult.link_attestation_cedeao ? (
+            <a
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary px-4 text-sm font-extrabold text-primary transition hover:bg-primary/5"
+              href={issueResult.link_attestation_cedeao}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Carte brune CEDEAO
+            </a>
+          ) : null}
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 
 function FormBlock({
   title,
   children,
+  icon: Icon,
 }: {
   title: string;
   children: React.ReactNode;
+  icon: LucideIcon;
 }) {
   return (
     <section className="app-surface overflow-hidden">
-      <div className="border-b border-border bg-[#fafafb] px-5 py-3.5">
-        <h2 className="text-base font-black">{title}</h2>
+      <div className="flex items-center justify-center gap-2.5 border-b border-primary/15 bg-primary/5 px-5 py-4 text-center text-primary">
+        <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10">
+          <Icon aria-hidden="true" size={17} strokeWidth={2.4} />
+        </span>
+        <h2 className="font-extrabold">{title}</h2>
       </div>
       <div className="p-5 sm:p-6">{children}</div>
     </section>
@@ -1889,23 +2024,25 @@ function SelectField({
   value,
   disabled = false,
   onChange,
+  placeholder = "Sélectionner...",
 }: {
   label: string;
   options: SelectOption[];
   value: string;
   disabled?: boolean;
   onChange: (value: string) => void;
+  placeholder?: string;
 }) {
   return (
     <label className="block">
-      <span className="text-xs font-extrabold uppercase text-black/52">{label}</span>
+      <span className="text-xs font-extrabold uppercase tracking-wide text-primary">{label}</span>
       <select
-        className="app-field mt-1.5"
+        className="app-field mt-1.5 border-primary/30 bg-primary/5 text-sm font-semibold text-primary"
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
-        <option value="">Sélectionner...</option>
+        <option value="">{placeholder}</option>
         {options.map((option) => (
           <option
             disabled={option.enabled === false}
@@ -1965,6 +2102,7 @@ function TextField({
   max,
   min,
   onChange,
+  placeholder,
 }: {
   label: string;
   value: string;
@@ -1973,18 +2111,20 @@ function TextField({
   max?: number;
   min?: number;
   onChange: (value: string) => void;
+  placeholder?: string;
 }) {
   return (
     <label className="block">
-      <span className="text-sm font-black">{label}</span>
+      <span className="text-xs font-extrabold uppercase tracking-wide text-black/52">{label}</span>
       {helper ? (
-        <span className="mt-1 block text-xs font-semibold text-black/55">{helper}</span>
+        <span className="mt-0.5 block text-xs font-medium text-black/45">{helper}</span>
       ) : null}
       <input
-        className="mt-2 h-11 w-full rounded-md border border-border px-3 text-sm font-bold outline-none focus:border-primary"
+        className="app-field mt-1.5 text-sm"
         max={max}
         min={min}
         onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
         type={type}
         value={value}
       />
@@ -2087,6 +2227,7 @@ function normalizeVehicleForPayload(vehicle: VehicleForm): VehicleForm {
     ...vehicle,
     chassis: "",
     currentValue: vehicle.currentValue || "0",
+    firstCirculationDate: DEFAULT_FIRST_CIRCULATION_DATE,
     motoUsage: vehicle.motoUsage || "non_commerciale",
     newValue: vehicle.newValue || "0",
     periodicity: "MOIS",
@@ -2294,11 +2435,7 @@ function toVehicleFormFromPayloadWithDefaults(
     energy: readText(payload, ["energy", "energie"]),
     fiscalPower: readText(payload, ["fiscalPower", "fiscal_power", "puissanceFiscale"]),
     seats: readText(payload, ["seats", "nombrePlaces", "nombre_places"]),
-    firstCirculationDate: readText(payload, [
-      "firstCirculationDate",
-      "first_circulation_date",
-      "dateMiseEnCirculation",
-    ]),
+    firstCirculationDate: DEFAULT_FIRST_CIRCULATION_DATE,
     newValue: readText(payload, ["newValue", "new_value", "valeurNeuve"], defaults.newValue),
     currentValue: readText(
       payload,
