@@ -1,11 +1,8 @@
-from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from accounts.models import User
 from contracts.models import Contract
 from contracts.services import validate_guarantee_configuration
-from organizations.models import Organization
 
 
 class ContractDraftSerializer(serializers.ModelSerializer):
@@ -96,31 +93,12 @@ class ContractDraftSerializer(serializers.ModelSerializer):
         )
 
     def _resolve_owner(self, request):
-        if request and request.user and request.user.is_authenticated:
-            if not request.user.organization_id:
-                raise serializers.ValidationError("Utilisateur sans groupe rattache.")
-            return request.user.organization, request.user
-
-        if not settings.DEBUG:
+        if not request or not request.user or not request.user.is_authenticated:
             raise serializers.ValidationError("Authentification requise.")
 
-        organization, _ = Organization.objects.get_or_create(
-            code="DEMO",
-            defaults={"name": "Groupe Demo Horus"},
-        )
-        contributor, _ = User.objects.get_or_create(
-            username="demo-apporteur",
-            defaults={
-                "role": User.Role.CONTRIBUTOR,
-                "organization": organization,
-                "commission_percent_on_prime_rc": 0,
-                "commission_fixed_on_policy_fee": 0,
-            },
-        )
-        if contributor.organization_id != organization.id:
-            contributor.organization = organization
-            contributor.save(update_fields=["organization"])
-        return organization, contributor
+        if not request.user.organization_id:
+            raise serializers.ValidationError("Utilisateur sans groupe rattache.")
+        return request.user.organization, request.user
 
 
 class ContractListSerializer(serializers.ModelSerializer):

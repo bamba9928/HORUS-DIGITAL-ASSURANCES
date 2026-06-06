@@ -18,6 +18,39 @@ TEST_POLICYHOLDER = {
 }
 
 
+def make_authenticated_contract_client(
+    *,
+    role=User.Role.CONTRIBUTOR,
+    username="contract-test-user",
+):
+    organization = Organization.objects.create(
+        name="Groupe Contract Test",
+        code="CONTRACT-TEST",
+    )
+    user = User.objects.create_user(
+        username=username,
+        password="test",
+        role=role,
+        organization=organization,
+        commission_percent_on_prime_rc=0,
+        commission_fixed_on_policy_fee=0,
+    )
+    client = APIClient()
+    client.force_authenticate(user)
+    return client, user
+
+
+def create_quote_ready_contract(contributor):
+    return Contract.objects.create(
+        organization=contributor.organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.QUOTE_READY,
+        prime_rc_ass=24_000,
+        cout_police_ass=3_000,
+    )
+
+
 @pytest.mark.django_db
 def test_vehicle_subcategories_are_filtered_by_category():
     client = APIClient()
@@ -270,7 +303,7 @@ def test_custom_vehicle_brand_admin_can_remove_custom_brand():
 
 @pytest.mark.django_db
 @override_settings(DEBUG=True)
-def test_contract_summary_counts_statuses_in_debug_mode():
+def test_contract_summary_counts_statuses_for_authenticated_user_in_debug_mode():
     organization = Organization.objects.create(name="Groupe Summary", code="SUMMARY")
     contributor = User.objects.create_user(
         username="summary-contributor",
@@ -303,6 +336,7 @@ def test_contract_summary_counts_statuses_in_debug_mode():
         internal_status=Contract.InternalStatus.ISSUED,
     )
     client = APIClient()
+    client.force_authenticate(contributor)
 
     response = client.get("/api/contracts/summary/")
 
@@ -364,7 +398,7 @@ def test_contract_summary_is_filtered_by_authenticated_user_group():
 
 @pytest.mark.django_db
 @override_settings(DEBUG=True)
-def test_contract_list_can_filter_by_status_and_contract_type_in_debug_mode():
+def test_contract_list_can_filter_by_status_and_contract_type_when_authenticated():
     organization = Organization.objects.create(name="Groupe List", code="LIST")
     contributor = User.objects.create_user(
         username="list-contributor",
@@ -395,6 +429,7 @@ def test_contract_list_can_filter_by_status_and_contract_type_in_debug_mode():
         draft_payload={"vehicle": {"brand": "YAMAHA", "registration": "DK-001-AA"}},
     )
     client = APIClient()
+    client.force_authenticate(contributor)
 
     response = client.get(
         "/api/contracts/",
@@ -411,12 +446,84 @@ def test_contract_list_can_filter_by_status_and_contract_type_in_debug_mode():
 @pytest.mark.django_db
 @override_settings(DEBUG=True)
 def test_contract_list_rejects_invalid_status_filter():
-    client = APIClient()
+    client, _ = make_authenticated_contract_client()
 
     response = client.get("/api/contracts/", {"status": "UNKNOWN"})
 
     assert response.status_code == 400
     assert response.data["detail"] == "Statut contrat invalide."
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=True)
+def test_contract_endpoints_require_authentication_even_in_debug_mode():
+    client = APIClient()
+
+    response = client.get("/api/contracts/")
+
+    assert response.status_code in {401, 403}
+
+
+@pytest.mark.django_db
+def test_contributor_cannot_confirm_manual_payment():
+    client, contributor = make_authenticated_contract_client()
+    contract = create_quote_ready_contract(contributor)
+
+    response = client.post(
+        f"/api/contracts/{contract.id}/payments/confirm/",
+        {"amount": 27_000, "external_reference": "PAY-CONTRIBUTOR"},
+        format="json",
+    )
+
+    assert response.status_code == 403
+    assert Payment.objects.filter(contract=contract).exists() is False
+
+
+@pytest.mark.django_db
+def test_finance_cannot_confirm_incorrect_payment_amount():
+    client, contributor = make_authenticated_contract_client()
+    contract = create_quote_ready_contract(contributor)
+    finance = User.objects.create_user(
+        username="finance-wrong-amount",
+        password="test",
+        role=User.Role.FINANCE,
+        organization=contributor.organization,
+    )
+    client.force_authenticate(finance)
+
+    response = client.post(
+        f"/api/contracts/{contract.id}/payments/confirm/",
+        {"amount": 26_999, "external_reference": "PAY-WRONG-AMOUNT"},
+        format="json",
+    )
+
+    contract.refresh_from_db()
+    assert response.status_code == 400
+    assert "exactement de 27000 FCFA" in response.data["detail"]
+    assert contract.internal_status == Contract.InternalStatus.QUOTE_READY
+    assert Payment.objects.filter(contract=contract).exists() is False
+
+
+@pytest.mark.django_db
+def test_manual_payment_confirmation_cannot_be_duplicated():
+    client, contributor = make_authenticated_contract_client()
+    contract = create_quote_ready_contract(contributor)
+    finance = User.objects.create_user(
+        username="finance-duplicate-payment",
+        password="test",
+        role=User.Role.FINANCE,
+        organization=contributor.organization,
+    )
+    client.force_authenticate(finance)
+    url = f"/api/contracts/{contract.id}/payments/confirm/"
+    payload = {"amount": 27_000, "external_reference": "PAY-ONCE"}
+
+    first_response = client.post(url, payload, format="json")
+    second_response = client.post(url, payload, format="json")
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 400
+    assert Payment.objects.filter(contract=contract, status=Payment.Status.CONFIRMED).count() == 1
 
 
 @pytest.mark.django_db
@@ -510,6 +617,7 @@ def test_contract_detail_returns_payments_and_commission_snapshot():
         net_to_horus=54_000,
     )
     client = APIClient()
+    client.force_authenticate(contributor)
 
     response = client.get(f"/api/contracts/{contract.id}/")
 
@@ -592,6 +700,7 @@ def test_contract_detail_returns_fleet_and_trailer_attestations():
         },
     )
     client = APIClient()
+    client.force_authenticate(contributor)
 
     response = client.get(f"/api/contracts/{contract.id}/")
 
@@ -639,8 +748,8 @@ def test_contract_detail_is_filtered_by_authenticated_user_group():
 
 @pytest.mark.django_db
 @override_settings(DEBUG=True)
-def test_can_create_contract_draft_in_debug_mode():
-    client = APIClient()
+def test_authenticated_user_can_create_contract_draft_in_debug_mode():
+    client, _ = make_authenticated_contract_client()
 
     response = client.post(
         "/api/contracts/drafts/",
@@ -665,8 +774,8 @@ def test_can_create_contract_draft_in_debug_mode():
 
 @pytest.mark.django_db
 @override_settings(DEBUG=True)
-def test_can_update_contract_draft_in_debug_mode():
-    client = APIClient()
+def test_authenticated_user_can_update_contract_draft_in_debug_mode():
+    client, _ = make_authenticated_contract_client()
     draft_response = client.post(
         "/api/contracts/drafts/",
         {
@@ -706,7 +815,7 @@ def test_can_update_contract_draft_in_debug_mode():
 @pytest.mark.django_db
 @override_settings(DEBUG=True)
 def test_rejects_disabled_contract_type_for_draft():
-    client = APIClient()
+    client, _ = make_authenticated_contract_client()
 
     response = client.post(
         "/api/contracts/drafts/",
@@ -721,7 +830,7 @@ def test_rejects_disabled_contract_type_for_draft():
 @pytest.mark.django_db
 @override_settings(DEBUG=True)
 def test_rejects_guarantee_option_without_required_guarantee():
-    client = APIClient()
+    client, _ = make_authenticated_contract_client()
 
     response = client.post(
         "/api/contracts/drafts/",
@@ -743,7 +852,7 @@ def test_rejects_guarantee_option_without_required_guarantee():
 @pytest.mark.django_db
 @override_settings(DEBUG=True)
 def test_accepts_confirmed_guarantee_as_option_in_draft():
-    client = APIClient()
+    client, _ = make_authenticated_contract_client()
 
     response = client.post(
         "/api/contracts/drafts/",
@@ -766,7 +875,7 @@ def test_accepts_confirmed_guarantee_as_option_in_draft():
 @pytest.mark.django_db
 @override_settings(DEBUG=True)
 def test_can_create_fleet_draft_with_trailer_attached_to_vehicle():
-    client = APIClient()
+    client, _ = make_authenticated_contract_client()
 
     response = client.post(
         "/api/contracts/drafts/",
@@ -805,7 +914,7 @@ def test_can_create_fleet_draft_with_trailer_attached_to_vehicle():
 @pytest.mark.django_db
 @override_settings(DEBUG=True)
 def test_rejects_fleet_trailer_with_unknown_tractor():
-    client = APIClient()
+    client, _ = make_authenticated_contract_client()
 
     response = client.post(
         "/api/contracts/drafts/",
@@ -839,7 +948,7 @@ def test_rejects_fleet_trailer_with_unknown_tractor():
 @pytest.mark.django_db
 @override_settings(DEBUG=True, ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
 def test_can_calculate_auto_quote_from_ass_mock():
-    client = APIClient()
+    client, _ = make_authenticated_contract_client()
     draft_response = client.post(
         "/api/contracts/drafts/",
         {
@@ -873,7 +982,7 @@ def test_can_calculate_auto_quote_from_ass_mock():
 @pytest.mark.django_db
 @override_settings(DEBUG=True, ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
 def test_can_calculate_quote_from_contract_detail_route():
-    client = APIClient()
+    client, _ = make_authenticated_contract_client()
     draft_response = client.post(
         "/api/contracts/drafts/",
         {
@@ -943,7 +1052,7 @@ def test_contract_quote_route_is_filtered_by_authenticated_user_group():
 @pytest.mark.django_db
 @override_settings(DEBUG=True, ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
 def test_can_calculate_fleet_quote_with_trailer_from_ass_mock():
-    client = APIClient()
+    client, _ = make_authenticated_contract_client()
     draft_response = client.post(
         "/api/contracts/drafts/",
         {
@@ -988,7 +1097,7 @@ def test_can_calculate_fleet_quote_with_trailer_from_ass_mock():
 @pytest.mark.django_db
 @override_settings(DEBUG=True, ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
 def test_issue_is_blocked_without_confirmed_payment():
-    client = APIClient()
+    client, _ = make_authenticated_contract_client()
     draft_response = client.post(
         "/api/contracts/drafts/",
         {
@@ -1017,7 +1126,7 @@ def test_issue_is_blocked_without_confirmed_payment():
 @pytest.mark.django_db
 @override_settings(DEBUG=True, ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
 def test_issue_is_blocked_without_policyholder_and_insured():
-    client = APIClient()
+    client, contributor = make_authenticated_contract_client()
     draft_response = client.post(
         "/api/contracts/drafts/",
         {
@@ -1037,11 +1146,19 @@ def test_issue_is_blocked_without_policyholder_and_insured():
     )
     quote_response = client.post(f"/api/contracts/drafts/{draft_response.data['id']}/quote/")
     contract_id = quote_response.data["contract_id"]
+    finance = User.objects.create_user(
+        username="finance-no-person",
+        password="test",
+        role=User.Role.FINANCE,
+        organization=contributor.organization,
+    )
+    client.force_authenticate(finance)
     client.post(
         f"/api/contracts/{contract_id}/payments/confirm/",
         {"amount": 27_000, "external_reference": "PAY-NO-PERSON"},
         format="json",
     )
+    client.force_authenticate(contributor)
 
     response = client.post(f"/api/contracts/{contract_id}/issue/")
 
@@ -1052,7 +1169,7 @@ def test_issue_is_blocked_without_policyholder_and_insured():
 @pytest.mark.django_db
 @override_settings(DEBUG=True, ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
 def test_can_confirm_payment_then_issue_mock_contract():
-    client = APIClient()
+    client, contributor = make_authenticated_contract_client()
     draft_response = client.post(
         "/api/contracts/drafts/",
         {
@@ -1075,12 +1192,20 @@ def test_can_confirm_payment_then_issue_mock_contract():
     )
     quote_response = client.post(f"/api/contracts/drafts/{draft_response.data['id']}/quote/")
     contract_id = quote_response.data["contract_id"]
+    finance = User.objects.create_user(
+        username="finance-payment",
+        password="test",
+        role=User.Role.FINANCE,
+        organization=contributor.organization,
+    )
+    client.force_authenticate(finance)
 
     payment_response = client.post(
         f"/api/contracts/{contract_id}/payments/confirm/",
         {"amount": 27_000, "external_reference": "PAY-TEST"},
         format="json",
     )
+    client.force_authenticate(contributor)
     issue_response = client.post(f"/api/contracts/{contract_id}/issue/")
 
     assert payment_response.status_code == 200
@@ -1102,7 +1227,6 @@ def test_can_confirm_payment_then_issue_mock_contract():
 @pytest.mark.django_db
 @override_settings(DEBUG=True, ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
 def test_issue_is_blocked_when_contributor_commission_is_not_configured():
-    client = APIClient()
     organization = Organization.objects.create(name="Groupe Test", code="TEST-COM")
     contributor = User.objects.create_user(
         username="apporteur-no-commission",
@@ -1134,6 +1258,8 @@ def test_issue_is_blocked_when_contributor_commission_is_not_configured():
         amount=27_000,
         status=Payment.Status.CONFIRMED,
     )
+    client = APIClient()
+    client.force_authenticate(contributor)
 
     response = client.post(f"/api/contracts/{contract.id}/issue/")
 

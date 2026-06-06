@@ -1,10 +1,9 @@
-from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from contracts.models import Contract
 from contracts.serializers import ContractDetailSerializer, ContractDraftSerializer, ContractListSerializer
@@ -19,20 +18,30 @@ from payments.services import PaymentConfirmationError, confirm_manual_payment
 
 
 def get_contract_queryset_for_user(user):
+    if not user.is_authenticated:
+        return Contract.objects.none()
+
     queryset = Contract.objects.all()
-    if user.is_authenticated and not user.is_admin_general:
+    if not user.is_admin_general:
         queryset = queryset.filter(organization_id=user.organization_id)
     return queryset
 
 
-class DraftPermissionMixin:
-    def get_permissions(self):
-        if settings.DEBUG:
-            return [AllowAny()]
-        return [IsAuthenticated()]
+def can_confirm_contract_payment(user, contract):
+    if user.is_admin_general:
+        return True
+    return bool(
+        user.organization_id
+        and user.organization_id == contract.organization_id
+        and (user.is_admin_group or user.is_finance)
+    )
 
 
-class ContractDraftListCreateView(DraftPermissionMixin, generics.ListCreateAPIView):
+class AuthenticatedContractMixin:
+    permission_classes = [IsAuthenticated]
+
+
+class ContractDraftListCreateView(AuthenticatedContractMixin, generics.ListCreateAPIView):
     serializer_class = ContractDraftSerializer
 
     def get_queryset(self):
@@ -41,7 +50,7 @@ class ContractDraftListCreateView(DraftPermissionMixin, generics.ListCreateAPIVi
         )
 
 
-class ContractListView(DraftPermissionMixin, APIView):
+class ContractListView(AuthenticatedContractMixin, APIView):
     def get(self, request):
         queryset = get_contract_queryset_for_user(request.user).select_related(
             "organization",
@@ -64,7 +73,7 @@ class ContractListView(DraftPermissionMixin, APIView):
         return Response({"results": serializer.data})
 
 
-class ContractDetailView(DraftPermissionMixin, APIView):
+class ContractDetailView(AuthenticatedContractMixin, APIView):
     def get(self, request, pk):
         contract = get_object_or_404(
             get_contract_queryset_for_user(request.user)
@@ -76,7 +85,7 @@ class ContractDetailView(DraftPermissionMixin, APIView):
         return Response(serializer.data)
 
 
-class ContractSummaryView(DraftPermissionMixin, APIView):
+class ContractSummaryView(AuthenticatedContractMixin, APIView):
     def get(self, request):
         queryset = get_contract_queryset_for_user(request.user)
         return Response(
@@ -94,7 +103,7 @@ class ContractSummaryView(DraftPermissionMixin, APIView):
         )
 
 
-class ContractDraftDetailView(DraftPermissionMixin, generics.RetrieveUpdateAPIView):
+class ContractDraftDetailView(AuthenticatedContractMixin, generics.RetrieveUpdateAPIView):
     serializer_class = ContractDraftSerializer
 
     def get_queryset(self):
@@ -103,7 +112,7 @@ class ContractDraftDetailView(DraftPermissionMixin, generics.RetrieveUpdateAPIVi
         )
 
 
-class ContractDraftQuoteView(DraftPermissionMixin, APIView):
+class ContractDraftQuoteView(AuthenticatedContractMixin, APIView):
     def post(self, request, pk):
         contract = get_object_or_404(
             get_contract_queryset_for_user(request.user).filter(
@@ -129,12 +138,11 @@ class ContractDraftQuoteView(DraftPermissionMixin, APIView):
         )
 
 
-class ContractConfirmPaymentView(DraftPermissionMixin, APIView):
+class ContractConfirmPaymentView(AuthenticatedContractMixin, APIView):
     def post(self, request, pk):
-        contract = get_object_or_404(Contract, pk=pk)
-        if request.user.is_authenticated and not request.user.is_admin_general:
-            if contract.organization_id != request.user.organization_id:
-                return Response({"detail": "Acces interdit."}, status=403)
+        contract = get_object_or_404(get_contract_queryset_for_user(request.user), pk=pk)
+        if not can_confirm_contract_payment(request.user, contract):
+            return Response({"detail": "Permission refusee."}, status=status.HTTP_403_FORBIDDEN)
 
         try:
             payment = confirm_manual_payment(
@@ -160,12 +168,9 @@ class ContractConfirmPaymentView(DraftPermissionMixin, APIView):
         )
 
 
-class ContractIssueView(DraftPermissionMixin, APIView):
+class ContractIssueView(AuthenticatedContractMixin, APIView):
     def post(self, request, pk):
-        contract = get_object_or_404(Contract, pk=pk)
-        if request.user.is_authenticated and not request.user.is_admin_general:
-            if contract.organization_id != request.user.organization_id:
-                return Response({"detail": "Acces interdit."}, status=403)
+        contract = get_object_or_404(get_contract_queryset_for_user(request.user), pk=pk)
 
         try:
             result = issue_contract(contract)
