@@ -24,9 +24,38 @@ def get_contract_queryset_for_user(user):
         return Contract.objects.none()
 
     queryset = Contract.objects.all()
-    if not user.is_admin_general:
-        queryset = queryset.filter(organization_id=user.organization_id)
-    return queryset
+    if user.is_admin_general:
+        return queryset
+    if not user.organization_id:
+        return queryset.none()
+    if user.is_contributor:
+        return queryset.filter(
+            organization_id=user.organization_id,
+            contributor_id=user.id,
+        )
+    if user.is_admin_group or user.is_finance:
+        return queryset.filter(organization_id=user.organization_id)
+    return queryset.none()
+
+
+def can_manage_contract_workflow(user, contract):
+    if user.is_admin_general:
+        return True
+    if not user.organization_id or user.organization_id != contract.organization_id:
+        return False
+    return user.is_admin_group or (
+        user.is_contributor and contract.contributor_id == user.id
+    )
+
+
+def can_cancel_contract(user, contract):
+    if user.is_admin_general:
+        return True
+    return bool(
+        user.is_admin_group
+        and user.organization_id
+        and user.organization_id == contract.organization_id
+    )
 
 
 def can_confirm_contract_payment(user, contract):
@@ -50,6 +79,11 @@ class ContractDraftListCreateView(AuthenticatedContractMixin, generics.ListCreat
         return get_contract_queryset_for_user(self.request.user).filter(
             internal_status=Contract.InternalStatus.DRAFT
         )
+
+    def create(self, request, *args, **kwargs):
+        if request.user.is_finance:
+            return Response({"detail": "Permission refusee."}, status=status.HTTP_403_FORBIDDEN)
+        return super().create(request, *args, **kwargs)
 
 
 class ContractListView(AuthenticatedContractMixin, APIView):
@@ -109,9 +143,28 @@ class ContractDraftDetailView(AuthenticatedContractMixin, generics.RetrieveUpdat
     serializer_class = ContractDraftSerializer
 
     def get_queryset(self):
+        # Autorise DRAFT et QUOTE_READY : l'utilisateur peut revenir modifier
+        # un contrat déjà devisé (le statut sera remis à DRAFT après mise à jour).
         return get_contract_queryset_for_user(self.request.user).filter(
-            internal_status=Contract.InternalStatus.DRAFT
+            internal_status__in=[
+                Contract.InternalStatus.DRAFT,
+                Contract.InternalStatus.QUOTE_READY,
+            ]
         )
+
+    def update(self, request, *args, **kwargs):
+        contract = self.get_object()
+        if not can_manage_contract_workflow(request.user, contract):
+            return Response({"detail": "Permission refusee."}, status=status.HTTP_403_FORBIDDEN)
+        was_quoted = contract.internal_status == Contract.InternalStatus.QUOTE_READY
+        response = super().update(request, *args, **kwargs)
+        # L'utilisateur a modifié le brouillon : on remet à DRAFT pour invalider le devis précédent.
+        if was_quoted and response.status_code in (200, 201):
+            contract.refresh_from_db(fields=["internal_status"])
+            if contract.internal_status == Contract.InternalStatus.QUOTE_READY:
+                contract.internal_status = Contract.InternalStatus.DRAFT
+                contract.save(update_fields=["internal_status", "updated_at"])
+        return response
 
 
 class ContractDraftQuoteView(AuthenticatedContractMixin, APIView):
@@ -125,6 +178,8 @@ class ContractDraftQuoteView(AuthenticatedContractMixin, APIView):
             ),
             pk=pk,
         )
+        if not can_manage_contract_workflow(request.user, contract):
+            return Response({"detail": "Permission refusee."}, status=status.HTTP_403_FORBIDDEN)
 
         try:
             quote = calculate_contract_quote(contract)
@@ -159,7 +214,7 @@ class ContractConfirmPaymentView(AuthenticatedContractMixin, APIView):
         return Response(
             {
                 "contract_id": contract.id,
-                "internal_status": contract.internal_status,
+                "internal_status": payment.contract.internal_status,
                 "payment": {
                     "id": payment.id,
                     "amount": payment.amount,
@@ -173,6 +228,8 @@ class ContractConfirmPaymentView(AuthenticatedContractMixin, APIView):
 class ContractIssueView(AuthenticatedContractMixin, APIView):
     def post(self, request, pk):
         contract = get_object_or_404(get_contract_queryset_for_user(request.user), pk=pk)
+        if not can_manage_contract_workflow(request.user, contract):
+            return Response({"detail": "Permission refusee."}, status=status.HTTP_403_FORBIDDEN)
 
         try:
             result = issue_contract(contract)
@@ -185,6 +242,8 @@ class ContractIssueView(AuthenticatedContractMixin, APIView):
 class ContractCancelView(AuthenticatedContractMixin, APIView):
     def post(self, request, pk):
         contract = get_object_or_404(get_contract_queryset_for_user(request.user), pk=pk)
+        if not can_cancel_contract(request.user, contract):
+            return Response({"detail": "Permission refusee."}, status=status.HTTP_403_FORBIDDEN)
 
         method = request.data.get("methode", "")
         motif = request.data.get("motif", "")

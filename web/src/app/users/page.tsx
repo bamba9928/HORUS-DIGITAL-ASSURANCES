@@ -15,12 +15,15 @@ import {
 import {
   createUser,
   fetchCurrentUser,
+  listOrganizations,
   listUsers,
   updateUserCommission,
   type AuthState,
   type CreateUserPayload,
   type ManagedUser,
+  type OrganizationOption,
 } from "@/lib/api";
+import { canManageUsers as userCanManageUsers } from "@/lib/permissions";
 
 const roles = [
   { value: "CONTRIBUTOR", label: "Apporteur" },
@@ -32,6 +35,7 @@ const roles = [
 export default function UsersPage() {
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [organizations, setOrganizations] = useState<OrganizationOption[]>([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
@@ -41,11 +45,16 @@ export default function UsersPage() {
     try {
       const current = await fetchCurrentUser();
       setAuth(current);
-      if (current.authenticated) {
-        const response = await listUsers();
-        setUsers(response.results);
+      if (current.authenticated && userCanManageUsers(current.user)) {
+        const [usersResponse, organizationsResponse] = await Promise.all([
+          listUsers(),
+          listOrganizations(),
+        ]);
+        setUsers(usersResponse.results);
+        setOrganizations(organizationsResponse.results);
       } else {
         setUsers([]);
+        setOrganizations([]);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Chargement impossible.");
@@ -64,10 +73,14 @@ export default function UsersPage() {
           return;
         }
         setAuth(current);
-        if (current.authenticated) {
-          const response = await listUsers();
+        if (current.authenticated && userCanManageUsers(current.user)) {
+          const [usersResponse, organizationsResponse] = await Promise.all([
+            listUsers(),
+            listOrganizations(),
+          ]);
           if (!isCancelled) {
-            setUsers(response.results);
+            setUsers(usersResponse.results);
+            setOrganizations(organizationsResponse.results);
           }
         }
       } catch (err) {
@@ -88,6 +101,7 @@ export default function UsersPage() {
   }, []);
 
   const canCreateAdminRoles = auth?.user?.role === "ADMIN_GENERAL";
+  const canManageUsers = userCanManageUsers(auth?.user);
   const configuredContributors = users.filter(
     (user) => user.role === "CONTRIBUTOR" && user.has_configured_commission,
   ).length;
@@ -129,12 +143,19 @@ export default function UsersPage() {
 
         {error ? <AlertMessage>{error}</AlertMessage> : null}
 
-        <div className="grid items-start gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
-          <CreateUserPanel
-            canCreateAdminRoles={canCreateAdminRoles}
-            disabled={!auth?.authenticated}
-            onCreated={refresh}
-          />
+        <div
+          className={`grid items-start gap-5 ${
+            canManageUsers ? "xl:grid-cols-[340px_minmax(0,1fr)]" : ""
+          }`}
+        >
+          {canManageUsers ? (
+            <CreateUserPanel
+              canCreateAdminRoles={canCreateAdminRoles}
+              disabled={!auth?.authenticated}
+              onCreated={refresh}
+              organizations={organizations}
+            />
+          ) : null}
 
           <section className="app-surface overflow-hidden">
             {isLoading ? (
@@ -178,10 +199,12 @@ function CreateUserPanel({
   canCreateAdminRoles,
   disabled,
   onCreated,
+  organizations,
 }: {
   canCreateAdminRoles: boolean;
   disabled: boolean;
   onCreated: () => Promise<void>;
+  organizations: OrganizationOption[];
 }) {
   const [form, setForm] = useState({
     username: "",
@@ -198,6 +221,9 @@ function CreateUserPanel({
     () => roles.filter((role) => canCreateAdminRoles || !role.value.startsWith("ADMIN")),
     [canCreateAdminRoles],
   );
+  const selectedOrganization =
+    form.organization ||
+    (organizations.length === 1 ? String(organizations[0].id) : "");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -210,7 +236,7 @@ function CreateUserPanel({
       last_name: form.last_name,
       email: form.email,
       role: form.role as CreateUserPayload["role"],
-      organization: form.organization ? Number(form.organization) : undefined,
+      organization: selectedOrganization ? Number(selectedOrganization) : undefined,
     };
     try {
       await createUser(payload);
@@ -294,13 +320,23 @@ function CreateUserPanel({
             ))}
           </select>
         </label>
-        <Field
-          disabled={disabled}
-          label="Identifiant groupe"
-          onChange={(value) => setForm({ ...form, organization: value })}
-          type="number"
-          value={form.organization}
-        />
+        <label className="block">
+          <span className="text-xs font-extrabold uppercase text-black/52">Groupe</span>
+          <select
+            className="app-field mt-1.5"
+            disabled={disabled}
+            onChange={(event) => setForm({ ...form, organization: event.target.value })}
+            required={form.role !== "ADMIN_GENERAL"}
+            value={selectedOrganization}
+          >
+            <option value="">Sélectionner un groupe</option>
+            {organizations.map((organization) => (
+              <option key={organization.id} value={organization.id}>
+                {organization.name} ({organization.code})
+              </option>
+            ))}
+          </select>
+        </label>
         {error ? <AlertMessage>{error}</AlertMessage> : null}
         <button
           className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary font-extrabold text-white hover:bg-[var(--primary-strong)] disabled:bg-black/25"

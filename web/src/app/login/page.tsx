@@ -13,10 +13,12 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
 import { AlertMessage } from "@/components/ui";
+import { useAuth } from "@/components/AuthProvider";
 import { login } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { refreshAuth } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -29,6 +31,7 @@ export default function LoginPage() {
     setIsSubmitting(true);
     try {
       await login(username, password);
+      await refreshAuth();
       router.push("/");
       router.refresh();
     } catch (err) {

@@ -127,6 +127,22 @@ def test_django_superuser_is_treated_as_general_admin():
 
 
 @pytest.mark.django_db
+def test_superuser_is_serialized_with_effective_general_admin_role():
+    superuser = User.objects.create_superuser(
+        username="effective-role-superuser",
+        password="test-pass-123",
+        email="effective@example.test",
+    )
+    client = APIClient()
+    client.force_authenticate(superuser)
+
+    response = client.get("/api/accounts/auth/me/")
+
+    assert response.status_code == 200
+    assert response.data["user"]["role"] == User.Role.ADMIN_GENERAL
+
+
+@pytest.mark.django_db
 def test_admin_group_creates_user_only_in_own_group():
     own_group = Organization.objects.create(name="Groupe Thies", code="THS")
     other_group = Organization.objects.create(name="Groupe Louga", code="LGA")

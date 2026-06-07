@@ -1,11 +1,12 @@
 from django.conf import settings
 from rest_framework import status
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from integrations.ass.client import AssClient
 from integrations.ass.exceptions import AssConfigurationError, AssIntegrationError
+from integrations.ass.referentials import VEHICLE_SUBCATEGORIES
 from integrations.ass.serializers import (
     AssStockQrSerializer,
     AssVerifyRegistrationRequestSerializer,
@@ -53,12 +54,9 @@ class AssStockQrView(APIView):
 
 
 class AssVerifyRegistrationView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        if not settings.DEBUG and not request.user.is_authenticated:
-            return Response({"detail": "Authentification requise."}, status=status.HTTP_403_FORBIDDEN)
-
         serializer = AssVerifyRegistrationRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         immatriculation = serializer.validated_data["immatriculation"]
@@ -78,6 +76,7 @@ class AssVerifyRegistrationView(APIView):
             "operation_message": ass_response.get("operationMessage") or ass_response.get("message") or "",
             "immatriculation": self._extract_registration(ass_response, immatriculation),
             "is_registered": self._extract_is_registered(ass_response),
+            "vehicle": self._extract_vehicle(ass_response),
             "raw_response": ass_response,
         }
         response_serializer = AssVerifyRegistrationSerializer(payload)
@@ -109,4 +108,101 @@ class AssVerifyRegistrationView(APIView):
             value = data.get(key)
             if isinstance(value, bool):
                 return value
-        return None
+        return True if self._extract_vehicle(ass_response) else None
+
+    def _extract_vehicle(self, ass_response):
+        data = ass_response.get("data")
+        if isinstance(data, list):
+            data = next((item for item in data if isinstance(item, dict)), None)
+        if not isinstance(data, dict):
+            return None
+
+        vehicle = next(
+            (
+                data.get(key)
+                for key in ["vehicule", "vehicle", "automobile"]
+                if isinstance(data.get(key), dict)
+            ),
+            data,
+        )
+        if not isinstance(vehicle, dict):
+            return None
+
+        subcategory = self._text(
+            vehicle,
+            "subcategory",
+            "subCategory",
+            "sousCategorie",
+            "sous_categorie",
+            "genre",
+        )
+        category = self._text(vehicle, "category", "categorie")
+        if not category and subcategory:
+            category = next(
+                (
+                    item["category"]
+                    for item in VEHICLE_SUBCATEGORIES
+                    if item["value"] == subcategory
+                ),
+                "",
+            )
+
+        normalized = {
+            "brand": self._text(vehicle, "brand", "marque"),
+            "model": self._text(vehicle, "model", "modele"),
+            "category": category,
+            "subcategory": subcategory,
+            "registration": self._text(vehicle, "registration", "immatriculation"),
+            "chassis": self._text(
+                vehicle,
+                "chassis",
+                "numeroChassis",
+                "numero_chassis",
+            ),
+            "energy": self._text(vehicle, "energy", "energie"),
+            "fiscalPower": self._text(
+                vehicle,
+                "fiscalPower",
+                "puissanceFiscale",
+                "puissance_fiscale",
+            ),
+            "seats": self._text(
+                vehicle,
+                "seats",
+                "nombrePlace",
+                "nombrePlaces",
+                "nombre_places",
+            ),
+            "firstCirculationDate": self._date_text(
+                vehicle,
+                "firstCirculationDate",
+                "dateMiseCirculation",
+                "dateMiseEnCirculation",
+            ),
+            "newValue": self._text(vehicle, "newValue", "valeurNeuve"),
+            "currentValue": self._text(vehicle, "currentValue", "valeurActuelle"),
+            "cylindree": self._text(
+                vehicle,
+                "cylindree",
+                "cylindre",
+                "cylindreeCc",
+            ),
+            "motoUsage": self._text(vehicle, "motoUsage", "usageMoto", "usage"),
+        }
+        meaningful_fields = [
+            value
+            for key, value in normalized.items()
+            if key not in {"registration"} and value
+        ]
+        return normalized if meaningful_fields else None
+
+    def _text(self, payload, *keys):
+        for key in keys:
+            value = payload.get(key)
+            if value is not None and value != "":
+                return str(value).strip()
+        return ""
+
+    def _date_text(self, payload, *keys):
+        value = self._text(payload, *keys)
+        return value[:10] if value else ""

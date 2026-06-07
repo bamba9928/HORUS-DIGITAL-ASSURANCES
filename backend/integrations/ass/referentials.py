@@ -4,6 +4,9 @@ CONTRACT_TYPES = [
     {"value": "FLEET", "label": "Flotte", "enabled": True},
     {"value": "BUS_SCHOOL", "label": "Bus ecole", "enabled": True},
     {"value": "GARAGE", "label": "Garage", "enabled": True},
+    # REMORQUE n'est pas un contrat standalone : il se crée depuis la page d'un contrat tracteur existant.
+    # L'endpoint ASS remorque.rc.request + remorque.qrcode.request est déclenché
+    # depuis le détail d'un contrat AUTO_MONO ou FLEET déjà émis dans la même compagnie.
 ]
 
 GUARANTEES = [
@@ -16,6 +19,10 @@ GUARANTEES = [
     {"value": 7, "label": "Tierce collision"},
     {"value": 8, "label": "Tierce complete"},
 ]
+
+# Garanties systématiquement incluses dans tout contrat ASS (non sélectionnables par l'utilisateur).
+# RC = base obligatoire, CEDEAO = couverture zone CEDEAO toujours cochée dans le formulaire ASS natif.
+ALWAYS_INCLUDED_GUARANTEES = ["RC", "CEDEAO"]
 
 GUARANTEE_OPTION_FIELDS = [
     {
@@ -77,61 +84,77 @@ MOTO_USAGES = [
 VEHICLE_CATEGORIES = [
     {
         "value": "C1",
-        "label": "C1 - Vehicule particulier",
+        "label": "C1 - Vehicule Particulier (VP)",
         "contract_types": ["AUTO_MONO", "FLEET"],
         "enabled": True,
     },
     {
         "value": "C2",
-        "label": "C2 - Vehicules utilitaires",
+        "label": "C2 - Vehicules Utilitaires (TPC)",
         "contract_types": ["AUTO_MONO", "FLEET"],
         "enabled": True,
     },
     {
         "value": "C3",
-        "label": "C3 - Transport public marchandises",
+        "label": "C3 - Vehicules Transports (TPM)",
         "contract_types": ["AUTO_MONO", "FLEET"],
         "enabled": True,
     },
     {
         "value": "C4",
-        "label": "C4 - Transport public de personnes",
+        "label": "C4 - Transport de Personnes (TPV)",
         "contract_types": [],
         "enabled": False,
+        # Pool TPV exclu temporairement de la digitalisation ASS.
         "disabled_reason": "Pool TPV exclu temporairement de la digitalisation ASS.",
     },
-    {"value": "C5", "label": "C5 - Deux roues", "contract_types": ["MOTO"], "enabled": True},
     {
+        "value": "C5",
+        "label": "C5 - 2 ou 3 roues / Cyclomoteurs / Scooters (2R)",
+        "contract_types": ["MOTO"],
+        "enabled": True,
+    },
+    {
+        "value": "C6",
+        "label": "C6 - Garage Vehicule (C6-WG)",
+        "contract_types": ["GARAGE"],
+        "enabled": True,
+    },
+    {
+        # ASS CAT 07 : Vehicule de Tourisme - Side-cars - Vehicules des categories 2 et 3 (C7-AE)
+        # Tous les sous-genres ASS sont prefixes C7-AE (Auto Ecole) :
+        # VTSDC (sans double commande), VTADC (avec double commande), TPC/TPC categories 2&3, SC (side-car).
         "value": "C7",
-        "label": "C7 - Auto ecole",
+        "label": "C7 - Tourisme / Auto Ecole / Side-cars (C7-AE)",
         "contract_types": ["AUTO_MONO", "FLEET"],
         "enabled": True,
     },
     {
         "value": "C8",
-        "label": "C8 - Location sans chauffeur",
+        "label": "C8 - Vehicule de Location (C8-VLSC)",
         "contract_types": ["AUTO_MONO", "FLEET"],
         "enabled": True,
     },
     {
         "value": "C9",
-        "label": "C9 - Engins mobiles de chantier",
+        "label": "C9 - Engins Mobiles de Chantier (C9-EM)",
         "contract_types": ["AUTO_MONO", "FLEET"],
         "enabled": True,
     },
     {
+        # ASS CAT 10 : Engins mobiles de chantiers - Tracteurs agricoles et routiers -
+        # Vehicules des collectivites publiques - Ambulances, corbillards et fourgons funeraires (CA0-VS)
         "value": "C10",
-        "label": "C10 - Vehicules speciaux",
+        "label": "C10 - Engins / Tracteurs / Collectivites / Ambulances (C10-VS)",
         "contract_types": ["AUTO_MONO", "FLEET"],
         "enabled": True,
     },
     {
         "value": "BUS_ECOLE",
-        "label": "Bus ecole",
+        "label": "Bus Ecole - Transport dans des camions amenages",
         "contract_types": ["BUS_SCHOOL"],
         "enabled": True,
     },
-    {"value": "C6", "label": "C6 - Garage", "contract_types": ["GARAGE"], "enabled": True},
     {
         "value": "REMORQUE",
         "label": "Remorque",

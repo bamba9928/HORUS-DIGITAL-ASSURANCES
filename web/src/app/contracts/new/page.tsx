@@ -1,24 +1,35 @@
 "use client";
 
 import {
+  ArrowLeftRight,
   Bike,
   BusFront,
   CalendarRange,
+  Car,
   CarFront,
   Check,
   CloudCheck,
   CreditCard,
   FileCheck,
   FileText,
+  Flame,
   LoaderCircle,
+  Lock,
+  Scale,
   ShieldCheck,
+  ShieldPlus,
+  Sparkles,
   UserRound,
+  Users,
   Warehouse,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
+import { useAuth } from "@/components/AuthProvider";
+import { DatePicker } from "@/components/DatePicker";
 import { SelectSearch } from "@/components/SelectSearch";
 import { AlertMessage, StatusBadge } from "@/components/ui";
 import {
@@ -40,6 +51,11 @@ import {
   type IssueResult,
   type SelectOption,
 } from "@/lib/api";
+import {
+  canConfirmContractPayment,
+  canCreateContract,
+  canManageContractWorkflow,
+} from "@/lib/permissions";
 
 type VehicleForm = {
   brand: string;
@@ -65,13 +81,7 @@ type VehicleForm = {
 type TrailerForm = {
   brand: string;
   model: string;
-  category: string;
-  subcategory: string;
   registration: string;
-  chassis: string;
-  usefulLoad: string;
-  firstCirculationDate: string;
-  value: string;
 };
 
 type PersonForm = {
@@ -88,6 +98,8 @@ type GuaranteeOptionsForm = {
   garantiesOptAS: string;
 };
 
+type RegistrationLookupState = "idle" | "checking" | "found" | "not_found" | "error";
+
 type Trailer = TrailerForm & {
   id: string;
   tractorVehicleId: string;
@@ -100,6 +112,12 @@ type FleetVehicle = VehicleForm & {
 };
 
 const DEFAULT_FIRST_CIRCULATION_DATE = "2000-01-01";
+
+const TODAY = (() => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+})();
 
 const emptyVehicle: VehicleForm = {
   brand: "",
@@ -125,13 +143,7 @@ const emptyVehicle: VehicleForm = {
 const emptyTrailer: TrailerForm = {
   brand: "",
   model: "",
-  category: "REMORQUE",
-  subcategory: "REMORQUE",
   registration: "",
-  chassis: "",
-  usefulLoad: "",
-  firstCirculationDate: "",
-  value: "",
 };
 
 const emptyPerson: PersonForm = {
@@ -146,6 +158,26 @@ type GarageForm = {
   subcategory: string;
   nombreCarte: string;
   registration: string;
+  effectDate: string;
+  duration: string;
+  periodicity: string;
+  personType: string;
+};
+
+// Champs de couverture au niveau flotte (dateEffet/durée/périodicité communs à tous les véhicules)
+type FleetCoverage = {
+  effectDate: string;
+  duration: string;
+  periodicity: string;
+  personType: string;
+};
+
+// Contrat remorque : tracteur déjà assuré dans ASS + données de la remorque
+type RemorqueForm = {
+  referenceVehicule: string; // immatriculation du véhicule tracteur (déjà assuré dans ASS)
+  immatriculation: string;
+  brand: string;
+  model: string;
   effectDate: string;
   duration: string;
   periodicity: string;
@@ -168,12 +200,31 @@ const emptyGarage: GarageForm = {
   personType: "PHYSIQUE",
 };
 
+const emptyFleetCoverage: FleetCoverage = {
+  effectDate: "",
+  duration: "",
+  periodicity: "MOIS",
+  personType: "MORALE",
+};
+
+const emptyRemorque: RemorqueForm = {
+  referenceVehicule: "",
+  immatriculation: "",
+  brand: "",
+  model: "",
+  effectDate: "",
+  duration: "12",
+  periodicity: "MOIS",
+  personType: "PHYSIQUE",
+};
+
 const durationOptions = Array.from({ length: 12 }, (_, index) => ({
   value: String(index + 1),
   label: `${index + 1} mois`,
 }));
 
 export default function NewContractPage() {
+  const { auth, isLoading: isAuthLoading } = useAuth();
   const [step, setStep] = useState(1);
   const [contractType, setContractType] = useState("AUTO_MONO");
   const [vehicle, setVehicle] = useState<VehicleForm>(emptyVehicle);
@@ -207,13 +258,18 @@ export default function NewContractPage() {
   const [payment, setPayment] = useState<ConfirmedPayment | null>(null);
   const [issueResult, setIssueResult] = useState<IssueResult | null>(null);
   const [autoSaveState, setAutoSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [showErrors, setShowErrors] = useState(false);
   const [garage, setGarage] = useState<GarageForm>(emptyGarage);
-  const [registrationVerification, setRegistrationVerification] =
-    useState<AssRegistrationVerification | null>(null);
-  const [verifyingRegistration, setVerifyingRegistration] = useState(false);
+  const [fleetCoverage, setFleetCoverage] = useState<FleetCoverage>(emptyFleetCoverage);
+  const [remorque, setRemorque] = useState<RemorqueForm>(emptyRemorque);
+  const [registrationLookupState, setRegistrationLookupState] =
+    useState<RegistrationLookupState>("idle");
+  const [registrationLookupMessage, setRegistrationLookupMessage] = useState("");
   const [error, setError] = useState("");
   const savedDraftIdRef = useRef<number | null>(null);
   const draftSavePromiseRef = useRef<Promise<number | null> | null>(null);
+  const registrationLookupRequestRef = useRef(0);
+  const lastRegistrationLookupRef = useRef("");
   const isEditingDraft = savedDraftId !== null && !quote && !payment && !issueResult;
 
   useEffect(() => {
@@ -272,6 +328,7 @@ export default function NewContractPage() {
         savedDraftIdRef.current = draft.id;
         setVehicle(hydratedPayload.vehicle);
         setFleetVehicles(hydratedPayload.fleetVehicles);
+        setFleetCoverage(hydratedPayload.fleetCoverage ?? emptyFleetCoverage);
         setGarage(hydratedPayload.garage);
         setSelectedGuarantees(hydratedPayload.selectedGuarantees);
         setGuaranteeOptions(hydratedPayload.guaranteeOptions);
@@ -281,7 +338,10 @@ export default function NewContractPage() {
         setEditingVehicleId("");
         setTrailerTargetVehicleId("");
         setTrailerForm(emptyTrailer);
-        setRegistrationVerification(null);
+        registrationLookupRequestRef.current += 1;
+        lastRegistrationLookupRef.current = "";
+        setRegistrationLookupState("idle");
+        setRegistrationLookupMessage("");
         setQuote(null);
         setPayment(null);
         setIssueResult(null);
@@ -308,12 +368,6 @@ export default function NewContractPage() {
       .catch((apiError: Error) => setError(apiError.message));
   }, [contractType, vehicle.category]);
 
-  useEffect(() => {
-    const query = trailerForm.category ? `category=${trailerForm.category}` : "category=REMORQUE";
-    fetchOptions(`/referentials/vehicle-subcategories/?${query}`)
-      .then(setTrailerSubcategories)
-      .catch((apiError: Error) => setError(apiError.message));
-  }, [trailerForm.category]);
 
   const displayContractTypes = useMemo(
     () =>
@@ -339,17 +393,82 @@ export default function NewContractPage() {
   const isGarage = contractType === "GARAGE";
   const isMoto = !isFleet && !isBusSchool && !isGarage && vehicle.category === "C5";
   const effectiveContractType = isMoto ? "MOTO" : contractType;
+  const coverageSource = isFleet ? fleetCoverage : vehicle;
+  const summaryOptionLabels = guaranteeLabels(guarantees, selectedGuarantees);
+  const summaryOptionText = guaranteeOptionSummary(guaranteeOptions);
+
+  useEffect(() => {
+    const registration = normalizeRegistrationLookup(vehicle.registration);
+    if (isGarage || registration.length < 5 || lastRegistrationLookupRef.current === registration) {
+      return;
+    }
+
+    const requestId = ++registrationLookupRequestRef.current;
+    const timeout = window.setTimeout(async () => {
+      setRegistrationLookupState("checking");
+      setRegistrationLookupMessage("Recherche automatique dans ASS...");
+      try {
+        const response = await verifyAssRegistration(registration);
+        if (registrationLookupRequestRef.current !== requestId) {
+          return;
+        }
+        lastRegistrationLookupRef.current = registration;
+
+        if (response.is_registered) {
+          const assVehicle = response.vehicle;
+          if (assVehicle) {
+            setVehicle((current) => mergeAssVehicleData(current, assVehicle));
+            if (assVehicle.brand) {
+              setBrands((current) =>
+                upsertOption(current, {
+                  value: assVehicle.brand,
+                  label: assVehicle.brand,
+                }),
+              );
+            }
+          }
+          setRegistrationLookupState("found");
+          setRegistrationLookupMessage(
+            assVehicle
+              ? "Véhicule trouvé dans ASS. Les informations ont été préremplies."
+              : "Cette immatriculation existe déjà dans ASS.",
+          );
+          return;
+        }
+
+        setRegistrationLookupState("not_found");
+        setRegistrationLookupMessage("Immatriculation non trouvée dans ASS.");
+      } catch {
+        if (registrationLookupRequestRef.current !== requestId) {
+          return;
+        }
+        setRegistrationLookupState("error");
+        setRegistrationLookupMessage(
+          "Vérification ASS indisponible. Vous pouvez continuer la saisie manuellement.",
+        );
+      }
+    }, 700);
+
+    return () => window.clearTimeout(timeout);
+  }, [isGarage, vehicle.registration]);
   const canSaveVehicle = Boolean(
     vehicle.brand &&
+      vehicle.model &&
       vehicle.category &&
       vehicle.subcategory &&
       vehicle.energy &&
-      vehicle.effectDate &&
-      vehicle.duration &&
-      vehicle.periodicity &&
+      (isFleet || vehicle.effectDate) &&
+      (isFleet || vehicle.duration) &&
+      (isFleet || vehicle.periodicity) &&
       vehicle.registration &&
-      (isMoto ? vehicle.cylindree : vehicle.fiscalPower) &&
-      (isBusSchool ? vehicle.seats : true),
+      (isMoto ? (vehicle.cylindree && !getCylindreeError(vehicle.subcategory, vehicle.cylindree)) : vehicle.fiscalPower) &&
+      (isMoto || (
+        vehicle.seats.trim() &&
+        (vehicle.category !== "C1" || Number(vehicle.seats) >= 5)
+      )),
+  );
+  const canSaveFleetCoverage = Boolean(
+    fleetCoverage.effectDate && fleetCoverage.duration && fleetCoverage.periodicity,
   );
   const canSaveGarage = Boolean(
     garage.subcategory &&
@@ -359,11 +478,7 @@ export default function NewContractPage() {
       garage.periodicity,
   );
   const canSaveTrailer = Boolean(
-    trailerTargetVehicleId &&
-      trailerForm.brand &&
-      trailerForm.category &&
-      trailerForm.subcategory &&
-      trailerForm.registration,
+    trailerTargetVehicleId && trailerForm.registration,
   );
   const canContinueParties = hasRequiredPerson(policyholder) && (
     sameAsPolicyholder || hasRequiredPerson(insured)
@@ -371,7 +486,7 @@ export default function NewContractPage() {
   const canCalculateQuote = Boolean(
     selectedContractType?.enabled &&
       (isFleet
-        ? fleetVehicles.length
+        ? fleetVehicles.length > 0 && canSaveFleetCoverage
         : isGarage
           ? canSaveGarage
           : canSaveVehicle) &&
@@ -389,7 +504,6 @@ export default function NewContractPage() {
         vehicle.energy,
         vehicle.fiscalPower,
         vehicle.seats,
-        vehicle.firstCirculationDate,
         vehicle.effectDate,
         vehicle.cylindree,
       ].some((value) => value.trim()) ||
@@ -407,22 +521,35 @@ export default function NewContractPage() {
     setIssueResult(null);
   }
 
+  function goToStep(nextStep: number) {
+    setStep(nextStep);
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "auto" }));
+  }
+
+  function resetRegistrationLookup() {
+    registrationLookupRequestRef.current += 1;
+    lastRegistrationLookupRef.current = "";
+    setRegistrationLookupState("idle");
+    setRegistrationLookupMessage("");
+  }
+
   function updateVehicle(field: keyof VehicleForm, value: string) {
     clearCalculatedState();
     if (field === "registration") {
-      setRegistrationVerification(null);
+      resetRegistrationLookup();
     }
+    const normalizedValue = field === "registration" ? sanitizeRegistration(value) : value;
     setVehicle((current) => {
       const next = {
         ...current,
-        [field]: value,
+        [field]: normalizedValue,
         ...(field === "category" ? { subcategory: "" } : {}),
       };
-      if (field === "category" && value === "C5") {
+      if (field === "category" && normalizedValue === "C5") {
         next.fiscalPower = "";
         next.motoUsage = "non_commerciale";
       }
-      if (field === "category" && value !== "C5") {
+      if (field === "category" && normalizedValue !== "C5") {
         next.cylindree = "";
         next.motoUsage = "non_commerciale";
       }
@@ -432,37 +559,14 @@ export default function NewContractPage() {
 
   function updateGarage(field: keyof GarageForm, value: string) {
     clearCalculatedState();
-    setGarage((current) => ({ ...current, [field]: value }));
-  }
-
-  async function verifyRegistration() {
-    if (!vehicle.registration) {
-      return;
-    }
-    setVerifyingRegistration(true);
-    setRegistrationVerification(null);
-    setError("");
-    try {
-      const response = await verifyAssRegistration(vehicle.registration);
-      setRegistrationVerification(response);
-    } catch (apiError) {
-      setError(
-        apiError instanceof Error
-          ? apiError.message
-          : "Verification immatriculation impossible.",
-      );
-    } finally {
-      setVerifyingRegistration(false);
-    }
+    const normalizedValue = field === "registration" ? sanitizeRegistration(value) : value;
+    setGarage((current) => ({ ...current, [field]: normalizedValue }));
   }
 
   function updateTrailer(field: keyof TrailerForm, value: string) {
     clearCalculatedState();
-    setTrailerForm((current) => ({
-      ...current,
-      [field]: value,
-      ...(field === "category" ? { subcategory: "" } : {}),
-    }));
+    const normalizedValue = field === "registration" ? sanitizeRegistration(value) : value;
+    setTrailerForm((current) => ({ ...current, [field]: normalizedValue }));
   }
 
   async function addVehicleBrand(label: string) {
@@ -479,9 +583,11 @@ export default function NewContractPage() {
 
   function resetContractType(value: string) {
     const nextDraftId = isEditingDraft ? savedDraftIdRef.current : null;
+    setShowErrors(false);
     setContractType(value);
     setVehicle(defaultVehicleForm());
     setGarage(emptyGarage);
+    setFleetCoverage(emptyFleetCoverage);
     setFleetVehicles([]);
     setSelectedGuarantees([]);
     setGuaranteeOptions(emptyGuaranteeOptions);
@@ -491,18 +597,22 @@ export default function NewContractPage() {
     setEditingVehicleId("");
     setTrailerTargetVehicleId("");
     setTrailerForm(emptyTrailer);
+    resetRegistrationLookup();
     setSavedDraftId(nextDraftId);
     savedDraftIdRef.current = nextDraftId;
-    setRegistrationVerification(null);
     setQuote(null);
     setPayment(null);
     setIssueResult(null);
   }
 
   async function continueToOptions() {
+    setShowErrors(true);
+    if (!canCalculateQuote) {
+      return;
+    }
     const draftId = await saveDraft();
     if (draftId) {
-      setStep(2);
+      goToStep(2);
     }
   }
 
@@ -539,7 +649,8 @@ export default function NewContractPage() {
 
   function updatePolicyholder(field: keyof PersonForm, value: string) {
     clearCalculatedState();
-    setPolicyholder((current) => ({ ...current, [field]: value }));
+    const normalizedValue = field === "phone" ? sanitizePhone(value) : value;
+    setPolicyholder((current) => ({ ...current, [field]: normalizedValue }));
   }
 
   function saveFleetVehicle() {
@@ -565,7 +676,7 @@ export default function NewContractPage() {
     }
 
     setVehicle(defaultVehicleForm());
-    setRegistrationVerification(null);
+    resetRegistrationLookup();
   }
 
   function editFleetVehicle(vehicleId: string) {
@@ -574,7 +685,7 @@ export default function NewContractPage() {
       return;
     }
     setVehicle(toVehicleForm(selected));
-    setRegistrationVerification(null);
+    resetRegistrationLookup();
     setEditingVehicleId(vehicleId);
     setTrailerTargetVehicleId("");
   }
@@ -585,7 +696,7 @@ export default function NewContractPage() {
     if (editingVehicleId === vehicleId) {
       setEditingVehicleId("");
       setVehicle(defaultVehicleForm());
-      setRegistrationVerification(null);
+      resetRegistrationLookup();
     }
     if (trailerTargetVehicleId === vehicleId) {
       setTrailerTargetVehicleId("");
@@ -654,6 +765,7 @@ export default function NewContractPage() {
             isFleet,
             isGarage,
             fleetVehicles,
+            fleetCoverage,
             garage,
             guaranteeOptions,
             vehicle,
@@ -685,6 +797,7 @@ export default function NewContractPage() {
     return draftSavePromiseRef.current;
   }, [
     effectiveContractType,
+    fleetCoverage,
     fleetVehicles,
     garage,
     guaranteeOptions,
@@ -698,14 +811,14 @@ export default function NewContractPage() {
   ]);
 
   useEffect(() => {
-    if (!canAutoSave || payment || issueResult) {
+    if (!canAutoSave || quote || payment || issueResult) {
       return;
     }
     const timeout = window.setTimeout(() => {
       void saveDraft(true);
     }, 900);
     return () => window.clearTimeout(timeout);
-  }, [canAutoSave, issueResult, payment, saveDraft]);
+  }, [canAutoSave, issueResult, payment, quote, saveDraft]);
 
   async function calculateQuote() {
     setQuoting(true);
@@ -720,6 +833,7 @@ export default function NewContractPage() {
       }
       const response = await calculateContractQuote(draftId);
       setQuote(response.quote);
+      goToStep(3);
     } catch (apiError) {
       setError(apiError instanceof Error ? apiError.message : "Erreur inconnue");
     } finally {
@@ -734,7 +848,7 @@ export default function NewContractPage() {
     setPaying(true);
     setError("");
     try {
-      const amount = quote.prime_rc_ass + quote.policy_fee_ass;
+      const amount = quotePayableAmount(quote);
       const response = await confirmContractPayment(savedDraftId, amount);
       setPayment(response.payment);
     } catch (apiError) {
@@ -760,9 +874,47 @@ export default function NewContractPage() {
     }
   }
 
+  const userCanCreateContract = canCreateContract(auth?.user);
+  const userCanConfirmPayment = canConfirmContractPayment(auth?.user);
+  const userCanIssueContract = canManageContractWorkflow(auth?.user);
+
+  if (isAuthLoading) {
+    return (
+      <AppShell description="Souscription et émission ASS" title="Nouveau contrat">
+        <div className="app-surface p-6 text-sm font-semibold text-black/45">
+          Chargement de la session…
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (!auth?.authenticated || !userCanCreateContract) {
+    return (
+      <AppShell description="Souscription et émission ASS" title="Nouveau contrat">
+        <div className="app-surface p-6">
+          <h2 className="font-extrabold">Accès non autorisé</h2>
+          <p className="mt-1 text-sm font-medium text-black/45">
+            La création de contrat est réservée aux apporteurs et administrateurs de groupe.
+          </p>
+          <Link
+            className="mt-4 inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-extrabold text-white"
+            href={auth?.authenticated ? "/contracts" : "/login"}
+          >
+            {auth?.authenticated ? "Voir les contrats" : "Se connecter"}
+          </Link>
+        </div>
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell
-      actions={<StatusBadge status="MODE TEST" />}
+      actions={(
+        <div className="flex items-center gap-3">
+          <AutoSaveIndicator draftId={savedDraftId} state={autoSaveState} />
+          <StatusBadge status="MODE TEST" />
+        </div>
+      )}
       description={isEditingDraft ? `Reprise du brouillon #${savedDraftId}` : "Souscription et émission ASS"}
       title="Nouveau contrat"
     >
@@ -801,7 +953,7 @@ export default function NewContractPage() {
                         void continueToOptions();
                         return;
                       }
-                      setStep(index + 1);
+                      goToStep(index + 1);
                     }}
                     type="button"
                   >
@@ -851,10 +1003,6 @@ export default function NewContractPage() {
 
           {step === 1 ? (
             <div className="space-y-4">
-              <div className="flex min-h-6 items-center justify-end px-1">
-                <AutoSaveIndicator draftId={savedDraftId} state={autoSaveState} />
-              </div>
-
               <FormBlock icon={FileText} title="Type de contrat">
                 <div className="max-w-md">
                   <SelectField
@@ -870,11 +1018,13 @@ export default function NewContractPage() {
               <PersonSection
                 onPolicyholderChange={updatePolicyholder}
                 policyholder={policyholder}
+                showErrors={showErrors}
               />
 
               {isGarage ? (
                 <GarageFields
                   garage={garage}
+                  showErrors={showErrors}
                   subcategories={subcategories}
                   updateGarage={updateGarage}
                 />
@@ -884,14 +1034,15 @@ export default function NewContractPage() {
                   categories={categories}
                   energies={energies}
                   isBusSchool={isBusSchool}
+                  isFleet={isFleet}
                   isMoto={isMoto}
                   onCreateBrand={addVehicleBrand}
-                  onVerifyRegistration={verifyRegistration}
-                  registrationVerification={registrationVerification}
+                  registrationLookupMessage={registrationLookupMessage}
+                  registrationLookupState={registrationLookupState}
+                  showErrors={showErrors}
                   subcategories={subcategories}
                   updateVehicle={updateVehicle}
                   vehicle={vehicle}
-                  verifyingRegistration={verifyingRegistration}
                 />
               )}
 
@@ -922,19 +1073,32 @@ export default function NewContractPage() {
                   removeTrailer={removeTrailer}
                   selectedTrailerTarget={selectedTrailerTarget}
                   startTrailerForm={startTrailerForm}
-                  trailerCategories={trailerCategories}
                   trailerForm={trailerForm}
-                  trailerSubcategories={trailerSubcategories}
                   onCreateBrand={addVehicleBrand}
                   updateTrailer={updateTrailer}
                 />
               ) : null}
 
+              {isFleet ? (
+                <FleetCoverageFields
+                  fleetCoverage={fleetCoverage}
+                  showErrors={showErrors}
+                  updateFleetCoverage={(field, value) =>
+                    setFleetCoverage((current) => ({ ...current, [field]: value }))
+                  }
+                />
+              ) : null}
+
               <div className="app-surface flex flex-wrap items-center justify-between gap-3 p-4">
-                <AutoSaveIndicator draftId={savedDraftId} state={autoSaveState} />
+                <Link
+                  className="h-10 rounded-lg border border-border px-4 inline-flex items-center text-sm font-bold transition hover:bg-muted"
+                  href="/contracts"
+                >
+                  Retour
+                </Link>
                 <button
                   className="h-10 rounded-lg bg-primary px-5 text-sm font-extrabold text-white shadow-sm shadow-primary/20 transition hover:bg-[var(--primary-strong)] disabled:bg-black/20 disabled:shadow-none"
-                  disabled={saving || !canCalculateQuote}
+                  disabled={saving}
                   onClick={continueToOptions}
                   type="button"
                 >
@@ -945,15 +1109,31 @@ export default function NewContractPage() {
           ) : null}
 
           {step === 2 ? (
-            <div className="max-w-5xl space-y-5">
+            <div className="mx-auto max-w-2xl space-y-4">
               <section className="app-surface p-5 sm:p-6">
                 <h2 className="text-lg font-black">Options et garanties</h2>
                 <p className="mt-1 text-sm font-medium text-black/50">
-                  La RC est la base obligatoire incluse. Sélectionnez les garanties optionnelles.
+                  Sélectionnez les garanties optionnelles à ajouter à la RC de base.
                 </p>
-                <div className="mt-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
-                  <Check size={15} />
-                  Responsabilité civile (RC) — garantie de base ASS incluse
+                {/* RC + CEDEAO toujours incluses */}
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  {[
+                    { label: "Responsabilité Civile (RC)", sub: "Garantie de base ASS" },
+                    { label: "CEDEAO", sub: "Couverture zone CEDEAO" },
+                  ].map(({ label, sub }) => (
+                    <div key={label} className="flex items-center gap-3 rounded-xl border-2 border-emerald-200 bg-emerald-50 px-4 py-3">
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100">
+                        <ShieldCheck size={16} className="text-emerald-700" strokeWidth={1.8} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-extrabold text-emerald-800">{label}</p>
+                        <p className="text-xs font-semibold text-emerald-600">{sub}</p>
+                      </div>
+                      <div className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-600">
+                        <Check size={11} className="text-white" strokeWidth={3} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </section>
 
@@ -966,90 +1146,205 @@ export default function NewContractPage() {
                 selectedGuarantees={selectedGuarantees}
               />
 
-              <div className="app-surface flex flex-wrap items-center justify-between gap-3 p-4">
-                <AutoSaveIndicator draftId={savedDraftId} state={autoSaveState} />
-                <div className="flex gap-2.5">
-                  <button
-                    className="h-10 rounded-lg border border-border px-4 text-sm font-bold transition hover:bg-muted"
-                    onClick={() => setStep(1)}
-                    type="button"
-                  >
-                    Retour
-                  </button>
-                  <button
-                    className="h-10 rounded-lg bg-black px-5 text-sm font-extrabold text-white transition hover:bg-black/80 disabled:bg-black/20"
-                    disabled={quoting || saving || !canCalculateQuote}
-                    onClick={calculateQuote}
-                    type="button"
-                  >
-                    {quoting ? "Calcul en cours…" : "Calculer le devis ASS"}
-                  </button>
-                </div>
+              <div className="flex justify-between gap-3">
+                <button
+                  className="h-11 rounded-xl border border-border px-5 text-sm font-bold transition hover:bg-muted"
+                  onClick={() => goToStep(1)}
+                  type="button"
+                >
+                  Retour
+                </button>
+                <button
+                  className="h-11 rounded-xl bg-primary px-6 text-sm font-extrabold text-white shadow-sm shadow-primary/30 transition hover:bg-[var(--primary-strong)] disabled:bg-black/20 disabled:shadow-none"
+                  disabled={quoting || saving || !canCalculateQuote}
+                  onClick={calculateQuote}
+                  type="button"
+                >
+                  {quoting ? "Calcul en cours…" : "Obtenir un devis"}
+                </button>
               </div>
 
-              {quote ? (
-                <>
-                  <QuoteResultPanel quote={quote} />
-                  <div className="app-surface flex justify-end p-4">
-                    <button
-                      className="h-10 rounded-lg bg-primary px-5 text-sm font-extrabold text-white shadow-sm shadow-primary/20 transition hover:bg-[var(--primary-strong)]"
-                      onClick={() => setStep(3)}
-                      type="button"
-                    >
-                      Continuer vers le résumé
-                    </button>
-                  </div>
-                </>
-              ) : null}
             </div>
           ) : null}
 
           {step === 3 ? (
-            <div className="max-w-5xl space-y-5">
-              <section className="app-surface p-5 sm:p-6">
-                <h2 className="text-lg font-black">Résumé avant validation</h2>
-                <p className="mt-1 text-sm font-medium text-black/50">
-                  Vérifiez les données avant de procéder au paiement. Le devis doit être calculé.
+            <div className="max-w-5xl space-y-4">
+              {/* Header */}
+              <div>
+                <h2 className="text-xl font-black">Résumé du contrat</h2>
+                <p className="mt-1 text-sm font-medium text-black/45">
+                  Vérifiez toutes les informations avant de procéder au paiement.
                 </p>
-              </section>
-              <ContractSummary
-                contractTypeLabel={selectedContractType?.label ?? "—"}
-                fleetVehicles={fleetVehicles}
-                guaranteeOptions={guaranteeOptions}
-                guarantees={guarantees}
-                insured={insured}
-                isFleet={isFleet}
-                policyholder={policyholder}
-                quote={quote}
-                sameAsPolicyholder={sameAsPolicyholder}
-                selectedGuarantees={selectedGuarantees}
-                vehicle={vehicle}
-              />
-              <div className="app-surface flex flex-wrap items-center justify-between gap-3 p-4">
-                <div className="flex gap-2.5">
-                  <button
-                    className="h-10 rounded-lg border border-border px-4 text-sm font-bold transition hover:bg-muted"
-                    onClick={() => setStep(1)}
-                    type="button"
-                  >
-                    Modifier
-                  </button>
-                  <button
-                    className="h-10 rounded-lg border border-border px-4 text-sm font-bold transition hover:bg-muted"
-                    onClick={() => setStep(2)}
-                    type="button"
-                  >
-                    Options
-                  </button>
-                </div>
+              </div>
+
+              {/* ── Ligne 1 : Client · Véhicule · Couverture ── */}
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {/* Client */}
+                <SummarySection icon={UserRound} title="Client">
+                  <SummaryGrid>
+                    <SummaryItem label="Souscripteur" value={personLabel(policyholder)} />
+                    <SummaryItem
+                      label="Assuré"
+                      value={sameAsPolicyholder ? "Identique au souscripteur" : personLabel(insured)}
+                    />
+                    <SummaryItem label="Téléphone" value={policyholder.phone || "—"} />
+                    {policyholder.email ? <SummaryItem label="Email" value={policyholder.email} /> : null}
+                    <SummaryItem label="Adresse" value={policyholder.address || "—"} />
+                  </SummaryGrid>
+                </SummarySection>
+
+                {/* Véhicule / Garage / Flotte */}
+                <SummarySection
+                  icon={isGarage ? Warehouse : isFleet ? FileText : CarFront}
+                  title={
+                    isFleet
+                      ? `Flotte (${fleetVehicles.length} véhicule${fleetVehicles.length > 1 ? "s" : ""})`
+                      : isGarage
+                        ? "Garage"
+                        : "Véhicule"
+                  }
+                >
+                  {isFleet ? (
+                    <FleetSummary fleetVehicles={fleetVehicles} />
+                  ) : isGarage ? (
+                    <SummaryGrid>
+                      <SummaryItem label="Type de contrat" value={selectedContractType?.label ?? "—"} />
+                      <SummaryItem label="Genre" value={garage.subcategory || "—"} />
+                      <SummaryItem label="Immatriculation" value={garage.registration || "—"} />
+                      <SummaryItem label="Nombre de cartes" value={garage.nombreCarte || "—"} />
+                    </SummaryGrid>
+                  ) : (
+                    <SummaryGrid>
+                      <SummaryItem label="Type de contrat" value={selectedContractType?.label ?? "—"} />
+                      <SummaryItem label="Immatriculation" value={vehicle.registration || "—"} />
+                      <SummaryItem label="Marque / Modèle" value={`${vehicle.brand || "—"} ${vehicle.model || ""}`.trim()} />
+                      <SummaryItem label="Genre" value={vehicle.subcategory || "—"} />
+                      <SummaryItem label="Énergie" value={vehicle.energy || "—"} />
+                      <SummaryItem
+                        label={vehicle.cylindree ? "Cylindrée" : "Puissance fiscale"}
+                        value={vehicle.cylindree ? `${vehicle.cylindree} cm³` : vehicle.fiscalPower ? `${vehicle.fiscalPower} CV` : "—"}
+                      />
+                      {vehicle.seats ? <SummaryItem label="Nb places" value={vehicle.seats} /> : null}
+                    </SummaryGrid>
+                  )}
+                </SummarySection>
+
+                {/* Couverture */}
+                <SummarySection icon={CalendarRange} title="Couverture">
+                  <SummaryGrid>
+                    <SummaryItem
+                      label="Date d'effet"
+                      value={(isGarage ? garage.effectDate : coverageSource.effectDate) || "—"}
+                    />
+                    <SummaryItem
+                      label="Durée"
+                      value={
+                        (isGarage ? garage.duration : coverageSource.duration)
+                          ? `${isGarage ? garage.duration : coverageSource.duration} mois`
+                          : "—"
+                      }
+                    />
+                    {isFleet ? (
+                      <SummaryItem
+                        label="Type de personne"
+                        value={fleetCoverage.personType === "MORALE" ? "Personne morale" : "Personne physique"}
+                      />
+                    ) : null}
+                  </SummaryGrid>
+                </SummarySection>
+              </div>
+
+              {/* ── Ligne 2 : Garanties · Devis ── */}
+              <div className="grid gap-4 lg:grid-cols-2">
+                {/* Garanties */}
+                <SummarySection icon={ShieldCheck} title="Garanties">
+                  <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-black/35">Incluses</p>
+                  <div className="mb-4 flex flex-wrap gap-2">
+                    {["RC", "CEDEAO"].map((g) => (
+                      <span
+                        key={g}
+                        className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-extrabold text-emerald-700"
+                      >
+                        <Check size={11} strokeWidth={3} />
+                        {g}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-black/35">Optionnelles</p>
+                  {summaryOptionLabels.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {summaryOptionLabels.map((label) => (
+                        <span
+                          key={label}
+                          className="flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/5 px-3 py-1 text-xs font-extrabold text-primary"
+                        >
+                          <Check size={11} strokeWidth={3} />
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm font-semibold text-black/35">Aucune garantie optionnelle</p>
+                  )}
+                  {summaryOptionText && summaryOptionText !== "-" ? (
+                    <p className="mt-3 rounded-lg bg-primary/5 px-3 py-2 text-xs font-bold text-primary/70">
+                      {summaryOptionText}
+                    </p>
+                  ) : null}
+                </SummarySection>
+
+                {/* Devis */}
+                {quote ? (
+                  <QuoteResultPanel quote={quote} />
+                ) : (
+                  <div className="app-surface flex flex-col items-center gap-3 p-6 text-center">
+                    <div className="flex size-12 items-center justify-center rounded-2xl bg-amber-100">
+                      <FileText size={22} className="text-amber-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-extrabold text-black/70">Devis non calculé</p>
+                      <p className="mt-1 text-xs font-semibold text-black/40">
+                        Revenez à l&apos;étape Options pour obtenir un devis.
+                      </p>
+                    </div>
+                    <button
+                      className="h-9 rounded-xl border border-border px-4 text-xs font-extrabold transition hover:bg-muted"
+                      onClick={() => { clearCalculatedState(); goToStep(2); }}
+                      type="button"
+                    >
+                      Aller aux options
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Ligne 3 : Actions ── */}
+              <div className="app-surface space-y-2.5 p-4">
                 <button
-                  className="h-10 rounded-lg bg-primary px-5 text-sm font-extrabold text-white shadow-sm shadow-primary/20 transition hover:bg-[var(--primary-strong)] disabled:bg-black/20 disabled:shadow-none"
+                  className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-extrabold text-white shadow-sm shadow-primary/30 transition hover:bg-[var(--primary-strong)] disabled:cursor-not-allowed disabled:bg-black/20 disabled:shadow-none"
                   disabled={!quote}
-                  onClick={() => setStep(4)}
+                  onClick={() => goToStep(4)}
                   type="button"
                 >
+                  <CreditCard size={16} />
                   Valider et passer au paiement
                 </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    className="h-9 rounded-xl border border-border text-xs font-bold transition hover:bg-muted"
+                    onClick={() => { clearCalculatedState(); goToStep(1); }}
+                    type="button"
+                  >
+                    Modifier infos
+                  </button>
+                  <button
+                    className="h-9 rounded-xl border border-border text-xs font-bold transition hover:bg-muted"
+                    onClick={() => { clearCalculatedState(); goToStep(2); }}
+                    type="button"
+                  >
+                    Changer options
+                  </button>
+                </div>
               </div>
             </div>
           ) : null}
@@ -1064,6 +1359,9 @@ export default function NewContractPage() {
               </section>
               {quote ? (
                 <PaymentIssuePanel
+                  canConfirmPayment={userCanConfirmPayment}
+                  canIssue={userCanIssueContract}
+                  contractId={savedDraftId}
                   issueResult={issueResult}
                   issuing={issuing}
                   onConfirmPayment={confirmPayment}
@@ -1080,7 +1378,7 @@ export default function NewContractPage() {
               <div className="flex">
                 <button
                   className="h-10 rounded-lg border border-border px-4 text-sm font-bold transition hover:bg-muted"
-                  onClick={() => setStep(3)}
+                  onClick={() => goToStep(3)}
                   type="button"
                 >
                   Retour au résumé
@@ -1093,6 +1391,18 @@ export default function NewContractPage() {
     </AppShell>
   );
 }
+
+// Icône et couleur par code ASS de garantie
+const GUARANTEE_META: Record<number, { icon: LucideIcon; color: string }> = {
+  1: { icon: Scale,         color: "text-blue-600"   }, // Défense et recours
+  2: { icon: Users,         color: "text-violet-600" }, // Personnes transportées
+  3: { icon: Sparkles,      color: "text-cyan-600"   }, // Bris de glace
+  4: { icon: ArrowLeftRight,color: "text-amber-600"  }, // Avance / Recours
+  5: { icon: Flame,         color: "text-orange-600" }, // Incendie
+  6: { icon: Lock,          color: "text-rose-600"   }, // Vol
+  7: { icon: Car,           color: "text-emerald-600"}, // Tierce collision
+  8: { icon: ShieldPlus,    color: "text-primary"    }, // Tierce complète
+};
 
 function GuaranteeSelector({
   guarantees,
@@ -1119,37 +1429,73 @@ function GuaranteeSelector({
   );
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3">
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {guarantees.map((guarantee) => {
-          const value = Number(guarantee.value);
-          const selected = selectedGuarantees.includes(value);
+          const code = Number(guarantee.value);
+          const selected = selectedGuarantees.includes(code);
+          const meta = GUARANTEE_META[code];
+          const Icon = meta?.icon ?? ShieldCheck;
+          const iconColor = meta?.color ?? "text-primary";
           return (
             <button
-              className={`rounded-md border px-4 py-3 text-left text-sm font-black ${
-                selected
-                  ? "border-primary bg-primary text-white"
-                  : "border-border bg-white hover:bg-muted"
-              }`}
               key={guarantee.value}
-              onClick={() => onToggle(value)}
+              onClick={() => onToggle(code)}
               type="button"
+              className={`group relative flex items-start gap-4 rounded-xl border-2 p-4 text-left transition-all ${
+                selected
+                  ? "border-primary bg-primary/5 shadow-sm shadow-primary/10"
+                  : "border-border bg-white hover:border-primary/30 hover:bg-primary/3"
+              }`}
             >
-              <span className="block">{guarantee.label}</span>
-              <span
-                className={`mt-1 block text-xs ${selected ? "text-white/80" : "text-black/50"}`}
+              {/* Icône garantie */}
+              <div
+                className={`mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl transition-colors ${
+                  selected ? "bg-primary/15" : "bg-black/5 group-hover:bg-primary/8"
+                }`}
               >
-                Code ASS {guarantee.value}
-              </span>
+                <Icon
+                  size={20}
+                  className={selected ? "text-primary" : iconColor}
+                  strokeWidth={1.8}
+                />
+              </div>
+
+              {/* Texte */}
+              <div className="min-w-0 flex-1">
+                <span
+                  className={`block text-sm font-extrabold leading-snug ${
+                    selected ? "text-primary" : "text-foreground"
+                  }`}
+                >
+                  {guarantee.label}
+                </span>
+              </div>
+
+              {/* Check indicator */}
+              <div
+                className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-all ${
+                  selected
+                    ? "border-primary bg-primary"
+                    : "border-black/20 group-hover:border-primary/40"
+                }`}
+              >
+                {selected ? <Check size={11} className="text-white" strokeWidth={3} /> : null}
+              </div>
             </button>
           );
         })}
       </div>
 
       {visibleOptionReferentials.length ? (
-        <div className="rounded-md border border-border p-5">
-          <h3 className="text-base font-black">Options de garanties</h3>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <div className="app-surface space-y-4 p-5">
+          <div className="flex items-center gap-2">
+            <ShieldCheck size={17} className="text-primary" />
+            <h3 className="text-sm font-extrabold uppercase tracking-wide text-primary">
+              Options de garanties
+            </h3>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
             {visibleOptionReferentials.map((referential) => (
               <SelectField
                 key={referential.field}
@@ -1169,15 +1515,18 @@ function GuaranteeSelector({
 function PersonSection({
   onPolicyholderChange,
   policyholder,
+  showErrors = false,
 }: {
   onPolicyholderChange: (field: keyof PersonForm, value: string) => void;
   policyholder: PersonForm;
+  showErrors?: boolean;
 }) {
   return (
     <FormBlock icon={UserRound} title="Client">
       <PersonFields
         onChange={onPolicyholderChange}
         person={policyholder}
+        showErrors={showErrors}
       />
     </FormBlock>
   );
@@ -1186,42 +1535,60 @@ function PersonSection({
 function PersonFields({
   onChange,
   person,
+  showErrors = false,
 }: {
   onChange: (field: keyof PersonForm, value: string) => void;
   person: PersonForm;
+  showErrors?: boolean;
 }) {
+  const phoneError = showErrors ? getPhoneValidationMessage(person.phone) : "";
+
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <TextField
+          error={showErrors && !person.lastName.trim() ? "Le nom est obligatoire" : ""}
           label="Nom"
           onChange={(value) => onChange("lastName", value)}
           placeholder="Ndiaye"
+          required
           value={person.lastName}
         />
         <TextField
+          error={showErrors && !person.firstName.trim() ? "Le prénom est obligatoire" : ""}
           label="Prénom"
           onChange={(value) => onChange("firstName", value)}
           placeholder="Awa"
+          required
           value={person.firstName}
         />
         <TextField
+          error={phoneError}
+          inputMode="numeric"
           label="Téléphone"
+          maxLength={9}
           onChange={(value) => onChange("phone", value)}
-          placeholder="77 123 45 67"
+          pattern="7[0-9]{8}"
+          placeholder="77XXXXXXX"
+          required
           type="tel"
           value={person.phone}
         />
+        <div>
+          <TextField
+            label="Email"
+            onChange={(value) => onChange("email", value)}
+            placeholder="awa.ndiaye@email.com"
+            type="email"
+            value={person.email}
+          />
+          <span className="mt-1 block text-xs font-semibold text-black/45">Facultatif</span>
+        </div>
         <TextField
-          label="Email"
-          onChange={(value) => onChange("email", value)}
-          placeholder="awa.ndiaye@email.com"
-          type="email"
-          value={person.email}
-        />
-        <TextField
+          error={showErrors && !person.address.trim() ? "L'adresse est obligatoire" : ""}
           label="Adresse"
           onChange={(value) => onChange("address", value)}
           placeholder="Dakar, Plateau"
+          required
           value={person.address}
         />
     </div>
@@ -1230,55 +1597,71 @@ function PersonFields({
 
 function GarageFields({
   garage,
+  showErrors = false,
   subcategories,
   updateGarage,
 }: {
   garage: GarageForm;
+  showErrors?: boolean;
   subcategories: SelectOption[];
   updateGarage: (field: keyof GarageForm, value: string) => void;
 }) {
   return (
     <>
-      <FormBlock icon={Warehouse} title="Garage">
+      <FormBlock icon={CalendarRange} title="Validité">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <SelectField
-            label="Genre ASS (sous-catégorie)"
-            onChange={(value) => updateGarage("subcategory", value)}
-            options={subcategories}
-            placeholder="Choisir un genre ASS"
-            value={garage.subcategory}
+            error={showErrors && !garage.duration ? "La durée est obligatoire" : ""}
+            label="Durée du contrat"
+            onChange={(value) => updateGarage("duration", value)}
+            options={durationOptions}
+            placeholder="Choisir une durée"
+            required
+            value={garage.duration}
           />
-          <TextField
-            helper="Nombre de cartes grises gérées par le garage"
-            label="Nombre de cartes"
-            onChange={(value) => updateGarage("nombreCarte", value)}
-            placeholder="5"
-            type="number"
-            value={garage.nombreCarte}
+          <DatePicker
+            error={showErrors && !garage.effectDate ? "La date d'effet est obligatoire" : ""}
+            label="Date d'effet"
+            minDate={TODAY}
+            onChange={(value) => updateGarage("effectDate", value)}
+            required
+            value={garage.effectDate}
           />
+        </div>
+      </FormBlock>
+      <FormBlock icon={Warehouse} title="Véhicule à assurer">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <TextField
-            label="Immatriculation (optionnel)"
+            label="Immatriculation"
+            maxLength={50}
             onChange={(value) => updateGarage("registration", value)}
             placeholder="AA123BC"
             value={garage.registration}
           />
-        </div>
-      </FormBlock>
-      <FormBlock icon={CalendarRange} title="Couverture">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div>
+            <span className="text-xs font-extrabold uppercase tracking-wide text-primary">Catégorie</span>
+            <div className="app-field mt-1.5 flex items-center border-primary/20 bg-primary/3 text-sm font-semibold text-primary/60">
+              C6 — Garage
+            </div>
+          </div>
           <SelectField
-            label="Durée"
-            onChange={(value) => updateGarage("duration", value)}
-            options={durationOptions}
-            placeholder="Choisir une durée"
-            value={garage.duration}
+            error={showErrors && !garage.subcategory ? "Le genre est obligatoire" : ""}
+            label="Genre"
+            onChange={(value) => updateGarage("subcategory", value)}
+            options={subcategories}
+            placeholder="Choisir un genre"
+            required
+            value={garage.subcategory}
           />
           <TextField
-            label="Date d'effet"
-            onChange={(value) => updateGarage("effectDate", value)}
-            placeholder="JJ/MM/AAAA"
-            type="date"
-            value={garage.effectDate}
+            error={showErrors && !garage.nombreCarte.trim() ? "Le nombre de cartes est obligatoire" : ""}
+            helper="Nombre de cartes grises gérées par le garage"
+            label="Nombre de cartes"
+            onChange={(value) => updateGarage("nombreCarte", value)}
+            placeholder="5"
+            required
+            type="number"
+            value={garage.nombreCarte}
           />
         </div>
       </FormBlock>
@@ -1291,27 +1674,29 @@ function VehicleFields({
   categories,
   energies,
   isBusSchool,
+  isFleet = false,
   isMoto,
   onCreateBrand,
-  onVerifyRegistration,
-  registrationVerification,
+  registrationLookupMessage,
+  registrationLookupState,
+  showErrors = false,
   subcategories,
   updateVehicle,
   vehicle,
-  verifyingRegistration,
 }: {
   brands: SelectOption[];
   categories: SelectOption[];
   energies: SelectOption[];
   isBusSchool: boolean;
+  isFleet?: boolean;
   isMoto: boolean;
   onCreateBrand: (label: string) => Promise<SelectOption | undefined>;
-  onVerifyRegistration: () => void;
-  registrationVerification: AssRegistrationVerification | null;
+  registrationLookupMessage: string;
+  registrationLookupState: RegistrationLookupState;
+  showErrors?: boolean;
   subcategories: SelectOption[];
   updateVehicle: (field: keyof VehicleForm, value: string) => void;
   vehicle: VehicleForm;
-  verifyingRegistration: boolean;
 }) {
   return (
     <>
@@ -1322,86 +1707,116 @@ function VehicleFields({
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <SelectSearch
             createLabel="Ajouter la marque"
+            error={showErrors && !vehicle.brand ? "La marque est obligatoire" : ""}
             label="Marque"
             onCreate={onCreateBrand}
             onChange={(value) => updateVehicle("brand", value)}
             options={brands}
-            placeholder="Rechercher ou choisir une marque"
+            placeholder="Sélectionner une marque"
+            required
             value={vehicle.brand}
           />
           <TextField
+            error={showErrors && !vehicle.model.trim() ? "Le modèle est obligatoire" : ""}
             label="Modèle"
             onChange={(value) => updateVehicle("model", value)}
             placeholder="Corolla"
+            required
             value={vehicle.model}
           />
           <SelectField
+            error={showErrors && !vehicle.category ? "La catégorie est obligatoire" : ""}
             label="Catégorie"
             onChange={(value) => updateVehicle("category", value)}
             options={categories}
             placeholder="Choisir une catégorie"
+            required
             value={vehicle.category}
           />
           <SelectField
             disabled={!vehicle.category}
-            label="Sous-catégorie ASS"
+            error={showErrors && !vehicle.subcategory ? "Le genre est obligatoire" : ""}
+            label="Genre"
             onChange={(value) => updateVehicle("subcategory", value)}
             options={subcategories}
-            placeholder="Choisir une sous-catégorie"
+            placeholder="Choisir un genre"
+            required
             value={vehicle.subcategory}
           />
           <div>
             <TextField
+              error={showErrors && !vehicle.registration.trim() ? "L'immatriculation est obligatoire" : ""}
               label="Immatriculation"
+              maxLength={50}
               onChange={(value) => updateVehicle("registration", value)}
               placeholder="AA123BC"
+              required
               value={vehicle.registration}
             />
-            <div className="mt-2 flex items-center gap-3">
-              <button
-                className="h-9 rounded-md border border-border px-3 text-xs font-black disabled:text-black/35"
-                disabled={!vehicle.registration || verifyingRegistration}
-                onClick={onVerifyRegistration}
-                type="button"
+            {registrationLookupState !== "idle" ? (
+              <p
+                className={`mt-2 flex items-center gap-1.5 text-xs font-bold ${
+                  registrationLookupState === "found"
+                    ? "text-emerald-700"
+                    : registrationLookupState === "error"
+                      ? "text-red-700"
+                      : "text-black/48"
+                }`}
               >
-                {verifyingRegistration ? "Vérification..." : "Vérifier ASS"}
-              </button>
-              {registrationVerification ? (
-                <p className="text-xs font-black text-black/60">
-                  {registrationVerificationMessage(registrationVerification)}
-                </p>
-              ) : null}
-            </div>
+                {registrationLookupState === "checking" ? (
+                  <LoaderCircle className="animate-spin" size={13} />
+                ) : registrationLookupState === "found" ? (
+                  <Check size={13} />
+                ) : null}
+                {registrationLookupMessage}
+              </p>
+            ) : null}
           </div>
           <SelectField
+            error={showErrors && !vehicle.energy ? "L'énergie est obligatoire" : ""}
             label="Énergie"
             onChange={(value) => updateVehicle("energy", value)}
             options={energies}
             placeholder="Choisir une énergie"
+            required
             value={vehicle.energy}
           />
           {!isMoto ? (
             <TextField
+              error={showErrors && !vehicle.fiscalPower.trim() ? "La puissance fiscale est obligatoire" : ""}
               label="Puissance fiscale"
               onChange={(value) => updateVehicle("fiscalPower", value)}
               placeholder="8"
+              required
               type="number"
               value={vehicle.fiscalPower}
             />
           ) : null}
           {isMoto ? (
             <TextField
-              label="Cylindrée"
+              error={showErrors ? getCylindreeError(vehicle.subcategory, vehicle.cylindree) : ""}
+              label="Cylindrée (cm³)"
               onChange={(value) => updateVehicle("cylindree", value)}
-              placeholder="125"
+              placeholder={getCylindrePlaceholder(vehicle.subcategory)}
+              required
               type="number"
               value={vehicle.cylindree}
             />
           ) : (
             <TextField
+              error={
+                showErrors
+                  ? !vehicle.seats.trim()
+                    ? "Le nombre de places est obligatoire"
+                    : vehicle.category === "C1" && Number(vehicle.seats) < 5
+                      ? "Le nombre de places doit être ≥ 5 pour un VP"
+                      : ""
+                  : ""
+              }
               label="Nombre de places"
               onChange={(value) => updateVehicle("seats", value)}
-              placeholder="5"
+              placeholder={vehicle.category === "C1" ? "5 minimum" : "5"}
+              required
               type="number"
               value={vehicle.seats}
             />
@@ -1409,21 +1824,166 @@ function VehicleFields({
         </div>
       </FormBlock>
 
+      {!isFleet ? (
+        <FormBlock icon={CalendarRange} title="Couverture">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <SelectField
+              error={showErrors && !vehicle.duration ? "La durée est obligatoire" : ""}
+              label="Durée"
+              onChange={(value) => updateVehicle("duration", value)}
+              options={durationOptions}
+              placeholder="Choisir une durée"
+              required
+              value={vehicle.duration}
+            />
+            <DatePicker
+              error={showErrors && !vehicle.effectDate ? "La date d'effet est obligatoire" : ""}
+              label="Date d'effet"
+              minDate={TODAY}
+              onChange={(value) => updateVehicle("effectDate", value)}
+              required
+              value={vehicle.effectDate}
+            />
+          </div>
+        </FormBlock>
+      ) : null}
+    </>
+  );
+}
+
+function FleetCoverageFields({
+  fleetCoverage,
+  showErrors = false,
+  updateFleetCoverage,
+}: {
+  fleetCoverage: FleetCoverage;
+  showErrors?: boolean;
+  updateFleetCoverage: (field: keyof FleetCoverage, value: string) => void;
+}) {
+  return (
+    <FormBlock icon={CalendarRange} title="Couverture de la flotte">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <SelectField
+          error={showErrors && !fleetCoverage.duration ? "La durée est obligatoire" : ""}
+          label="Durée"
+          onChange={(value) => updateFleetCoverage("duration", value)}
+          options={durationOptions}
+          placeholder="Choisir une durée"
+          required
+          value={fleetCoverage.duration}
+        />
+        <DatePicker
+          error={showErrors && !fleetCoverage.effectDate ? "La date d'effet est obligatoire" : ""}
+          label="Date d'effet"
+          minDate={TODAY}
+          onChange={(value) => updateFleetCoverage("effectDate", value)}
+          required
+          value={fleetCoverage.effectDate}
+        />
+        <SelectField
+          label="Type de personne"
+          onChange={(value) => updateFleetCoverage("personType", value)}
+          options={[
+            { value: "MORALE", label: "Personne morale (société)" },
+            { value: "PHYSIQUE", label: "Personne physique" },
+          ]}
+          value={fleetCoverage.personType}
+        />
+      </div>
+      <p className="mt-3 text-xs font-semibold text-black/45">
+        Ces champs s&apos;appliquent à l&apos;ensemble des véhicules de la flotte.
+        Rabais ASS : 10-20 véhicules = 10 %, 21-40 = 15 %, 41-60 = 20 %, +60 = 25 %.
+      </p>
+    </FormBlock>
+  );
+}
+
+function RemorqueFields({
+  brands,
+  onCreateBrand,
+  remorque,
+  showErrors = false,
+  updateRemorque,
+}: {
+  brands: SelectOption[];
+  onCreateBrand: (label: string) => Promise<SelectOption | undefined>;
+  remorque: RemorqueForm;
+  showErrors?: boolean;
+  updateRemorque: (field: keyof RemorqueForm, value: string) => void;
+}) {
+  return (
+    <>
+      <FormBlock icon={CarFront} title="Remorque">
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
+          <strong>Condition ASS :</strong> le véhicule tracteur doit déjà être assuré digitalement
+          dans ASS (même compagnie). La première remorque rattachée à un tracteur est à RC = 0.
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <TextField
+            error={showErrors && !remorque.referenceVehicule.trim() ? "L'immatriculation du tracteur est obligatoire" : ""}
+            helper="Immatriculation du véhicule tracteur (déjà assuré dans ASS)"
+            label="Référence tracteur"
+            onChange={(value) => updateRemorque("referenceVehicule", value)}
+            placeholder="DK-0000-KO"
+            required
+            value={remorque.referenceVehicule}
+          />
+          <TextField
+            error={showErrors && !remorque.immatriculation.trim() ? "L'immatriculation de la remorque est obligatoire" : ""}
+            label="Immatriculation remorque"
+            onChange={(value) => updateRemorque("immatriculation", value)}
+            placeholder="KL2365HA"
+            required
+            value={remorque.immatriculation}
+          />
+          <SelectSearch
+            createLabel="Ajouter la marque"
+            error={showErrors && !remorque.brand.trim() ? "La marque est obligatoire" : ""}
+            label="Marque"
+            onCreate={onCreateBrand}
+            onChange={(value) => updateRemorque("brand", value)}
+            options={brands}
+            placeholder="Sélectionner une marque"
+            required
+            value={remorque.brand}
+          />
+          <TextField
+            error={showErrors && !remorque.model.trim() ? "Le modèle est obligatoire" : ""}
+            label="Modèle"
+            onChange={(value) => updateRemorque("model", value)}
+            placeholder="Plateau"
+            required
+            value={remorque.model}
+          />
+        </div>
+      </FormBlock>
       <FormBlock icon={CalendarRange} title="Couverture">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <SelectField
+            error={showErrors && !remorque.duration ? "La durée est obligatoire" : ""}
             label="Durée"
-            onChange={(value) => updateVehicle("duration", value)}
+            onChange={(value) => updateRemorque("duration", value)}
             options={durationOptions}
             placeholder="Choisir une durée"
-            value={vehicle.duration}
+            required
+            value={remorque.duration}
           />
-          <TextField
+          <DatePicker
+            error={showErrors && !remorque.effectDate ? "La date d'effet est obligatoire" : ""}
             label="Date d'effet"
-            onChange={(value) => updateVehicle("effectDate", value)}
-            placeholder="JJ/MM/AAAA"
-            type="date"
-            value={vehicle.effectDate}
+            minDate={TODAY}
+            onChange={(value) => updateRemorque("effectDate", value)}
+            required
+            value={remorque.effectDate}
+          />
+          <SelectField
+            label="Type de personne"
+            onChange={(value) => updateRemorque("personType", value)}
+            options={[
+              { value: "PHYSIQUE", label: "Personne physique" },
+              { value: "MORALE", label: "Personne morale" },
+            ]}
+            value={remorque.personType}
           />
         </div>
       </FormBlock>
@@ -1442,9 +2002,7 @@ function FleetSection({
   removeTrailer,
   selectedTrailerTarget,
   startTrailerForm,
-  trailerCategories,
   trailerForm,
-  trailerSubcategories,
   updateTrailer,
 }: {
   addTrailer: () => void;
@@ -1457,326 +2015,387 @@ function FleetSection({
   removeTrailer: (vehicleId: string, trailerId: string) => void;
   selectedTrailerTarget?: FleetVehicle;
   startTrailerForm: (vehicleId: string) => void;
-  trailerCategories: SelectOption[];
   trailerForm: TrailerForm;
-  trailerSubcategories: SelectOption[];
   updateTrailer: (field: keyof TrailerForm, value: string) => void;
 }) {
+  // Liste plate de toutes les remorques pour la section REMORQUES
+  const allTrailers = fleetVehicles.flatMap((v) =>
+    v.trailers.map((t) => ({ ...t, tractorVehicle: v })),
+  );
+
   return (
-    <div className="space-y-5">
-      <div>
-        <h3 className="text-lg font-black">Vehicules ajoutes</h3>
-        <p className="mt-1 text-sm font-semibold text-black/60">
-          Chaque carte vehicule permet de modifier, supprimer ou ajouter une remorque.
-        </p>
-      </div>
+    <div className="space-y-6">
 
-      {fleetVehicles.length ? (
-        <div className="grid grid-cols-2 gap-4">
-          {fleetVehicles.map((fleetVehicle) => (
-            <div className="rounded-xl border border-border bg-white p-4 shadow-sm" key={fleetVehicle.id}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-base font-black">{vehicleLabel(fleetVehicle)}</p>
-                  <p className="mt-1 text-sm font-semibold text-black/60">
-                    Genre ASS {fleetVehicle.subcategory || "-"} | Energie{" "}
-                    {fleetVehicle.energy || "-"}
-                  </p>
-                </div>
-                <span className="rounded-md bg-muted px-2 py-1 text-xs font-black">
-                  {fleetVehicle.trailers.length} remorque(s)
-                </span>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-bold transition hover:bg-muted"
-                  onClick={() => editFleetVehicle(fleetVehicle.id)}
-                  type="button"
-                >
-                  Modifier
-                </button>
-                <button
-                  className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-bold text-red-600 transition hover:bg-red-50"
-                  onClick={() => deleteFleetVehicle(fleetVehicle.id)}
-                  type="button"
-                >
-                  Supprimer
-                </button>
-                <button
-                  className="rounded-lg bg-primary px-3 py-1.5 text-xs font-extrabold text-white transition hover:bg-[var(--primary-strong)]"
-                  onClick={() => startTrailerForm(fleetVehicle.id)}
-                  type="button"
-                >
-                  + Remorque
-                </button>
-              </div>
-
-              {fleetVehicle.trailers.length ? (
-                <div className="mt-4 space-y-2 border-t border-border pt-3">
-                  {fleetVehicle.trailers.map((trailer) => (
-                    <div
-                      className="flex items-center justify-between gap-3 rounded-md bg-muted px-3 py-2"
-                      key={trailer.id}
-                    >
-                      <p className="text-xs font-black">
-                        {trailer.registration || trailer.chassis || "Remorque"} -{" "}
-                        {trailer.brand || "-"}
-                      </p>
+      {/* ─── VÉHICULES ─────────────────────────────────────────── */}
+      <div className="app-surface overflow-hidden">
+        <div className="flex items-center justify-between border-b border-border px-5 py-3">
+          <h3 className="text-sm font-extrabold uppercase tracking-wide text-primary">
+            Véhicules ({fleetVehicles.length})
+          </h3>
+        </div>
+        {fleetVehicles.length ? (
+          <table className="app-table">
+            <thead>
+              <tr>
+                <th>Immatriculation</th>
+                <th>Marque / Modèle</th>
+                <th>Genre ASS</th>
+                <th>Énergie</th>
+                <th>Puiss. fisc.</th>
+                <th>Remorques</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {fleetVehicles.map((v) => (
+                <tr key={v.id}>
+                  <td className="font-black">{v.registration || "—"}</td>
+                  <td>{v.brand || "—"} {v.model || ""}</td>
+                  <td className="text-xs font-bold text-black/60">{v.subcategory || "—"}</td>
+                  <td className="text-xs">{v.energy || "—"}</td>
+                  <td className="text-xs">{v.fiscalPower || "—"}</td>
+                  <td>
+                    <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-extrabold text-primary">
+                      {v.trailers.length}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="flex items-center gap-2">
                       <button
-                        className="text-xs font-black text-primary"
-                        onClick={() => removeTrailer(fleetVehicle.id, trailer.id)}
+                        className="rounded-lg border border-border px-2.5 py-1 text-xs font-bold transition hover:bg-muted"
+                        onClick={() => editFleetVehicle(v.id)}
                         type="button"
                       >
-                        Retirer
+                        Modifier
+                      </button>
+                      <button
+                        className="rounded-lg border border-red-200 px-2.5 py-1 text-xs font-bold text-red-600 transition hover:bg-red-50"
+                        onClick={() => deleteFleetVehicle(v.id)}
+                        type="button"
+                      >
+                        Supprimer
+                      </button>
+                      <button
+                        className="rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-extrabold text-primary transition hover:bg-primary/20"
+                        onClick={() => startTrailerForm(v.id)}
+                        type="button"
+                      >
+                        + Remorque
                       </button>
                     </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="rounded-md border border-border bg-muted p-4 text-sm font-bold text-black/60">
-          Aucun vehicule ajoute dans la flotte.
-        </div>
-      )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="px-5 py-4 text-sm font-semibold text-black/45">
+            Aucun véhicule ajouté — remplissez le formulaire ci-dessus puis cliquez sur « Ajouter le véhicule ».
+          </p>
+        )}
+      </div>
 
-      {selectedTrailerTarget ? (
-        <div className="rounded-md border border-primary p-5">
-          <div className="mb-5">
-            <h3 className="text-lg font-black">Ajouter une remorque</h3>
-            <p className="mt-1 text-sm font-semibold text-black/60">
-              Vehicule tracteur auto-renseigne et non modifiable.
-            </p>
-          </div>
-          <div className="mb-5 rounded-md bg-muted px-3 py-3 text-sm font-black">
-            Tracteur : {vehicleLabel(selectedTrailerTarget)}
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <SelectSearch
-              createLabel="Ajouter la marque"
-              label="Marque remorque"
-              onCreate={onCreateBrand}
-              onChange={(value) => updateTrailer("brand", value)}
-              options={brands}
-              placeholder="Rechercher ou choisir une marque"
-              value={trailerForm.brand}
-            />
-            <TextField
-              label="Modèle remorque"
-              onChange={(value) => updateTrailer("model", value)}
-              placeholder="Plateau"
-              value={trailerForm.model}
-            />
-            <SelectField
-              label="Catégorie remorque"
-              onChange={(value) => updateTrailer("category", value)}
-              options={trailerCategories}
-              placeholder="Choisir une catégorie"
-              value={trailerForm.category}
-            />
-            <SelectField
-              label="Sous-catégorie remorque"
-              onChange={(value) => updateTrailer("subcategory", value)}
-              options={trailerSubcategories}
-              placeholder="Choisir une sous-catégorie"
-              value={trailerForm.subcategory}
-            />
-            <TextField
-              label="Immatriculation remorque"
-              onChange={(value) => updateTrailer("registration", value)}
-              placeholder="AA123BC"
-              value={trailerForm.registration}
-            />
-            <TextField
-              label="Charge utile"
-              onChange={(value) => updateTrailer("usefulLoad", value)}
-              placeholder="1500"
-              type="number"
-              value={trailerForm.usefulLoad}
-            />
-            <TextField
-              label="Date de mise en circulation"
-              onChange={(value) => updateTrailer("firstCirculationDate", value)}
-              placeholder="JJ/MM/AAAA"
-              type="date"
-              value={trailerForm.firstCirculationDate}
-            />
-            <TextField
-              label="Valeur"
-              onChange={(value) => updateTrailer("value", value)}
-              placeholder="2 500 000"
-              type="number"
-              value={trailerForm.value}
-            />
-          </div>
-          <button
-            className="mt-5 h-11 rounded-md bg-primary px-5 text-sm font-black text-white disabled:bg-black/20"
-            disabled={!canSaveTrailer}
-            onClick={addTrailer}
-            type="button"
-          >
-            Rattacher la remorque
-          </button>
+      {/* ─── REMORQUES ─────────────────────────────────────────── */}
+      <div className="app-surface overflow-hidden">
+        <div className="flex items-center justify-between border-b border-border px-5 py-3">
+          <h3 className="text-sm font-extrabold uppercase tracking-wide text-primary">
+            Remorques ({allTrailers.length})
+          </h3>
         </div>
-      ) : null}
+
+        {allTrailers.length ? (
+          <table className="app-table">
+            <thead>
+              <tr>
+                <th>Immatriculation</th>
+                <th>Marque / Modèle</th>
+                <th>Tête tracteur</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {allTrailers.map((t) => (
+                <tr key={t.id}>
+                  <td className="font-black">{t.registration || "—"}</td>
+                  <td>{t.brand || "—"} {t.model || ""}</td>
+                  <td className="text-xs font-bold text-black/60">
+                    {t.tractorVehicle.registration || vehicleLabel(t.tractorVehicle)}
+                  </td>
+                  <td>
+                    <button
+                      className="rounded-lg border border-red-200 px-2.5 py-1 text-xs font-bold text-red-600 transition hover:bg-red-50"
+                      onClick={() => removeTrailer(t.tractorVehicleId, t.id)}
+                      type="button"
+                    >
+                      Retirer
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="px-5 py-4 text-sm font-semibold text-black/45">
+            Aucune remorque — cliquez sur « + Remorque » sur un véhicule pour en ajouter une.
+          </p>
+        )}
+
+        {/* Formulaire d'ajout de remorque */}
+        {selectedTrailerTarget ? (
+          <div className="border-t border-primary/20 bg-primary/3 p-5">
+            <div className="mb-4 flex items-center gap-3">
+              <h4 className="font-extrabold text-primary">Ajouter une remorque</h4>
+              <span className="rounded-md bg-primary/10 px-2.5 py-1 text-xs font-extrabold text-primary">
+                Tête tracteur : {selectedTrailerTarget.registration || vehicleLabel(selectedTrailerTarget)}
+              </span>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <TextField
+                label="Immatriculation"
+                maxLength={50}
+                onChange={(value) => updateTrailer("registration", value)}
+                placeholder="KL2365HA"
+                required
+                value={trailerForm.registration}
+              />
+              <SelectSearch
+                createLabel="Ajouter la marque"
+                label="Marque"
+                onCreate={onCreateBrand}
+                onChange={(value) => updateTrailer("brand", value)}
+                options={brands}
+                placeholder="Sélectionner une marque"
+                value={trailerForm.brand}
+              />
+              <TextField
+                label="Modèle"
+                onChange={(value) => updateTrailer("model", value)}
+                placeholder="Plateau"
+                value={trailerForm.model}
+              />
+            </div>
+            <div className="mt-4 flex gap-3">
+              <button
+                className="h-10 rounded-lg bg-primary px-5 text-sm font-extrabold text-white shadow-sm shadow-primary/20 disabled:bg-black/20 disabled:shadow-none"
+                disabled={!canSaveTrailer}
+                onClick={addTrailer}
+                type="button"
+              >
+                Rattacher la remorque
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
 
 function FleetSummary({ fleetVehicles }: { fleetVehicles: FleetVehicle[] }) {
   return (
-    <div className="space-y-4">
-      {fleetVehicles.map((fleetVehicle) => (
-        <div className="rounded-md border border-border p-5" key={fleetVehicle.id}>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-base font-black">{vehicleLabel(fleetVehicle)}</p>
-              <p className="mt-1 text-sm font-semibold text-black/60">
-                {fleetVehicle.subcategory || "-"} | {fleetVehicle.energy || "-"}
-              </p>
+    <div className="space-y-3">
+      {fleetVehicles.map((v, index) => (
+        <div key={v.id} className="overflow-hidden rounded-xl border border-border">
+          <div className="flex items-center justify-between gap-3 bg-muted/60 px-4 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[10px] font-black text-primary">
+                {index + 1}
+              </span>
+              <p className="text-sm font-extrabold">{vehicleLabel(v)}</p>
             </div>
-            <span className="rounded-md bg-muted px-3 py-1 text-xs font-black">
-              {fleetVehicle.trailers.length} remorque(s)
-            </span>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-black text-primary">
+                {v.subcategory || "—"}
+              </span>
+              {v.energy ? (
+                <span className="rounded-full bg-black/5 px-2.5 py-0.5 text-[10px] font-black text-black/50">
+                  {v.energy}
+                </span>
+              ) : null}
+            </div>
           </div>
-          {fleetVehicle.trailers.length ? (
-            <div className="mt-4 space-y-2">
-              {fleetVehicle.trailers.map((trailer) => (
-                <div className="rounded-md bg-muted px-3 py-2 text-sm font-bold" key={trailer.id}>
-                  Remorque {trailer.registration || trailer.chassis || "-"} rattachee a{" "}
-                  {trailer.tractorLabel}
+          {v.trailers.length ? (
+            <div className="divide-y divide-border/60 px-4">
+              {v.trailers.map((t) => (
+                <div key={t.id} className="flex items-center gap-2 py-2 text-xs font-semibold text-black/55">
+                  <span className="font-black text-black/40">↳</span>
+                  Remorque{t.registration ? ` ${t.registration}` : ""}
+                  {t.brand ? ` · ${t.brand} ${t.model}`.trim() : ""}
                 </div>
               ))}
             </div>
-          ) : (
-            <p className="mt-4 text-sm font-bold text-black/50">Sans remorque</p>
-          )}
+          ) : null}
         </div>
       ))}
     </div>
   );
 }
 
+function SummarySection({
+  icon: Icon,
+  title,
+  children,
+}: {
+  icon: LucideIcon;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="app-surface overflow-hidden">
+      <div className="flex items-center gap-2.5 border-b border-border px-5 py-3.5">
+        <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10">
+          <Icon size={14} className="text-primary" strokeWidth={2.2} />
+        </div>
+        <h3 className="text-sm font-extrabold uppercase tracking-wide text-primary">{title}</h3>
+      </div>
+      <div className="p-5">{children}</div>
+    </section>
+  );
+}
+
+function SummaryGrid({ children }: { children: React.ReactNode }) {
+  return <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm max-sm:grid-cols-1">{children}</dl>;
+}
+
 function ContractSummary({
   contractTypeLabel,
+  fleetCoverage,
   fleetVehicles,
+  garage,
   guaranteeOptions,
   guarantees,
   insured,
   isFleet,
+  isGarage,
   policyholder,
-  quote,
   sameAsPolicyholder,
   selectedGuarantees,
   vehicle,
 }: {
   contractTypeLabel: string;
+  fleetCoverage: FleetCoverage;
   fleetVehicles: FleetVehicle[];
+  garage: GarageForm;
   guaranteeOptions: GuaranteeOptionsForm;
   guarantees: SelectOption[];
   insured: PersonForm;
   isFleet: boolean;
+  isGarage: boolean;
   policyholder: PersonForm;
-  quote: ContractQuote | null;
   sameAsPolicyholder: boolean;
   selectedGuarantees: number[];
   vehicle: VehicleForm;
 }) {
-  const coverageVehicle = isFleet ? fleetVehicles[0] : vehicle;
-  const expirationDate = coverageVehicle
-    ? calculateExpirationDateText(
-        coverageVehicle.effectDate,
-        coverageVehicle.duration,
-        coverageVehicle.periodicity,
-      )
-    : "-";
+  const optionLabels = guaranteeLabels(guarantees, selectedGuarantees);
+  const optionSummaryText = guaranteeOptionSummary(guaranteeOptions);
+  const coverageSource = isFleet ? fleetCoverage : vehicle;
 
   return (
-    <div className="space-y-5">
-      <section className="app-surface overflow-hidden">
-        <div className="border-b border-border px-5 py-4"><h3 className="font-extrabold">Informations client</h3></div>
-        <dl className="grid grid-cols-2 gap-4 p-5 text-sm max-md:grid-cols-1">
+    <div className="space-y-4">
+      {/* ── Client ── */}
+      <SummarySection icon={UserRound} title="Client">
+        <SummaryGrid>
           <SummaryItem label="Souscripteur" value={personLabel(policyholder)} />
           <SummaryItem
-            label="Assure"
+            label="Assuré"
             value={sameAsPolicyholder ? "Identique au souscripteur" : personLabel(insured)}
           />
-          <SummaryItem label="Telephone" value={policyholder.phone || "-"} />
-          <SummaryItem label="Email" value={policyholder.email || "-"} />
-          <SummaryItem label="Adresse" value={policyholder.address || "-"} />
-        </dl>
-      </section>
+          <SummaryItem label="Téléphone" value={policyholder.phone || "—"} />
+          {policyholder.email ? <SummaryItem label="Email" value={policyholder.email} /> : null}
+          <SummaryItem label="Adresse" value={policyholder.address || "—"} />
+        </SummaryGrid>
+      </SummarySection>
 
-      <section className="app-surface overflow-hidden">
-        <div className="border-b border-border px-5 py-4"><h3 className="font-extrabold">Véhicule</h3></div>
+      {/* ── Véhicule / Garage / Flotte ── */}
+      <SummarySection
+        icon={isGarage ? Warehouse : isFleet ? FileText : CarFront}
+        title={isFleet ? `Flotte (${fleetVehicles.length} véhicule${fleetVehicles.length > 1 ? "s" : ""})` : isGarage ? "Garage" : "Véhicule"}
+      >
         {isFleet ? (
-          <div className="p-5">
-            <FleetSummary fleetVehicles={fleetVehicles} />
-          </div>
+          <FleetSummary fleetVehicles={fleetVehicles} />
+        ) : isGarage ? (
+          <SummaryGrid>
+            <SummaryItem label="Type de contrat" value={contractTypeLabel} />
+            <SummaryItem label="Genre" value={garage.subcategory || "—"} />
+            <SummaryItem label="Immatriculation" value={garage.registration || "—"} />
+            <SummaryItem label="Nombre de cartes" value={garage.nombreCarte || "—"} />
+          </SummaryGrid>
         ) : (
-          <dl className="grid grid-cols-2 gap-4 p-5 text-sm max-md:grid-cols-1">
-            <SummaryItem label="Type contrat" value={contractTypeLabel} />
+          <SummaryGrid>
+            <SummaryItem label="Type de contrat" value={contractTypeLabel} />
             <SummaryItem label="Immatriculation" value={vehicle.registration || "—"} />
-            <SummaryItem label="Catégorie" value={vehicle.category || "—"} />
-            <SummaryItem label="Genre ASS" value={vehicle.subcategory || "—"} />
-            <SummaryItem label="Marque" value={vehicle.brand || "—"} />
-            <SummaryItem label="Modèle" value={vehicle.model || "—"} />
+            <SummaryItem label="Marque / Modèle" value={`${vehicle.brand || "—"} ${vehicle.model || ""}`.trim()} />
+            <SummaryItem label="Genre" value={vehicle.subcategory || "—"} />
             <SummaryItem label="Énergie" value={vehicle.energy || "—"} />
             <SummaryItem
               label={vehicle.cylindree ? "Cylindrée" : "Puissance fiscale"}
-              value={vehicle.cylindree || vehicle.fiscalPower || "—"}
+              value={vehicle.cylindree ? `${vehicle.cylindree} cm³` : vehicle.fiscalPower ? `${vehicle.fiscalPower} CV` : "—"}
             />
-            <SummaryItem label="Nombre de places" value={vehicle.seats || "—"} />
-          </dl>
+            {vehicle.seats ? <SummaryItem label="Nb places" value={vehicle.seats} /> : null}
+          </SummaryGrid>
         )}
-      </section>
+      </SummarySection>
 
-      <section className="app-surface overflow-hidden">
-        <div className="border-b border-border px-5 py-4"><h3 className="font-extrabold">Durée et dates</h3></div>
-        <dl className="grid grid-cols-2 gap-4 p-5 text-sm max-md:grid-cols-1">
-          <SummaryItem label="Périodicité" value={coverageVehicle?.periodicity || "—"} />
-          <SummaryItem label="Durée" value={coverageVehicle?.duration || "—"} />
-          <SummaryItem label="Date d'effet" value={coverageVehicle?.effectDate || "—"} />
-          <SummaryItem label="Date expiration" value={expirationDate} />
-        </dl>
-      </section>
-
-      <section className="app-surface overflow-hidden">
-        <div className="border-b border-border px-5 py-4"><h3 className="font-extrabold">Garanties sélectionnées</h3></div>
-        <dl className="grid grid-cols-2 gap-4 p-5 text-sm max-md:grid-cols-1">
-          <SummaryItem label="Garantie de base" value="Responsabilité civile (RC)" />
+      {/* ── Couverture ── */}
+      <SummarySection icon={CalendarRange} title="Couverture">
+        <SummaryGrid>
           <SummaryItem
-            label="Garanties optionnelles"
-            value={guaranteeLabels(guarantees, selectedGuarantees).join(", ") || "Aucune"}
+            label="Date d'effet"
+            value={(isGarage ? garage.effectDate : coverageSource.effectDate) || "—"}
           />
-          <SummaryItem label="Options garanties" value={guaranteeOptionSummary(guaranteeOptions)} />
-        </dl>
-      </section>
+          <SummaryItem
+            label="Durée"
+            value={
+              (isGarage ? garage.duration : coverageSource.duration)
+                ? `${isGarage ? garage.duration : coverageSource.duration} mois`
+                : "—"
+            }
+          />
+          {isFleet ? (
+            <SummaryItem
+              label="Type de personne"
+              value={fleetCoverage.personType === "MORALE" ? "Personne morale" : "Personne physique"}
+            />
+          ) : null}
+        </SummaryGrid>
+      </SummarySection>
 
-      {quote ? (
-        <QuoteResultPanel quote={quote} />
-      ) : (
-        <div className="app-surface flex items-center p-5 text-sm font-semibold text-black/45">
-          Devis ASS non calculé — revenez à l&apos;étape Options.
+      {/* ── Garanties ── */}
+      <SummarySection icon={ShieldCheck} title="Garanties">
+        {/* Incluses */}
+        <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-black/35">Incluses</p>
+        <div className="mb-4 flex flex-wrap gap-2">
+          {["RC", "CEDEAO"].map((g) => (
+            <span key={g} className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-extrabold text-emerald-700">
+              <Check size={11} strokeWidth={3} />
+              {g}
+            </span>
+          ))}
         </div>
-      )}
-
-      <section className="app-surface overflow-hidden">
-        <div className="border-b border-border px-5 py-4"><h3 className="font-extrabold">Commission apporteur</h3></div>
-        <dl className="grid grid-cols-2 gap-4 p-5 text-sm max-md:grid-cols-1">
-          <SummaryItem label="Commission" value="Calculée à l'émission selon configuration" />
-          <SummaryItem label="Net à verser Horus" value="Disponible après snapshot commission" />
-        </dl>
-      </section>
+        {/* Optionnelles */}
+        <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-black/35">Optionnelles</p>
+        {optionLabels.length ? (
+          <div className="flex flex-wrap gap-2">
+            {optionLabels.map((label) => (
+              <span key={label} className="flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/5 px-3 py-1 text-xs font-extrabold text-primary">
+                <Check size={11} strokeWidth={3} />
+                {label}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm font-semibold text-black/35">Aucune garantie optionnelle</p>
+        )}
+        {optionSummaryText ? (
+          <p className="mt-3 rounded-lg bg-primary/5 px-3 py-2 text-xs font-bold text-primary/70">{optionSummaryText}</p>
+        ) : null}
+      </SummarySection>
     </div>
   );
 }
 
 function QuoteResultPanel({ quote }: { quote: ContractQuote }) {
-  const paymentAmount = quote.prime_rc_ass + quote.policy_fee_ass;
+  const paymentAmount = quotePayableAmount(quote);
   const hasBreakdown = quote.prime_totale !== undefined;
 
   return (
@@ -1793,7 +2412,7 @@ function QuoteResultPanel({ quote }: { quote: ContractQuote }) {
           <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-black/40">Primes</p>
           {hasBreakdown ? (
             <div className="overflow-hidden rounded-lg border border-border">
-              <div className="grid grid-cols-2 divide-x divide-border">
+              <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-2 sm:divide-x sm:divide-y-0">
                 {/* Colonne gauche */}
                 <div className="divide-y divide-border">
                   <QuoteRow label="Prime RC" value={quote.prime_rc_ass} />
@@ -1875,11 +2494,11 @@ function QuoteRow({
   isTotal?: boolean;
 }) {
   return (
-    <div className={`flex items-center justify-between px-4 py-3 ${isTotal ? "bg-primary/5" : ""}`}>
+    <div className={`flex items-center justify-between gap-3 px-4 py-3 ${isTotal ? "bg-primary/5" : ""}`}>
       <span className={`text-xs font-bold ${isTotal ? "text-primary font-extrabold" : "text-black/55"}`}>
         {label}
       </span>
-      <span className={`tabular-nums font-extrabold ${
+      <span className={`shrink-0 whitespace-nowrap text-right tabular-nums font-extrabold ${
         isTotal ? "text-primary" : isReduction ? "text-emerald-600" : "text-foreground"
       }`}>
         {isReduction && value > 0 ? "−" : ""}{formatAmount(value)} FCFA
@@ -1889,6 +2508,9 @@ function QuoteRow({
 }
 
 function PaymentIssuePanel({
+  canConfirmPayment,
+  canIssue,
+  contractId,
   issueResult,
   issuing,
   onConfirmPayment,
@@ -1897,6 +2519,9 @@ function PaymentIssuePanel({
   payment,
   quote,
 }: {
+  canConfirmPayment: boolean;
+  canIssue: boolean;
+  contractId: number | null;
   issueResult: IssueResult | null;
   issuing: boolean;
   onConfirmPayment: () => void;
@@ -1905,38 +2530,71 @@ function PaymentIssuePanel({
   payment: ConfirmedPayment | null;
   quote: ContractQuote;
 }) {
+  const payableAmount = quotePayableAmount(quote);
+
   return (
     <div className="space-y-5">
-      <QuoteResultPanel quote={quote} />
-
       <section className="app-surface overflow-hidden">
-        <div className="border-b border-border px-5 py-4">
-          <h3 className="font-extrabold">Paiement et émission</h3>
-          <p className="mt-0.5 text-xs font-medium text-black/45">
-            L&apos;émission reste bloquée tant que le paiement test n&apos;est pas confirmé.
-          </p>
+        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-extrabold uppercase text-black/40">Montant à confirmer</p>
+            <p className="mt-1 text-3xl font-black tabular-nums text-primary">
+              {formatAmount(payableAmount)} FCFA
+            </p>
+            <p className="mt-1 text-xs font-medium text-black/45">
+              Prime totale calculée par ASS
+            </p>
+          </div>
+          <span
+            className={`inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-extrabold ${
+              payment
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-amber-50 text-amber-700"
+            }`}
+          >
+            {payment ? <Check size={12} /> : <CreditCard size={12} />}
+            {payment ? "Paiement confirmé" : "En attente de confirmation"}
+          </span>
         </div>
-        <div className="flex flex-wrap items-center gap-3 p-5">
-          <button
-            className="h-10 rounded-lg bg-primary px-5 text-sm font-extrabold text-white shadow-sm shadow-primary/20 transition hover:bg-[var(--primary-strong)] disabled:bg-black/20 disabled:shadow-none"
-            disabled={Boolean(payment) || paying}
-            onClick={onConfirmPayment}
-            type="button"
-          >
-            {paying ? "Confirmation…" : "Confirmer paiement test"}
-          </button>
-          <button
-            className="h-10 rounded-lg bg-black px-5 text-sm font-extrabold text-white transition hover:bg-black/80 disabled:bg-black/20"
-            disabled={!payment || Boolean(issueResult) || issuing}
-            onClick={onIssue}
-            type="button"
-          >
-            {issuing ? "Émission…" : "Émettre le contrat ASS"}
-          </button>
+        <div className="flex flex-col gap-3 border-t border-border p-5 sm:flex-row sm:items-center">
+          {canConfirmPayment ? (
+            <button
+              className="h-11 rounded-lg bg-primary px-5 text-sm font-extrabold text-white shadow-sm shadow-primary/20 transition hover:bg-[var(--primary-strong)] disabled:bg-black/20 disabled:shadow-none"
+              disabled={Boolean(payment) || paying}
+              onClick={onConfirmPayment}
+              type="button"
+            >
+              {paying
+                ? "Confirmation…"
+                : `Confirmer ${formatAmount(payableAmount)} FCFA`}
+            </button>
+          ) : (
+            <span className="text-sm font-semibold text-amber-700">
+              Paiement en attente de confirmation par la finance.
+            </span>
+          )}
+          {canIssue ? (
+            <button
+              className="h-11 rounded-lg bg-black px-5 text-sm font-extrabold text-white transition hover:bg-black/80 disabled:bg-black/20"
+              disabled={!payment || Boolean(issueResult) || issuing}
+              onClick={onIssue}
+              type="button"
+            >
+              {issuing ? "Émission…" : "Émettre le contrat ASS"}
+            </button>
+          ) : null}
+          {!canConfirmPayment && contractId ? (
+            <Link
+              className="h-10 rounded-lg border border-border px-4 py-2.5 text-sm font-bold hover:bg-muted"
+              href={`/contracts/${contractId}`}
+            >
+              Ouvrir le dossier
+            </Link>
+          ) : null}
           {payment ? (
-            <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 sm:ml-auto">
               <Check size={12} />
-              Paiement confirmé — {formatAmount(payment.amount)} FCFA
+              Reçu : {formatAmount(payment.amount)} FCFA
             </span>
           ) : null}
         </div>
@@ -2025,6 +2683,8 @@ function SelectField({
   disabled = false,
   onChange,
   placeholder = "Sélectionner...",
+  error,
+  required = false,
 }: {
   label: string;
   options: SelectOption[];
@@ -2032,29 +2692,116 @@ function SelectField({
   disabled?: boolean;
   onChange: (value: string) => void;
   placeholder?: string;
+  error?: string;
+  required?: boolean;
 }) {
+  const [open, setOpen] = useState(false);
+  const [popStyle, setPopStyle] = useState<React.CSSProperties>({});
+  const containerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const selected = options.find((o) => String(o.value) === value);
+
+  useEffect(() => {
+    function close(e: MouseEvent) {
+      if (containerRef.current && e.target instanceof Node && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+
+  function toggle() {
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const listHeight = Math.min(options.length * 44 + 8, 220);
+      if (window.innerHeight - rect.bottom < listHeight) {
+        setPopStyle({ position: "fixed", bottom: window.innerHeight - rect.top + 6, left: rect.left, width: rect.width });
+      } else {
+        setPopStyle({ position: "fixed", top: rect.bottom + 6, left: rect.left, width: rect.width });
+      }
+    }
+    setOpen((v) => !v);
+  }
+
   return (
-    <label className="block">
-      <span className="text-xs font-extrabold uppercase tracking-wide text-primary">{label}</span>
-      <select
-        className="app-field mt-1.5 border-primary/30 bg-primary/5 text-sm font-semibold text-primary"
+    <div className="relative block" ref={containerRef}>
+      <span className="text-xs font-extrabold uppercase tracking-wide text-primary">
+        {label}
+        {required ? <span className="ml-0.5 text-red-500">*</span> : null}
+      </span>
+      <button
+        ref={buttonRef}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label={label}
+        className={`app-field mt-1.5 flex items-center justify-between text-left text-sm font-semibold transition ${
+          error ? "border-red-400 bg-red-50 text-black" : "border-primary/30 bg-primary/5 text-primary"
+        }`}
         disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        value={value}
+        onClick={toggle}
+        type="button"
       >
-        <option value="">{placeholder}</option>
-        {options.map((option) => (
-          <option
-            disabled={option.enabled === false}
-            key={option.value}
-            value={String(option.value)}
-          >
-            {option.label}
-            {option.enabled === false ? " - À venir" : ""}
-          </option>
-        ))}
-      </select>
-    </label>
+        <span className={selected ? "" : "text-primary/50"}>{selected?.label ?? placeholder}</span>
+        <svg
+          className={`shrink-0 text-primary/65 transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none"
+          height="17"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          viewBox="0 0 24 24"
+          width="17"
+        >
+          <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {error ? <span className="mt-1 block text-xs font-bold text-red-600">{error}</span> : null}
+      {open ? (
+        <div
+          className="z-50 overflow-hidden rounded-xl border border-primary/40 bg-primary shadow-xl shadow-primary/20"
+          role="listbox"
+          style={popStyle}
+        >
+          <div className="max-h-52 overflow-auto">
+            {options.map((option) => {
+              const optVal = String(option.value);
+              const active = optVal === value;
+              return (
+                <button
+                  aria-selected={active}
+                  className={`flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm font-bold transition-colors ${
+                    active
+                      ? "bg-white/20 font-extrabold text-white"
+                      : "text-white/85 hover:bg-white/10 hover:text-white"
+                  } disabled:opacity-35`}
+                  disabled={disabled || option.enabled === false}
+                  key={option.value}
+                  onClick={() => {
+                    onChange(optVal);
+                    setOpen(false);
+                  }}
+                  role="option"
+                  type="button"
+                >
+                  <span>
+                    {option.label}
+                    {option.enabled === false ? " - À venir" : ""}
+                  </span>
+                  {active ? (
+                    <svg fill="none" height="15" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24" width="15">
+                      <path d="M20 6 9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  ) : null}
+                </button>
+              );
+            })}
+            {options.length === 0 ? (
+              <p className="px-3 py-2 text-sm font-bold text-white/50">Aucune option</p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -2066,11 +2813,7 @@ function AutoSaveIndicator({
   state: "idle" | "saving" | "saved" | "error";
 }) {
   if (state === "idle" && !draftId) {
-    return (
-      <span className="text-xs font-bold text-black/42">
-        Brouillon enregistré automatiquement
-      </span>
-    );
+    return null;
   }
 
   if (state === "saving") {
@@ -2087,9 +2830,13 @@ function AutoSaveIndicator({
   }
 
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700">
+    <span
+      aria-label={`Brouillon ${draftId} enregistré`}
+      className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"
+      title={`Brouillon #${draftId} enregistré`}
+    >
       <CloudCheck size={15} />
-      Brouillon #{draftId} enregistré
+      <span className="hidden sm:inline">Brouillon #{draftId} enregistré</span>
     </span>
   );
 }
@@ -2099,35 +2846,55 @@ function TextField({
   value,
   type = "text",
   helper,
+  inputMode,
   max,
+  maxLength,
   min,
   onChange,
+  pattern,
   placeholder,
+  error,
+  required = false,
 }: {
   label: string;
   value: string;
   type?: string;
   helper?: string;
+  inputMode?: "decimal" | "email" | "numeric" | "search" | "tel" | "text" | "url";
   max?: number;
+  maxLength?: number;
   min?: number;
   onChange: (value: string) => void;
+  pattern?: string;
   placeholder?: string;
+  error?: string;
+  required?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="text-xs font-extrabold uppercase tracking-wide text-black/52">{label}</span>
+      <span className="text-xs font-extrabold uppercase tracking-wide text-primary">
+        {label}
+        {required ? <span className="ml-0.5 text-red-500">*</span> : null}
+      </span>
       {helper ? (
         <span className="mt-0.5 block text-xs font-medium text-black/45">{helper}</span>
       ) : null}
       <input
-        className="app-field mt-1.5 text-sm"
+        className={`app-field mt-1.5 text-sm${error ? " border-red-400 bg-red-50 focus:border-red-500" : ""}`}
+        inputMode={inputMode}
         max={max}
+        maxLength={maxLength}
         min={min}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => {
+          const raw = event.target.value;
+          onChange(type === "text" || type === "tel" ? raw.toUpperCase() : raw);
+        }}
+        pattern={pattern}
         placeholder={placeholder}
         type={type}
         value={value}
       />
+      {error ? <span className="mt-1 block text-xs font-bold text-red-600">{error}</span> : null}
     </label>
   );
 }
@@ -2135,10 +2902,38 @@ function TextField({
 function SummaryItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="font-black text-black/55">{label}</dt>
-      <dd className="mt-1 font-black">{value}</dd>
+      <dt className="text-[10px] font-black uppercase tracking-wide text-black/40">{label}</dt>
+      <dd className="mt-0.5 text-sm font-extrabold text-foreground">{value}</dd>
     </div>
   );
+}
+
+// ── Cylindrée C5 : règles par genre ASS ─────────────────────────────────────
+// 2RCYC  Cyclomoteurs            : ≤ 50 cm³
+// 2RSCO  Scooters jusqu'à 125    : 51 – 125 cm³
+// 2RMOT  Motos + 125 cm³         : ≥ 126 cm³
+// 2RSID  Side-cars               : ≥ 51 cm³
+function getCylindreeError(subcategory: string, cylindree: string): string {
+  if (!cylindree.trim()) return "La cylindrée est obligatoire";
+  const val = Number(cylindree);
+  if (!Number.isFinite(val) || val <= 0) return "Valeur invalide";
+  if (subcategory === "2RCYC" && val > 50)
+    return "Cyclomoteur : cylindrée ≤ 50 cm³";
+  if (subcategory === "2RSCO" && (val < 51 || val > 125))
+    return "Scooter ≤ 125 cm³ : cylindrée entre 51 et 125 cm³";
+  if (subcategory === "2RMOT" && val < 126)
+    return "Moto + 125 cm³ : cylindrée ≥ 126 cm³";
+  if (subcategory === "2RSID" && val < 51)
+    return "Side-car : cylindrée ≥ 51 cm³";
+  return "";
+}
+
+function getCylindrePlaceholder(subcategory: string): string {
+  if (subcategory === "2RCYC") return "≤ 50 cm³";
+  if (subcategory === "2RSCO") return "51 – 125 cm³";
+  if (subcategory === "2RMOT") return "≥ 126 cm³";
+  if (subcategory === "2RSID") return "≥ 51 cm³";
+  return "cm³";
 }
 
 function vehicleLabel(vehicle: Pick<VehicleForm, "brand" | "model" | "registration" | "chassis">) {
@@ -2166,6 +2961,7 @@ function toDisplayContractType(contractType: string) {
 
 function buildDraftPayload({
   fleetVehicles,
+  fleetCoverage,
   garage,
   guaranteeOptions,
   insured,
@@ -2177,6 +2973,7 @@ function buildDraftPayload({
   vehicle,
 }: {
   fleetVehicles: FleetVehicle[];
+  fleetCoverage: FleetCoverage;
   garage: GarageForm;
   guaranteeOptions: GuaranteeOptionsForm;
   insured: PersonForm;
@@ -2202,8 +2999,17 @@ function buildDraftPayload({
       throw new Error("Ajoutez au moins un vehicule dans la flotte.");
     }
     return {
+      // Couverture au niveau flotte (dateEffet/durée communs à tous les véhicules)
       fleet: {
-        vehicles: fleetVehicles.map(normalizeVehicleForPayload),
+        effectDate: fleetCoverage.effectDate,
+        duration: fleetCoverage.duration,
+        periodicity: fleetCoverage.periodicity,
+        personType: fleetCoverage.personType,
+        // Véhicules sans les champs couverture (portés par fleet)
+        vehicles: fleetVehicles.map((v) => ({
+          ...normalizeVehicleForPayload(v),
+          trailers: v.trailers,
+        })),
       },
       ...partyPayload,
     };
@@ -2222,16 +3028,26 @@ function buildDraftPayload({
   };
 }
 
-function normalizeVehicleForPayload(vehicle: VehicleForm): VehicleForm {
+// chargeUtile ASS pour catégorie C2 (TPC) — dépend du genre/sous-catégorie.
+// TPC (break) et TPC3T500 (<=3T500) → 1 tonne ; TPC3T500P (>3T500) → 4 tonnes.
+function getChargeUtile(subcategory: string): number | null {
+  if (subcategory === "TPC" || subcategory === "TPC3T500") return 1;
+  if (subcategory === "TPC3T500P") return 4;
+  return null;
+}
+
+function normalizeVehicleForPayload(vehicle: VehicleForm): VehicleForm & { chargeUtile?: number } {
+  const chargeUtile = getChargeUtile(vehicle.subcategory);
   return {
     ...vehicle,
-    chassis: "",
+    chassis: "",                                            // caché, toujours vide
     currentValue: vehicle.currentValue || "0",
-    firstCirculationDate: DEFAULT_FIRST_CIRCULATION_DATE,
+    firstCirculationDate: DEFAULT_FIRST_CIRCULATION_DATE,  // hardcodé, non saisi
     motoUsage: vehicle.motoUsage || "non_commerciale",
     newValue: vehicle.newValue || "0",
-    periodicity: "MOIS",
-    personType: "PHYSIQUE",
+    periodicity: vehicle.periodicity || "MOIS",
+    personType: vehicle.personType || "PHYSIQUE",
+    ...(chargeUtile !== null ? { chargeUtile } : {}),
   };
 }
 
@@ -2257,9 +3073,16 @@ function hydrateDraftPayload(contractType: string, draftPayload: Record<string, 
     const fleetVehicles = vehiclesPayload.map((vehiclePayload, index) =>
       toFleetVehicleFromPayload(vehiclePayload, index),
     );
+    const fleetCoverage: FleetCoverage = {
+      effectDate: String(fleet?.effectDate ?? ""),
+      duration: String(fleet?.duration ?? ""),
+      periodicity: String(fleet?.periodicity ?? "MOIS"),
+      personType: String(fleet?.personType ?? "MORALE"),
+    };
     return {
       vehicle: defaultVehicleForm(),
       fleetVehicles,
+      fleetCoverage,
       garage: emptyGarage,
       ...commonPayload,
     };
@@ -2270,6 +3093,7 @@ function hydrateDraftPayload(contractType: string, draftPayload: Record<string, 
     return {
       vehicle: defaultVehicleForm(),
       fleetVehicles: [],
+      fleetCoverage: emptyFleetCoverage,
       garage: toGarageFormFromPayload(garagePayload),
       ...commonPayload,
     };
@@ -2278,6 +3102,7 @@ function hydrateDraftPayload(contractType: string, draftPayload: Record<string, 
   return {
     vehicle: toVehicleFormFromPayload(draftPayload.vehicle),
     fleetVehicles: [],
+    fleetCoverage: emptyFleetCoverage,
     garage: emptyGarage,
     ...commonPayload,
   };
@@ -2293,70 +3118,77 @@ function upsertOption(options: SelectOption[], option: SelectOption) {
   return next.sort((left, right) => left.label.localeCompare(right.label));
 }
 
-function calculateExpirationDateText(effectDate: string, duration: string, periodicity: string) {
-  if (!effectDate || !duration || !periodicity) {
-    return "-";
+function normalizeRegistrationLookup(value: string) {
+  return sanitizeRegistration(value);
+}
+
+function sanitizePhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  return digits && !digits.startsWith("7") ? "" : digits.slice(0, 9);
+}
+
+function isValidPhone(value: string) {
+  return /^7\d{8}$/.test(value);
+}
+
+function getPhoneValidationMessage(value: string) {
+  if (!value) {
+    return "Le téléphone est obligatoire";
   }
-
-  const parsedDuration = Number(duration);
-  const parts = effectDate.split("-").map((part) => Number(part));
-  if (
-    !Number.isInteger(parsedDuration) ||
-    parsedDuration <= 0 ||
-    parts.length !== 3 ||
-    parts.some((part) => !Number.isInteger(part))
-  ) {
-    return "-";
+  if (!value.startsWith("7")) {
+    return "Le téléphone doit commencer par 7";
   }
-
-  const [year, month, day] = parts;
-  const startDate = new Date(year, month - 1, day);
-  const expiration =
-    periodicity === "JOUR"
-      ? addDays(startDate, parsedDuration - 1)
-      : addDays(addMonthsToDate(startDate, parsedDuration), -1);
-  return formatIsoDate(expiration);
-}
-
-function addDays(value: Date, days: number) {
-  const result = new Date(value);
-  result.setDate(result.getDate() + days);
-  return result;
-}
-
-function addMonthsToDate(value: Date, months: number) {
-  const result = new Date(value);
-  const originalDay = result.getDate();
-  result.setDate(1);
-  result.setMonth(result.getMonth() + months);
-  const lastDayOfTargetMonth = new Date(
-    result.getFullYear(),
-    result.getMonth() + 1,
-    0,
-  ).getDate();
-  result.setDate(Math.min(originalDay, lastDayOfTargetMonth));
-  return result;
-}
-
-function formatIsoDate(value: Date) {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function registrationVerificationMessage(verification: AssRegistrationVerification) {
-  if (verification.is_registered === true) {
-    return "Immatriculation connue ASS.";
+  if (!isValidPhone(value)) {
+    return "Saisissez 9 chiffres au format 7XXXXXXXX";
   }
-  if (verification.is_registered === false) {
-    return "Immatriculation non trouvee dans ASS.";
-  }
-  return verification.operation_message || "Reponse ASS sans statut clair.";
+  return "";
 }
+
+function sanitizeRegistration(value: string) {
+  return value.toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 50);
+}
+
+function mergeAssVehicleData(
+  current: VehicleForm,
+  assVehicle: NonNullable<AssRegistrationVerification["vehicle"]>,
+): VehicleForm {
+  const next: VehicleForm = {
+    ...current,
+    brand: assVehicle.brand || current.brand,
+    model: assVehicle.model || current.model,
+    category: assVehicle.category || current.category,
+    subcategory: assVehicle.subcategory || current.subcategory,
+    registration: sanitizeRegistration(assVehicle.registration || current.registration),
+    chassis: assVehicle.chassis || current.chassis,
+    energy: assVehicle.energy || current.energy,
+    fiscalPower: assVehicle.fiscalPower || current.fiscalPower,
+    seats: assVehicle.seats || current.seats,
+    firstCirculationDate:
+      assVehicle.firstCirculationDate || current.firstCirculationDate,
+    newValue: assVehicle.newValue || current.newValue,
+    currentValue: assVehicle.currentValue || current.currentValue,
+    cylindree: assVehicle.cylindree || current.cylindree,
+    motoUsage: assVehicle.motoUsage
+      ? normalizeMotoUsage(assVehicle.motoUsage)
+      : current.motoUsage,
+  };
+
+  if (next.category === "C5") {
+    next.fiscalPower = "";
+  } else if (assVehicle.category) {
+    next.cylindree = "";
+  }
+  return next;
+}
+
 
 function hasRequiredPerson(person: PersonForm) {
-  return Boolean(person.lastName.trim() && person.phone.trim());
+  return Boolean(
+    person.lastName.trim() &&
+    person.firstName.trim() &&
+    isValidPhone(person.phone) &&
+    person.address.trim(),
+  );
 }
 
 function personLabel(person: PersonForm) {
@@ -2371,10 +3203,22 @@ function guaranteeLabels(guarantees: SelectOption[], selectedGuarantees: number[
 }
 
 function guaranteeOptionSummary(options: GuaranteeOptionsForm) {
-  const values = Object.entries(cleanGuaranteeOptions(options)).map(
-    ([field, value]) => `${field}: ${value}`,
-  );
+  const labels: Record<keyof GuaranteeOptionsForm, string> = {
+    garantiesOptPT: "Personnes transportées",
+    garantiesOptAR: "Avance / Recours",
+    garantiesOptAS: "Assistance",
+  };
+  const values = Object.entries(options)
+    .filter(([, value]) => value.trim())
+    .map(([field, value]) => {
+      const readableValue = value.replace("OPTION_", "Option ");
+      return `${labels[field as keyof GuaranteeOptionsForm]} : ${readableValue}`;
+    });
   return values.join(", ") || "-";
+}
+
+function quotePayableAmount(quote: ContractQuote) {
+  return quote.prime_totale ?? quote.prime_rc_ass + quote.policy_fee_ass;
 }
 
 function cleanGuaranteeOptions(options: GuaranteeOptionsForm) {
@@ -2382,11 +3226,15 @@ function cleanGuaranteeOptions(options: GuaranteeOptionsForm) {
     "garantiesOptPT",
     "garantiesOptAR",
   ]);
-  return Object.fromEntries(
+  const userOptions = Object.fromEntries(
     Object.entries(options).filter(
       ([field, value]) => frontendEnabledFields.has(field) && value.trim(),
     ),
   );
+  return {
+    ...userOptions,
+    garantiesOptAS: "OPTION_1",
+  };
 }
 
 function toVehicleForm(fleetVehicle: FleetVehicle): VehicleForm {
@@ -2490,21 +3338,10 @@ function toTrailerFormFromPayload(value: unknown): TrailerForm {
   if (!payload) {
     return emptyTrailer;
   }
-
   return {
     brand: readText(payload, ["brand", "marque"]),
     model: readText(payload, ["model", "modele"]),
-    category: readText(payload, ["category", "categorie"], emptyTrailer.category),
-    subcategory: readText(payload, ["subcategory", "sub_category", "sousCategorie"], emptyTrailer.subcategory),
     registration: readText(payload, ["registration", "immatriculation"]),
-    chassis: readText(payload, ["chassis", "numeroChassis", "numero_chassis"]),
-    usefulLoad: readText(payload, ["usefulLoad", "useful_load", "chargeUtile"]),
-    firstCirculationDate: readText(payload, [
-      "firstCirculationDate",
-      "first_circulation_date",
-      "dateMiseEnCirculation",
-    ]),
-    value: readText(payload, ["value", "valeur"]),
   };
 }
 

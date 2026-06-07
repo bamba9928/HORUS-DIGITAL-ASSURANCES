@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
+import { useAuth } from "@/components/AuthProvider";
 import {
   AlertMessage,
   ContractTypeBadge,
@@ -26,6 +27,7 @@ import {
   type ContractInternalStatus,
   type ContractListItem,
 } from "@/lib/api";
+import { canCreateContract } from "@/lib/permissions";
 
 const statusTabs: { label: string; value: ContractInternalStatus | "" }[] = [
   { label: "Tous", value: "" },
@@ -48,6 +50,7 @@ const typeFilters = [
 
 export default function ContractsPage() {
   const router = useRouter();
+  const { auth } = useAuth();
   const [contracts, setContracts] = useState<ContractListItem[]>([]);
   const [status, setStatus] = useState<ContractInternalStatus | "">("");
   const [contractType, setContractType] = useState("");
@@ -133,9 +136,11 @@ export default function ContractsPage() {
   return (
     <AppShell
       actions={
-        <PageAction href="/contracts/new" icon={FilePlus2}>
-          Nouveau contrat
-        </PageAction>
+        canCreateContract(auth?.user) ? (
+          <PageAction href="/contracts/new" icon={FilePlus2}>
+            Nouveau contrat
+          </PageAction>
+        ) : null
       }
       description="Recherche, suivi et émission"
       title="Contrats"
@@ -355,9 +360,11 @@ export default function ContractsPage() {
           ) : (
             <EmptyState
               action={
-                <PageAction href="/contracts/new" icon={FilePlus2}>
-                  Créer un contrat
-                </PageAction>
+                canCreateContract(auth?.user) ? (
+                  <PageAction href="/contracts/new" icon={FilePlus2}>
+                    Créer un contrat
+                  </PageAction>
+                ) : undefined
               }
               description={
                 search ? "Modifiez votre recherche ou les filtres." : undefined

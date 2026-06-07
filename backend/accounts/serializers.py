@@ -15,6 +15,12 @@ class AuthLoginSerializer(serializers.Serializer):
 class UserReadSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source="organization.name", read_only=True)
     has_configured_commission = serializers.BooleanField(read_only=True)
+    role = serializers.SerializerMethodField()
+
+    def get_role(self, user):
+        if user.is_admin_general:
+            return User.Role.ADMIN_GENERAL
+        return user.role
 
     class Meta:
         model = User

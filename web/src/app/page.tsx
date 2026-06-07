@@ -1,3 +1,5 @@
+"use client";
+
 import {
   ArrowRight,
   Bike,
@@ -10,9 +12,11 @@ import {
 import Link from "next/link";
 
 import { AppShell } from "@/components/AppShell";
+import { useAuth } from "@/components/AuthProvider";
 import { DashboardAssStockCard } from "@/components/DashboardAssStockCard";
 import { DashboardContractMetrics } from "@/components/DashboardContractMetrics";
 import { PageAction, SectionHeader } from "@/components/ui";
+import { canCreateContract, canViewAssIntegration } from "@/lib/permissions";
 
 const contractTypes = [
   {
@@ -68,12 +72,18 @@ const contractTypes = [
 ];
 
 export default function Home() {
+  const { auth } = useAuth();
+  const userCanCreateContract = canCreateContract(auth?.user);
+  const userCanViewAss = canViewAssIntegration(auth?.user);
+
   return (
     <AppShell
       actions={
-        <PageAction href="/contracts/new" icon={FilePlus2}>
-          Nouveau contrat
-        </PageAction>
+        userCanCreateContract ? (
+          <PageAction href="/contracts/new" icon={FilePlus2}>
+            Nouveau contrat
+          </PageAction>
+        ) : null
       }
       description="Vue d'ensemble des opérations"
       title="Tableau de bord"
@@ -82,9 +92,18 @@ export default function Home() {
         {/* ── Metrics row ──────────────────────────────────────── */}
         <DashboardContractMetrics />
 
-        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(280px,0.65fr)]">
+        <div
+          className={`grid items-start gap-5 ${
+            userCanCreateContract && userCanViewAss
+              ? "xl:grid-cols-[minmax(0,1.65fr)_minmax(280px,0.65fr)]"
+              : userCanViewAss
+                ? "xl:grid-cols-[minmax(280px,420px)]"
+                : ""
+          }`}
+        >
           {/* ── Contract types ───────────────────────────────── */}
-          <section className="app-surface p-5 sm:p-6">
+          {userCanCreateContract ? (
+            <section className="app-surface p-5 sm:p-6">
             <SectionHeader
               action={
                 <Link
@@ -134,18 +153,15 @@ export default function Home() {
                       </span>
                     </div>
 
-                    {/* Subtle glow */}
-                    <div
-                      className={`pointer-events-none absolute -right-6 -top-6 size-28 rounded-full bg-gradient-to-br ${type.gradient} opacity-[0.07] blur-2xl transition group-hover:opacity-[0.12]`}
-                    />
                   </Link>
                 );
               })}
             </div>
-          </section>
+            </section>
+          ) : null}
 
           {/* ── ASS stock ────────────────────────────────────── */}
-          <DashboardAssStockCard />
+          {userCanViewAss ? <DashboardAssStockCard /> : null}
         </div>
 
         {/* ── Quick access banner ──────────────────────────── */}

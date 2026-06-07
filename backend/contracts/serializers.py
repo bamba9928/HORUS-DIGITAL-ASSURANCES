@@ -1,8 +1,17 @@
+from copy import deepcopy
+import re
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from contracts.models import Contract
 from contracts.services import validate_guarantee_configuration
+
+
+PHONE_PATTERN = re.compile(r"^7\d{0,8}$")
+REGISTRATION_PATTERN = re.compile(r"^[A-Z0-9-]+$")
+PHONE_FIELDS = {"phone", "cellulaire", "telephone"}
+REGISTRATION_FIELDS = {"registration", "immatriculation"}
 
 
 class ContractDraftSerializer(serializers.ModelSerializer):
@@ -23,6 +32,8 @@ class ContractDraftSerializer(serializers.ModelSerializer):
             Contract.ContractType.AUTO_MONO,
             Contract.ContractType.MOTO,
             Contract.ContractType.FLEET,
+            Contract.ContractType.BUS_SCHOOL,
+            Contract.ContractType.GARAGE,
         }
         if value not in enabled_types:
             raise serializers.ValidationError("Ce type de contrat n'est pas encore actif.")
@@ -30,11 +41,61 @@ class ContractDraftSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         contract_type = attrs.get("contract_type", getattr(self.instance, "contract_type", None))
-        draft_payload = attrs.get("draft_payload", getattr(self.instance, "draft_payload", {}))
+        if "draft_payload" in attrs:
+            draft_payload = self._normalize_identity_fields(deepcopy(attrs["draft_payload"]))
+            attrs["draft_payload"] = draft_payload
+        else:
+            draft_payload = getattr(self.instance, "draft_payload", {})
         self._validate_guarantee_payload(draft_payload)
         if contract_type == Contract.ContractType.FLEET:
             self._validate_fleet_payload(draft_payload)
         return attrs
+
+    def _normalize_identity_fields(self, value):
+        if isinstance(value, list):
+            return [self._normalize_identity_fields(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+
+        normalized = {}
+        for field, item in value.items():
+            if field in PHONE_FIELDS and item not in (None, ""):
+                if not isinstance(item, str):
+                    raise serializers.ValidationError(
+                        {"draft_payload": "Le téléphone doit contenir uniquement des chiffres."}
+                    )
+                item = item.strip()
+                if not PHONE_PATTERN.fullmatch(item):
+                    raise serializers.ValidationError(
+                        {
+                            "draft_payload": (
+                                "Le téléphone doit commencer par 7 et contenir au maximum "
+                                "9 chiffres."
+                            )
+                        }
+                    )
+            elif field in REGISTRATION_FIELDS and item not in (None, ""):
+                if not isinstance(item, str):
+                    raise serializers.ValidationError(
+                        {
+                            "draft_payload": (
+                                "L'immatriculation accepte uniquement les lettres, "
+                                "les chiffres et les tirets."
+                            )
+                        }
+                    )
+                item = item.strip().upper()
+                if not REGISTRATION_PATTERN.fullmatch(item):
+                    raise serializers.ValidationError(
+                        {
+                            "draft_payload": (
+                                "L'immatriculation accepte uniquement les lettres, "
+                                "les chiffres et les tirets."
+                            )
+                        }
+                    )
+            normalized[field] = self._normalize_identity_fields(item)
+        return normalized
 
     def _validate_guarantee_payload(self, draft_payload):
         try:

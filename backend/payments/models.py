@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 
 
 class Payment(models.Model):
@@ -30,6 +31,13 @@ class Payment(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["contract"],
+                condition=Q(status="CONFIRMED"),
+                name="unique_confirmed_payment_per_contract",
+            ),
+        ]
 
     def __str__(self):
         return f"Paiement {self.amount} FCFA - {self.status}"

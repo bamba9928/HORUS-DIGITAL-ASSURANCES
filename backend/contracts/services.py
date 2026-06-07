@@ -1,5 +1,6 @@
 from calendar import monthrange
 from datetime import date, timedelta
+import re
 from uuid import uuid4
 
 from django.core.exceptions import ValidationError
@@ -13,6 +14,9 @@ from contracts.models import Contract
 from integrations.ass.client import AssClient
 from integrations.ass.constants import ASS_CANCEL_METHODS, ASS_POLICY_FEE, ASS_SUCCESS_STATUS
 from payments.services import has_confirmed_payment
+
+
+PHONE_PATTERN = re.compile(r"^7\d{8}$")
 
 
 class QuoteCalculationError(ValueError):
@@ -985,6 +989,10 @@ def person_payload(value, label):
     phone = first_present(value, ["phone", "cellulaire", "telephone"])
     if not last_name or not phone:
         raise ValidationError(f"{label}: nom et telephone requis avant emission.")
+    if not isinstance(phone, str) or not PHONE_PATTERN.fullmatch(phone):
+        raise ValidationError(
+            f"{label}: le telephone doit contenir 9 chiffres et commencer par 7."
+        )
 
     return {
         "nom": last_name,

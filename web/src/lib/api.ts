@@ -161,6 +161,17 @@ export async function createUser(payload: CreateUserPayload) {
   });
 }
 
+export type OrganizationOption = {
+  id: number;
+  name: string;
+  code: string;
+  is_active: boolean;
+};
+
+export async function listOrganizations() {
+  return fetchApi<ApiListResponse<OrganizationOption>>("/organizations/");
+}
+
 export async function updateUserCommission(
   userId: number,
   payload: {
@@ -260,6 +271,22 @@ export type AssRegistrationVerification = {
   operation_message: string;
   immatriculation: string;
   is_registered: boolean | null;
+  vehicle: {
+    brand: string;
+    model: string;
+    category: string;
+    subcategory: string;
+    registration: string;
+    chassis: string;
+    energy: string;
+    fiscalPower: string;
+    seats: string;
+    firstCirculationDate: string;
+    newValue: string;
+    currentValue: string;
+    cylindree: string;
+    motoUsage: string;
+  } | null;
   raw_response: Record<string, unknown>;
 };
 

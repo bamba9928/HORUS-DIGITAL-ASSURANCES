@@ -8,6 +8,7 @@ import {
   FileText,
   Gauge,
   LogIn,
+  LogOut,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
@@ -17,8 +18,18 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+
+import { useAuth } from "@/components/AuthProvider";
+import { logout } from "@/lib/api";
+import {
+  canCreateContract,
+  canManageReferentials,
+  canManageUsers,
+  canViewAssIntegration,
+  roleLabel,
+} from "@/lib/permissions";
 
 const navigation = [
   { href: "/", label: "Tableau de bord", icon: Gauge },
@@ -45,11 +56,39 @@ export function AppShell({
   actions?: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { auth, isLoading: isAuthLoading, refreshAuth } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const settingsActive = settingsNavigation.some((item) => isActivePath(pathname, item.href));
+  const user = auth?.user;
+  const visibleNavigation = navigation.filter((item) => {
+    if (item.href === "/contracts/new") return canCreateContract(user);
+    if (item.href === "/users") return canManageUsers(user);
+    return true;
+  });
+  const visibleSettingsNavigation = settingsNavigation.filter((item) => {
+    if (item.href === "/referentials/brands") return canManageReferentials(user);
+    if (item.href === "/integrations/ass") return canViewAssIntegration(user);
+    return false;
+  });
+  const settingsActive = visibleSettingsNavigation.some((item) =>
+    isActivePath(pathname, item.href),
+  );
   const settingsVisible = settingsOpen || settingsActive;
+
+  async function handleLogout() {
+    try {
+      await logout();
+    } catch {
+      // La session locale est tout de même resynchronisée juste après.
+    } finally {
+      await refreshAuth();
+      setMobileOpen(false);
+      router.push("/login");
+      router.refresh();
+    }
+  }
 
   return (
     <div className="min-h-screen overflow-x-clip bg-background text-foreground">
@@ -67,7 +106,7 @@ export function AppShell({
               Navigation
             </p>
           )}
-          {navigation.slice(0, 3).map((item) => (
+          {visibleNavigation.filter((item) => navigation.indexOf(item) < 3).map((item) => (
             <NavItem
               active={isActivePath(pathname, item.href)}
               collapsed={sidebarCollapsed}
@@ -85,7 +124,7 @@ export function AppShell({
               Gestion
             </p>
           )}
-          {navigation.slice(3).map((item) => (
+          {visibleNavigation.filter((item) => navigation.indexOf(item) >= 3).map((item) => (
             <NavItem
               active={isActivePath(pathname, item.href)}
               collapsed={sidebarCollapsed}
@@ -100,17 +139,17 @@ export function AppShell({
             onToggle={() => setSettingsOpen((c) => !c)}
             open={settingsVisible}
             pathname={pathname}
+            items={visibleSettingsNavigation}
           />
         </nav>
 
         {/* ── Sidebar footer ──────────────────────────────────────── */}
         <div className="border-t border-white/[0.07] p-2">
-          <NavItem
-            active={isActivePath(pathname, "/login")}
+          <SessionControl
+            auth={auth}
             collapsed={sidebarCollapsed}
-            href="/login"
-            icon={LogIn}
-            label="Connexion"
+            isLoading={isAuthLoading}
+            onLogout={handleLogout}
           />
           <div
             className={`mt-2 flex items-center rounded-lg py-2 ${
@@ -211,7 +250,7 @@ export function AppShell({
               </button>
             </div>
             <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
-              {navigation.map((item) => (
+              {visibleNavigation.map((item) => (
                 <NavItem
                   active={isActivePath(pathname, item.href)}
                   href={item.href}
@@ -226,15 +265,28 @@ export function AppShell({
                 onToggle={() => setSettingsOpen((c) => !c)}
                 open={settingsVisible}
                 pathname={pathname}
+                items={visibleSettingsNavigation}
               />
             </nav>
+            <div className="border-t border-white/[0.07] p-2">
+              <SessionControl
+                auth={auth}
+                isLoading={isAuthLoading}
+                onLogout={handleLogout}
+              />
+            </div>
           </aside>
         </div>
       ) : null}
 
       {/* ── Mobile bottom nav ─────────────────────────────────────── */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-border bg-white/95 px-1 pb-[max(6px,env(safe-area-inset-bottom))] pt-1 backdrop-blur-sm lg:hidden">
-        {navigation.slice(0, 4).map((item) => {
+      <nav
+        className="fixed inset-x-0 bottom-0 z-30 grid border-t border-border bg-white/95 px-1 pb-[max(6px,env(safe-area-inset-bottom))] pt-1 backdrop-blur-sm lg:hidden"
+        style={{
+          gridTemplateColumns: `repeat(${Math.max(1, Math.min(4, visibleNavigation.length))}, minmax(0, 1fr))`,
+        }}
+      >
+        {visibleNavigation.slice(0, 4).map((item) => {
           const Icon = item.icon;
           const active = isActivePath(pathname, item.href);
           return (
@@ -338,18 +390,24 @@ function NavItem({
 /* ── SettingsMenu ─────────────────────────────────────────────────── */
 function SettingsMenu({
   collapsed = false,
+  items,
   onNavigate,
   onToggle,
   open,
   pathname,
 }: {
   collapsed?: boolean;
+  items: typeof settingsNavigation;
   onNavigate?: () => void;
   onToggle: () => void;
   open: boolean;
   pathname: string;
 }) {
-  const active = settingsNavigation.some((item) => isActivePath(pathname, item.href));
+  const active = items.some((item) => isActivePath(pathname, item.href));
+
+  if (!items.length) {
+    return null;
+  }
 
   return (
     <div>
@@ -388,7 +446,7 @@ function SettingsMenu({
               : "ml-4 mt-1 space-y-0.5 border-l border-white/[0.12] pl-2"
           }
         >
-          {settingsNavigation.map((item) => (
+          {items.map((item) => (
             <NavItem
               active={isActivePath(pathname, item.href)}
               collapsed={collapsed}
@@ -401,6 +459,83 @@ function SettingsMenu({
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function SessionControl({
+  auth,
+  collapsed = false,
+  isLoading,
+  onLogout,
+}: {
+  auth: ReturnType<typeof useAuth>["auth"];
+  collapsed?: boolean;
+  isLoading: boolean;
+  onLogout: () => Promise<void>;
+}) {
+  if (isLoading) {
+    return (
+      <div
+        className={`flex h-[52px] items-center rounded-lg text-white/30 ${
+          collapsed ? "justify-center" : "px-3"
+        }`}
+      >
+        <span className="size-4 animate-spin rounded-full border-2 border-white/15 border-t-white/60" />
+      </div>
+    );
+  }
+
+  if (!auth?.authenticated || !auth.user) {
+    return (
+      <NavItem
+        active={false}
+        collapsed={collapsed}
+        href="/login"
+        icon={LogIn}
+        label="Connexion"
+      />
+    );
+  }
+
+  const name =
+    [auth.user.first_name, auth.user.last_name].filter(Boolean).join(" ") ||
+    auth.user.username;
+  const initials = name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+
+  return (
+    <div
+      className={`flex min-h-[52px] items-center rounded-lg ${
+        collapsed ? "justify-center" : "gap-2 px-2"
+      }`}
+    >
+      {collapsed ? null : (
+        <>
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.09] text-[10px] font-black text-white">
+            {initials}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-bold text-white/80">{name}</p>
+            <p className="truncate text-[10px] font-semibold text-white/30">
+              {roleLabel(auth.user.role)}
+            </p>
+          </div>
+        </>
+      )}
+      <button
+        aria-label="Se déconnecter"
+        className="flex size-8 shrink-0 items-center justify-center rounded-lg text-white/35 transition hover:bg-red-500/15 hover:text-red-300"
+        onClick={() => void onLogout()}
+        title="Se déconnecter"
+        type="button"
+      >
+        <LogOut size={16} />
+      </button>
     </div>
   );
 }

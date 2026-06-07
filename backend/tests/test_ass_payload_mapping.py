@@ -130,6 +130,26 @@ def test_issue_payload_requires_policyholder_and_insured():
         build_auto_issue_payload(contract, "REF-AUTO")
 
 
+def test_issue_payload_requires_complete_senegal_phone_number():
+    contract = Contract(
+        id=9,
+        prime_rc_ass=18_000,
+        draft_payload={
+            "policyholder": {**TEST_POLICYHOLDER, "phone": "77"},
+            "insured": TEST_INSURED,
+            "vehicle": {
+                "brand": "TOYOTA",
+                "subcategory": "VP",
+                "energy": "ESSENCE",
+                "fiscalPower": "8",
+            },
+        },
+    )
+
+    with pytest.raises(ValidationError, match="9 chiffres"):
+        build_auto_issue_payload(contract, "REF-AUTO")
+
+
 def test_moto_payload_uses_pdf_usage_values_and_expiration_date():
     contract = Contract(
         id=7,

@@ -295,12 +295,28 @@ class AssClient:
     def _mock_verify_registration_response(self, payload):
         immatriculation = (payload.get("immatriculation") or "").strip().upper()
         is_registered = immatriculation.startswith("ASS-") or immatriculation.endswith("-ASS")
+        vehicle = None
+        if is_registered:
+            vehicle = {
+                "immatriculation": immatriculation,
+                "marque": "TOYOTA",
+                "modele": "YARIS",
+                "genre": "VP",
+                "energie": "ESSENCE",
+                "puissanceFiscale": 8,
+                "nombrePlace": 5,
+                "dateMiseCirculation": "2020-01-15",
+                "valeurNeuve": 8_000_000,
+                "valeurActuelle": 5_000_000,
+                "chassis": "ASS-MOCK-CHASSIS",
+            }
         return {
             "operationStatus": ASS_SUCCESS_STATUS,
             "operationMessage": "Verification immatriculation mockee.",
             "data": {
                 "immatriculation": immatriculation,
                 "isRegistered": is_registered,
+                **({"vehicule": vehicle} if vehicle else {}),
             },
         }
 
@@ -325,4 +341,3 @@ def _build_rc_breakdown(prime_rc):
         "fondsGarantie": fonds_garantie,
         "primeTotale": prime_totale,
     }
-

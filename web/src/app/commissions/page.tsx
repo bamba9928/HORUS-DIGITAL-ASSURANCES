@@ -19,6 +19,7 @@ import {
   type AuthState,
   type CommissionSnapshot,
 } from "@/lib/api";
+import { canUpdateCommissionStatus } from "@/lib/permissions";
 
 const statuses: { value: CommissionSnapshot["status"]; label: string }[] = [
   { value: "PENDING", label: "En attente" },
@@ -95,6 +96,7 @@ export default function CommissionsPage() {
   const payableCount = countByStatus(snapshots, "PAYABLE");
   const paidCount = countByStatus(snapshots, "PAID");
   const totalCommissionAmount = totalCommission(snapshots);
+  const canUpdateStatus = canUpdateCommissionStatus(auth?.user);
 
   return (
     <AppShell
@@ -225,24 +227,26 @@ export default function CommissionsPage() {
                       <td data-label="Statut">
                         <div className="flex flex-wrap items-center gap-2">
                           <StatusBadge status={snapshot.status} />
-                          <select
-                            aria-label={`Statut commission ${snapshot.id}`}
-                            className="app-field h-8 min-h-0 w-auto rounded-lg py-0 text-xs"
-                            disabled={updatingId === snapshot.id}
-                            onChange={(e) =>
-                              updateStatus(
-                                snapshot.id,
-                                e.target.value as CommissionSnapshot["status"],
-                              )
-                            }
-                            value={snapshot.status}
-                          >
-                            {statuses.map((s) => (
-                              <option key={s.value} value={s.value}>
-                                {s.label}
-                              </option>
-                            ))}
-                          </select>
+                          {canUpdateStatus ? (
+                            <select
+                              aria-label={`Statut commission ${snapshot.id}`}
+                              className="app-field h-8 min-h-0 w-auto rounded-lg py-0 text-xs"
+                              disabled={updatingId === snapshot.id}
+                              onChange={(e) =>
+                                updateStatus(
+                                  snapshot.id,
+                                  e.target.value as CommissionSnapshot["status"],
+                                )
+                              }
+                              value={snapshot.status}
+                            >
+                              {statuses.map((s) => (
+                                <option key={s.value} value={s.value}>
+                                  {s.label}
+                                </option>
+                              ))}
+                            </select>
+                          ) : null}
                         </div>
                       </td>
                     </tr>

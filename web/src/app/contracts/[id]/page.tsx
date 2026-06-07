@@ -17,6 +17,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
+import { useAuth } from "@/components/AuthProvider";
 import { AlertMessage, ContractTypeBadge, MetricCard, StatusBadge, humanize } from "@/components/ui";
 import {
   calculateContractQuote,
@@ -29,6 +30,11 @@ import {
   type ContractQuote,
   type IssueResult,
 } from "@/lib/api";
+import {
+  canCancelContract,
+  canConfirmContractPayment,
+  canManageContractWorkflow,
+} from "@/lib/permissions";
 
 const WORKFLOW_STEPS = ["DRAFT", "QUOTE_READY", "PAYMENT_PENDING", "PAID", "ISSUED"] as const;
 const STEP_LABELS: Record<string, string> = {
@@ -41,6 +47,7 @@ const STEP_LABELS: Record<string, string> = {
 
 export default function ContractDetailPage() {
   const params = useParams<{ id: string }>();
+  const { auth } = useAuth();
   const contractId = Number(params.id);
   const hasValidId = Number.isFinite(contractId);
 
@@ -53,6 +60,9 @@ export default function ContractDetailPage() {
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelMethod, setCancelMethod] = useState<CancelMethod>("ANNULER");
   const [cancelMotif, setCancelMotif] = useState("");
+  const canManageWorkflow = canManageContractWorkflow(auth?.user);
+  const canConfirmPayment = canConfirmContractPayment(auth?.user);
+  const canCancel = canCancelContract(auth?.user);
 
   async function refresh() {
     setError("");
@@ -393,7 +403,7 @@ export default function ContractDetailPage() {
                     <h2 className="text-[13.5px] font-extrabold">Actions</h2>
                   </div>
                   <div className="space-y-2 p-4">
-                    {contract.internal_status === "DRAFT" ? (
+                    {canManageWorkflow && contract.internal_status === "DRAFT" ? (
                       <Link
                         className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-primary to-[var(--primary-strong)] text-sm font-extrabold text-white shadow-sm shadow-primary/25 transition hover:shadow-[0_4px_14px_rgba(150,0,192,0.35)] hover:brightness-105"
                         href={`/contracts/new?draftId=${contract.id}`}
@@ -403,48 +413,54 @@ export default function ContractDetailPage() {
                       </Link>
                     ) : null}
 
-                    <ActionButton
-                      disabled={
-                        isActionLoading ||
-                        !["DRAFT", "QUOTE_READY"].includes(contract.internal_status)
-                      }
-                      icon={Calculator}
-                      isLoading={isActionLoading}
-                      onClick={calculateQuote}
-                      variant="secondary"
-                    >
-                      Calculer le devis
-                    </ActionButton>
+                    {canManageWorkflow ? (
+                      <ActionButton
+                        disabled={
+                          isActionLoading ||
+                          !["DRAFT", "QUOTE_READY"].includes(contract.internal_status)
+                        }
+                        icon={Calculator}
+                        isLoading={isActionLoading}
+                        onClick={calculateQuote}
+                        variant="secondary"
+                      >
+                        Calculer le devis
+                      </ActionButton>
+                    ) : null}
 
-                    <ActionButton
-                      disabled={
-                        isActionLoading ||
-                        payableAmount === null ||
-                        !["QUOTE_READY", "PAYMENT_PENDING"].includes(
-                          contract.internal_status,
-                        )
-                      }
-                      icon={Banknote}
-                      isLoading={isActionLoading}
-                      onClick={confirmPayment}
-                      variant="dark"
-                    >
-                      Confirmer le paiement
-                    </ActionButton>
+                    {canConfirmPayment ? (
+                      <ActionButton
+                        disabled={
+                          isActionLoading ||
+                          payableAmount === null ||
+                          !["QUOTE_READY", "PAYMENT_PENDING"].includes(
+                            contract.internal_status,
+                          )
+                        }
+                        icon={Banknote}
+                        isLoading={isActionLoading}
+                        onClick={confirmPayment}
+                        variant="dark"
+                      >
+                        Confirmer le paiement
+                      </ActionButton>
+                    ) : null}
 
-                    <ActionButton
-                      disabled={
-                        isActionLoading || contract.internal_status !== "PAID"
-                      }
-                      icon={Send}
-                      isLoading={isActionLoading}
-                      onClick={emitContract}
-                      variant="primary"
-                    >
-                      Émettre le contrat
-                    </ActionButton>
+                    {canManageWorkflow ? (
+                      <ActionButton
+                        disabled={
+                          isActionLoading || contract.internal_status !== "PAID"
+                        }
+                        icon={Send}
+                        isLoading={isActionLoading}
+                        onClick={emitContract}
+                        variant="primary"
+                      >
+                        Émettre le contrat
+                      </ActionButton>
+                    ) : null}
 
-                    {contract.internal_status === "ISSUED" ? (
+                    {canCancel && contract.internal_status === "ISSUED" ? (
                       <ActionButton
                         disabled={isActionLoading}
                         icon={XCircle}
@@ -522,7 +538,7 @@ export default function ContractDetailPage() {
       </div>
 
       {/* ── Cancel modal ─────────────────────────────────────────── */}
-      {showCancelDialog ? (
+      {showCancelDialog && canCancel ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm"
           onClick={(e) => {

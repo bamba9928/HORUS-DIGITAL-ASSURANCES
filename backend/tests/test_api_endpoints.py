@@ -1,4 +1,5 @@
 import pytest
+from django.db import IntegrityError, transaction
 from django.test import override_settings
 from rest_framework.test import APIClient
 
@@ -505,6 +506,38 @@ def test_finance_cannot_confirm_incorrect_payment_amount():
 
 
 @pytest.mark.django_db
+def test_finance_payment_uses_ass_prime_totale_when_available():
+    client, contributor = make_authenticated_contract_client()
+    contract = create_quote_ready_contract(contributor)
+    contract.ass_response_payload = {"data": {"primeTotale": 31_980}}
+    contract.save(update_fields=["ass_response_payload"])
+    finance = User.objects.create_user(
+        username="finance-ass-total",
+        password="test",
+        role=User.Role.FINANCE,
+        organization=contributor.organization,
+    )
+    client.force_authenticate(finance)
+
+    incorrect_response = client.post(
+        f"/api/contracts/{contract.id}/payments/confirm/",
+        {"amount": 27_000, "external_reference": "PAY-WITHOUT-TAXES"},
+        format="json",
+    )
+    correct_response = client.post(
+        f"/api/contracts/{contract.id}/payments/confirm/",
+        {"amount": 31_980, "external_reference": "PAY-WITH-TAXES"},
+        format="json",
+    )
+
+    assert incorrect_response.status_code == 400
+    assert "exactement de 31980 FCFA" in incorrect_response.data["detail"]
+    assert correct_response.status_code == 200
+    contract.refresh_from_db()
+    assert contract.ttc_ass == 31_980
+
+
+@pytest.mark.django_db
 def test_manual_payment_confirmation_cannot_be_duplicated():
     client, contributor = make_authenticated_contract_client()
     contract = create_quote_ready_contract(contributor)
@@ -524,6 +557,24 @@ def test_manual_payment_confirmation_cannot_be_duplicated():
     assert first_response.status_code == 200
     assert second_response.status_code == 400
     assert Payment.objects.filter(contract=contract, status=Payment.Status.CONFIRMED).count() == 1
+
+
+@pytest.mark.django_db
+def test_database_rejects_two_confirmed_payments_for_same_contract():
+    _, contributor = make_authenticated_contract_client()
+    contract = create_quote_ready_contract(contributor)
+    Payment.objects.create(
+        contract=contract,
+        amount=27_000,
+        status=Payment.Status.CONFIRMED,
+    )
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        Payment.objects.create(
+            contract=contract,
+            amount=27_000,
+            status=Payment.Status.CONFIRMED,
+        )
 
 
 @pytest.mark.django_db
@@ -568,6 +619,108 @@ def test_contract_list_is_filtered_by_authenticated_user_group():
 
     assert response.status_code == 200
     assert [item["id"] for item in response.data["results"]] == [own_contract.id]
+
+
+@pytest.mark.django_db
+def test_contributor_contract_list_is_limited_to_own_contracts():
+    organization = Organization.objects.create(name="Groupe Own Contributor", code="OWN-CONTRIB")
+    contributor = User.objects.create_user(
+        username="own-contract-contributor",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=organization,
+    )
+    colleague = User.objects.create_user(
+        username="colleague-contract-contributor",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=organization,
+    )
+    own_contract = Contract.objects.create(
+        organization=organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+    )
+    Contract.objects.create(
+        organization=organization,
+        contributor=colleague,
+        contract_type=Contract.ContractType.AUTO_MONO,
+    )
+    client = APIClient()
+    client.force_authenticate(contributor)
+
+    response = client.get("/api/contracts/")
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.data["results"]] == [own_contract.id]
+
+
+@pytest.mark.django_db
+def test_contributor_cannot_access_colleague_contract_in_same_group():
+    organization = Organization.objects.create(name="Groupe Colleagues", code="COLLEAGUES")
+    contributor = User.objects.create_user(
+        username="restricted-contributor",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=organization,
+    )
+    colleague = User.objects.create_user(
+        username="contract-owner-colleague",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=organization,
+    )
+    contract = Contract.objects.create(
+        organization=organization,
+        contributor=colleague,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.DRAFT,
+    )
+    client = APIClient()
+    client.force_authenticate(contributor)
+
+    detail_response = client.get(f"/api/contracts/{contract.id}/")
+    quote_response = client.post(f"/api/contracts/{contract.id}/quote/")
+
+    assert detail_response.status_code == 404
+    assert quote_response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_finance_can_read_group_contract_but_cannot_change_workflow():
+    organization = Organization.objects.create(name="Groupe Finance Workflow", code="FIN-WORK")
+    contributor = User.objects.create_user(
+        username="finance-workflow-contributor",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=organization,
+    )
+    finance = User.objects.create_user(
+        username="finance-workflow",
+        password="test",
+        role=User.Role.FINANCE,
+        organization=organization,
+    )
+    contract = Contract.objects.create(
+        organization=organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.DRAFT,
+    )
+    client = APIClient()
+    client.force_authenticate(finance)
+
+    detail_response = client.get(f"/api/contracts/{contract.id}/")
+    update_response = client.patch(
+        f"/api/contracts/drafts/{contract.id}/",
+        {"draft_payload": {"vehicle": {"brand": "INTERDIT"}}},
+        format="json",
+    )
+    quote_response = client.post(f"/api/contracts/{contract.id}/quote/")
+
+    assert detail_response.status_code == 200
+    assert update_response.status_code == 403
+    assert quote_response.status_code == 403
 
 
 @pytest.mark.django_db
@@ -813,8 +966,66 @@ def test_authenticated_user_can_update_contract_draft_in_debug_mode():
 
 
 @pytest.mark.django_db
+def test_contract_draft_normalizes_registration_and_accepts_partial_valid_phone():
+    client, _ = make_authenticated_contract_client()
+
+    response = client.post(
+        "/api/contracts/drafts/",
+        {
+            "contract_type": "AUTO_MONO",
+            "draft_payload": {
+                "policyholder": {"phone": "77"},
+                "vehicle": {"registration": "dk-1234-ab"},
+            },
+        },
+        format="json",
+    )
+
+    assert response.status_code == 201
+    draft = Contract.objects.get(id=response.data["id"])
+    assert draft.draft_payload["policyholder"]["phone"] == "77"
+    assert draft.draft_payload["vehicle"]["registration"] == "DK-1234-AB"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("phone", ["612345678", "77 123456", "7712345678"])
+def test_contract_draft_rejects_invalid_phone(phone):
+    client, _ = make_authenticated_contract_client()
+
+    response = client.post(
+        "/api/contracts/drafts/",
+        {
+            "contract_type": "AUTO_MONO",
+            "draft_payload": {"policyholder": {"phone": phone}},
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert "draft_payload" in response.data
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("registration", ["DK 1234 AB", "DK_1234_AB", "DK/1234/AB"])
+def test_contract_draft_rejects_invalid_registration(registration):
+    client, _ = make_authenticated_contract_client()
+
+    response = client.post(
+        "/api/contracts/drafts/",
+        {
+            "contract_type": "AUTO_MONO",
+            "draft_payload": {"vehicle": {"registration": registration}},
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert "draft_payload" in response.data
+
+
+@pytest.mark.django_db
 @override_settings(DEBUG=True)
-def test_rejects_disabled_contract_type_for_draft():
+def test_can_create_garage_contract_draft():
     client, _ = make_authenticated_contract_client()
 
     response = client.post(
@@ -823,8 +1034,60 @@ def test_rejects_disabled_contract_type_for_draft():
         format="json",
     )
 
-    assert response.status_code == 400
-    assert "contract_type" in response.data
+    assert response.status_code == 201
+    assert response.data["contract_type"] == Contract.ContractType.GARAGE
+
+
+@pytest.mark.django_db
+@override_settings(ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
+@pytest.mark.parametrize(
+    ("contract_type", "draft_payload", "expected_prime"),
+    [
+        (
+            Contract.ContractType.BUS_SCHOOL,
+            {
+                "vehicle": {
+                    "fiscalPower": "8",
+                    "seats": "30",
+                    "duration": "3",
+                    "periodicity": "MOIS",
+                    "subcategory": "BUS",
+                    "energy": "DIESEL",
+                }
+            },
+            360_000,
+        ),
+        (
+            Contract.ContractType.GARAGE,
+            {
+                "garage": {
+                    "duration": "3",
+                    "periodicity": "MOIS",
+                    "subcategory": "GARAGE",
+                    "nombreCarte": "2",
+                }
+            },
+            120_000,
+        ),
+    ],
+)
+def test_can_calculate_bus_and_garage_quotes(
+    contract_type,
+    draft_payload,
+    expected_prime,
+):
+    client, _ = make_authenticated_contract_client()
+    draft_response = client.post(
+        "/api/contracts/drafts/",
+        {"contract_type": contract_type, "draft_payload": draft_payload},
+        format="json",
+    )
+    assert draft_response.status_code == 201
+
+    response = client.post(f"/api/contracts/{draft_response.data['id']}/quote/")
+
+    assert response.status_code == 200
+    assert response.data["quote"]["prime_rc_ass"] == expected_prime
 
 
 @pytest.mark.django_db
@@ -1155,7 +1418,7 @@ def test_issue_is_blocked_without_policyholder_and_insured():
     client.force_authenticate(finance)
     client.post(
         f"/api/contracts/{contract_id}/payments/confirm/",
-        {"amount": 27_000, "external_reference": "PAY-NO-PERSON"},
+        {"amount": 31_980, "external_reference": "PAY-NO-PERSON"},
         format="json",
     )
     client.force_authenticate(contributor)
@@ -1202,7 +1465,7 @@ def test_can_confirm_payment_then_issue_mock_contract():
 
     payment_response = client.post(
         f"/api/contracts/{contract_id}/payments/confirm/",
-        {"amount": 27_000, "external_reference": "PAY-TEST"},
+        {"amount": 31_980, "external_reference": "PAY-TEST"},
         format="json",
     )
     client.force_authenticate(contributor)
@@ -1218,7 +1481,7 @@ def test_can_confirm_payment_then_issue_mock_contract():
     contract = Contract.objects.get(id=contract_id)
     assert contract.internal_status == Contract.InternalStatus.ISSUED
     assert contract.reference_trx_partner.startswith("HORUS-")
-    assert contract.ttc_ass == 27_000
+    assert contract.ttc_ass == 31_980
     assert contract.ass_issue_request_payload["garanties"] == [1]
     assert contract.ass_issue_request_payload["souscripteur"]["nom"] == "DIOP"
     assert CommissionSnapshot.objects.filter(contract=contract).exists()
@@ -1265,3 +1528,63 @@ def test_issue_is_blocked_when_contributor_commission_is_not_configured():
 
     assert response.status_code == 400
     assert "Commission non configuree" in response.data["detail"]
+
+
+@pytest.mark.django_db
+@override_settings(ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
+def test_contributor_cannot_cancel_own_issued_contract():
+    client, contributor = make_authenticated_contract_client()
+    contract = Contract.objects.create(
+        organization=contributor.organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.ISSUED,
+        reference_trx_partner="HORUS-CANCEL-DENIED",
+    )
+
+    response = client.post(
+        f"/api/contracts/{contract.id}/cancel/",
+        {"methode": "ANNULER", "motif": "Test permission"},
+        format="json",
+    )
+
+    assert response.status_code == 403
+    contract.refresh_from_db()
+    assert contract.internal_status == Contract.InternalStatus.ISSUED
+
+
+@pytest.mark.django_db
+@override_settings(ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
+def test_group_admin_can_cancel_issued_contract_in_own_group():
+    organization = Organization.objects.create(name="Groupe Cancel Admin", code="CANCEL-ADMIN")
+    contributor = User.objects.create_user(
+        username="cancel-admin-contributor",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=organization,
+    )
+    admin_group = User.objects.create_user(
+        username="cancel-group-admin",
+        password="test",
+        role=User.Role.ADMIN_GROUP,
+        organization=organization,
+    )
+    contract = Contract.objects.create(
+        organization=organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.ISSUED,
+        reference_trx_partner="HORUS-CANCEL-ALLOWED",
+    )
+    client = APIClient()
+    client.force_authenticate(admin_group)
+
+    response = client.post(
+        f"/api/contracts/{contract.id}/cancel/",
+        {"methode": "ANNULER", "motif": "Correction admin"},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    contract.refresh_from_db()
+    assert contract.internal_status == Contract.InternalStatus.CANCELLED
