@@ -114,7 +114,7 @@ class ContractDetailView(AuthenticatedContractMixin, APIView):
         contract = get_object_or_404(
             get_contract_queryset_for_user(request.user)
             .select_related("organization", "contributor")
-            .prefetch_related("payments"),
+            .prefetch_related("payments", "payments__created_by"),
             pk=pk,
         )
         serializer = ContractDetailSerializer(contract)

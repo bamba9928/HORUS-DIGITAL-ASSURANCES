@@ -1,36 +1,110 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Horus — Frontend (Next.js)
 
-## Getting Started
+Interface web de la plateforme Horus Assurances Digital.
 
-First, run the development server:
+## Stack
+
+- **Next.js 16** (App Router, mode standalone)
+- **React 19**
+- **TypeScript 5** (strict)
+- **Tailwind CSS 4**
+- **Lucide React** (icônes)
+
+## Démarrage
 
 ```bash
+# Copier les variables d'environnement
+cp .env.example .env.local
+
+# Installer les dépendances
+npm install
+
+# Serveur de développement
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# → http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Variables d'environnement
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Variable | Description | Défaut |
+|----------|-------------|--------|
+| `NEXT_PUBLIC_API_BASE_URL` | URL de base de l'API Django | `http://localhost:8000/api` |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Scripts
 
-## Learn More
+```bash
+npm run dev       # Serveur de développement (webpack)
+npm run build     # Build de production
+npm start         # Serveur de production
+npm run lint      # ESLint
+npm run typecheck # Vérification TypeScript (sans émission)
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Structure
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+src/
+├── app/                    # Pages Next.js (App Router)
+│   ├── page.tsx            # Tableau de bord
+│   ├── login/              # Connexion
+│   ├── contracts/          # Liste + détail + création
+│   ├── commissions/        # Commissions
+│   ├── payments/           # Paiements
+│   ├── users/              # Gestion utilisateurs
+│   ├── organizations/      # Gestion organisations
+│   ├── referentials/       # Référentiels (marques)
+│   ├── integrations/ass/   # Supervision intégration ASS
+│   └── config/             # Configuration plateforme
+├── components/
+│   ├── AppShell.tsx        # Layout principal (sidebar + topbar)
+│   ├── AuthProvider.tsx    # Contexte d'authentification
+│   ├── ui.tsx              # Bibliothèque de composants partagés
+│   ├── DashboardContractMetrics.tsx
+│   ├── DashboardAssStockCard.tsx
+│   ├── DatePicker.tsx
+│   └── SelectSearch.tsx
+└── lib/
+    ├── api.ts              # Client API + types TypeScript
+    └── permissions.ts      # Fonctions de contrôle d'accès
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Authentification
 
-## Deploy on Vercel
+L'app utilise l'authentification par session Django (cookies `sessionid` + `csrftoken`).
+Le contexte `AuthProvider` expose `auth`, `isLoading` et `refreshAuth()` via le hook `useAuth()`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Toutes les pages protégées doivent utiliser `useAuth()` — ne jamais appeler `fetchCurrentUser()` directement dans un composant de page.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Composants partagés (`ui.tsx`)
+
+| Composant | Description |
+|-----------|-------------|
+| `PageAction` | Bouton CTA (lien `href` ou action `onClick`) |
+| `MetricCard` | Carte statistique avec tonalité (neutral/primary/success/warning) |
+| `StatusBadge` | Badge de statut coloré |
+| `ContractTypeBadge` | Badge de type de contrat |
+| `AlertMessage` | Message d'alerte (error/warning/info/success) |
+| `EmptyState` | État vide avec action optionnelle |
+| `LoadingState` | Spinner de chargement |
+
+## Contrôle des accès (`permissions.ts`)
+
+```typescript
+canCreateContract(user)         // ADMIN_GENERAL | ADMIN_GROUP | CONTRIBUTOR
+canConfirmContractPayment(user) // ADMIN_GENERAL | ADMIN_GROUP | FINANCE
+canManageUsers(user)            // ADMIN_GENERAL | ADMIN_GROUP
+canViewOrganizations(user)      // ADMIN_GENERAL | ADMIN_GROUP
+canViewPayments(user)           // ADMIN_GENERAL | ADMIN_GROUP | FINANCE
+canViewConfig(user)             // ADMIN_GENERAL
+canManageOrganizations(user)    // ADMIN_GENERAL
+canViewAssIntegration(user)     // ADMIN_GENERAL | ADMIN_GROUP | FINANCE
+```
+
+## Déploiement
+
+Le build produit un output `standalone` (configuré dans `next.config.ts`).
+
+```bash
+npm run build
+# Artefacts dans .next/standalone/
+```

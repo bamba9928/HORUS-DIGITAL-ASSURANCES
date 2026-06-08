@@ -25,4 +25,6 @@ urlpatterns = [
     path('api/integrations/ass/', include('integrations.ass.urls')),
     path('api/referentials/', include('referentials.urls')),
     path('api/contracts/', include('contracts.urls')),
+    path('api/payments/', include('payments.urls')),
+    path('api/config/', include('system.urls')),
 ]

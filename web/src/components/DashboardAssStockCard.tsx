@@ -4,60 +4,56 @@ import { AlertTriangle, ArrowRight, QrCode, RefreshCw, Zap } from "lucide-react"
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { useAuth } from "@/components/AuthProvider";
 import { StatusBadge } from "@/components/ui";
-import { fetchAssStockQr, fetchCurrentUser, type AssStockQr, type AuthState } from "@/lib/api";
+import { fetchAssStockQr, type AssStockQr } from "@/lib/api";
 
 export function DashboardAssStockCard() {
-  const [auth, setAuth] = useState<AuthState | null>(null);
+  const { auth, isLoading: authLoading } = useAuth();
   const [stock, setStock] = useState<AssStockQr | null>(null);
   const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [isDataLoading, setIsDataLoading] = useState(false);
+
+  const isLoading = authLoading || isDataLoading;
 
   async function refresh() {
+    if (!auth?.authenticated) return;
     setError("");
-    setIsLoading(true);
+    setIsDataLoading(true);
     try {
-      const current = await fetchCurrentUser();
-      setAuth(current);
-      if (!current.authenticated) {
-        setStock(null);
-        return;
-      }
       setStock(await fetchAssStockQr());
     } catch (err) {
       setStock(null);
       setError(err instanceof Error ? err.message : "Contrôle ASS impossible.");
     } finally {
-      setIsLoading(false);
+      setIsDataLoading(false);
     }
   }
 
   useEffect(() => {
-    let isCancelled = false;
-
-    async function loadInitialData() {
+    if (authLoading) return;
+    let cancelled = false;
+    async function load() {
+      if (!auth?.authenticated) return;
+      if (!cancelled) setIsDataLoading(true);
       try {
-        const current = await fetchCurrentUser();
-        if (isCancelled) return;
-        setAuth(current);
-        if (current.authenticated) {
-          const response = await fetchAssStockQr();
-          if (isCancelled) return;
-          setStock(response);
-        }
+        const res = await fetchAssStockQr();
+        if (!cancelled) setStock(res);
       } catch (err) {
-        if (!isCancelled) {
+        if (!cancelled) {
           setError(err instanceof Error ? err.message : "Contrôle ASS impossible.");
           setStock(null);
         }
       } finally {
-        if (!isCancelled) setIsLoading(false);
+        if (!cancelled) setIsDataLoading(false);
       }
     }
-
-    void loadInitialData();
-    return () => { isCancelled = true; };
-  }, []);
+    void load();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, auth?.authenticated]);
 
   const qrCount = stock?.available_qr;
   const isLow = typeof qrCount === "number" && qrCount < 20;
@@ -72,7 +68,9 @@ export function DashboardAssStockCard() {
             <QrCode size={18} />
           </span>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-black/40">Intégration ASS</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-black/40">
+              Intégration ASS
+            </p>
             <h2 className="text-sm font-extrabold">Stock QR codes</h2>
           </div>
         </div>
@@ -80,7 +78,7 @@ export function DashboardAssStockCard() {
           aria-label="Actualiser"
           className="flex size-8 items-center justify-center rounded-lg border border-border bg-white text-black/50 transition hover:bg-muted hover:text-black disabled:opacity-30"
           disabled={isLoading}
-          onClick={refresh}
+          onClick={() => void refresh()}
           type="button"
         >
           <RefreshCw className={isLoading ? "animate-spin" : ""} size={15} />
@@ -91,19 +89,21 @@ export function DashboardAssStockCard() {
       <div className="mt-6 flex items-end justify-between gap-3">
         <div>
           <p className="text-xs font-semibold text-black/45">QR disponibles</p>
-          <p className={`mt-1 text-5xl font-black tracking-tight ${
-            isCritical ? "text-red-600" : isLow ? "text-amber-600" : "text-foreground"
-          }`}>
+          <p
+            className={`mt-1 text-5xl font-black tracking-tight ${
+              isCritical ? "text-red-600" : isLow ? "text-amber-600" : "text-foreground"
+            }`}
+          >
             {isLoading ? (
               <span className="inline-block h-12 w-16 animate-pulse rounded-lg bg-muted" />
+            ) : qrCount == null ? (
+              "—"
             ) : (
-              qrCount === null || qrCount === undefined ? "—" : qrCount
+              qrCount
             )}
           </p>
         </div>
-        {stock?.operation_status ? (
-          <StatusBadge status={stock.operation_status} />
-        ) : null}
+        {stock?.operation_status ? <StatusBadge status={stock.operation_status} /> : null}
       </div>
 
       {/* Alert low stock */}
@@ -144,7 +144,7 @@ export function DashboardAssStockCard() {
         <p className="line-clamp-2 text-xs font-medium text-black/42">
           {isLoading
             ? "Chargement..."
-            : stock?.operation_message || error || (auth?.authenticated ? "Données chargées." : "Connexion requise.")}
+            : error || stock?.operation_message || "Données chargées."}
         </p>
         <Link
           className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-primary hover:underline"

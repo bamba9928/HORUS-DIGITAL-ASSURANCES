@@ -1,8 +1,10 @@
 "use client";
 
-import { BadgePercent, Banknote, CircleDollarSign, RefreshCw, WalletCards } from "lucide-react";
-import { useEffect, useState } from "react";
+import { BadgePercent, Banknote, CircleDollarSign, RefreshCw, Search, WalletCards } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 
+import { useAuth } from "@/components/AuthProvider";
 import { AppShell } from "@/components/AppShell";
 import {
   AlertMessage,
@@ -13,15 +15,24 @@ import {
   StatusBadge,
 } from "@/components/ui";
 import {
-  fetchCurrentUser,
   listCommissionSnapshots,
   updateCommissionSnapshotStatus,
-  type AuthState,
   type CommissionSnapshot,
 } from "@/lib/api";
 import { canUpdateCommissionStatus } from "@/lib/permissions";
 
-const statuses: { value: CommissionSnapshot["status"]; label: string }[] = [
+type StatusFilter = CommissionSnapshot["status"] | "";
+
+const statusOptions: { value: StatusFilter; label: string }[] = [
+  { value: "", label: "Tous les statuts" },
+  { value: "PENDING", label: "En attente" },
+  { value: "PAYABLE", label: "Payable" },
+  { value: "PAID", label: "Payée" },
+  { value: "CANCELLED", label: "Annulée" },
+  { value: "DISPUTED", label: "Contestée" },
+];
+
+const editableStatuses: { value: CommissionSnapshot["status"]; label: string }[] = [
   { value: "PENDING", label: "En attente" },
   { value: "PAYABLE", label: "Payable" },
   { value: "PAID", label: "Payée" },
@@ -30,54 +41,56 @@ const statuses: { value: CommissionSnapshot["status"]; label: string }[] = [
 ];
 
 export default function CommissionsPage() {
-  const [auth, setAuth] = useState<AuthState | null>(null);
+  const { auth, isLoading: authLoading } = useAuth();
   const [snapshots, setSnapshots] = useState<CommissionSnapshot[]>([]);
   const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [isDataLoading, setIsDataLoading] = useState(false);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
+  const [search, setSearch] = useState("");
+
+  const isLoading = authLoading || isDataLoading;
+  const canUpdateStatus = canUpdateCommissionStatus(auth?.user);
 
   async function refresh() {
+    if (!auth?.authenticated) return;
     setError("");
-    setIsLoading(true);
+    setIsDataLoading(true);
     try {
-      const current = await fetchCurrentUser();
-      setAuth(current);
-      if (current.authenticated) {
-        const response = await listCommissionSnapshots();
-        setSnapshots(response.results);
-      } else {
-        setSnapshots([]);
-      }
+      const response = await listCommissionSnapshots();
+      setSnapshots(response.results);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Chargement impossible.");
     } finally {
-      setIsLoading(false);
+      setIsDataLoading(false);
     }
   }
 
   useEffect(() => {
-    let isCancelled = false;
+    if (authLoading) return;
+    let cancelled = false;
     async function load() {
+      if (!auth?.authenticated) {
+        if (!cancelled) setSnapshots([]);
+        return;
+      }
+      if (!cancelled) setIsDataLoading(true);
       try {
-        const current = await fetchCurrentUser();
-        if (isCancelled) return;
-        setAuth(current);
-        if (current.authenticated) {
-          const response = await listCommissionSnapshots();
-          if (!isCancelled) setSnapshots(response.results);
-        }
+        const response = await listCommissionSnapshots();
+        if (!cancelled) setSnapshots(response.results);
       } catch (err) {
-        if (!isCancelled)
+        if (!cancelled)
           setError(err instanceof Error ? err.message : "Chargement impossible.");
       } finally {
-        if (!isCancelled) setIsLoading(false);
+        if (!cancelled) setIsDataLoading(false);
       }
     }
     void load();
     return () => {
-      isCancelled = true;
+      cancelled = true;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, auth?.authenticated]);
 
   async function updateStatus(id: number, status: CommissionSnapshot["status"]) {
     setError("");
@@ -92,11 +105,32 @@ export default function CommissionsPage() {
     }
   }
 
+  const filtered = useMemo(() => {
+    let result = snapshots;
+    if (statusFilter) {
+      result = result.filter((s) => s.status === statusFilter);
+    }
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      result = result.filter(
+        (s) =>
+          s.contributor_username.toLowerCase().includes(q) ||
+          s.contributor_full_name.toLowerCase().includes(q) ||
+          s.organization_name.toLowerCase().includes(q),
+      );
+    }
+    return result;
+  }, [snapshots, statusFilter, search]);
+
   const pendingCount = countByStatus(snapshots, "PENDING");
   const payableCount = countByStatus(snapshots, "PAYABLE");
   const paidCount = countByStatus(snapshots, "PAID");
-  const totalCommissionAmount = totalCommission(snapshots);
-  const canUpdateStatus = canUpdateCommissionStatus(auth?.user);
+  const payableAmount = snapshots
+    .filter((s) => s.status === "PAYABLE")
+    .reduce((t, s) => t + s.commission_total, 0);
+  const totalCommissionAmount = snapshots
+    .filter((s) => s.status !== "CANCELLED")
+    .reduce((t, s) => t + s.commission_total, 0);
 
   return (
     <AppShell
@@ -116,7 +150,7 @@ export default function CommissionsPage() {
       title="Commissions"
     >
       <div className="space-y-5">
-        {/* ── KPI row ────────────────────────────────────────── */}
+        {/* ── KPI row ──────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
           <MetricCard
             icon={BadgePercent}
@@ -124,6 +158,7 @@ export default function CommissionsPage() {
             value={isLoading ? "—" : pendingCount}
           />
           <MetricCard
+            detail={!isLoading && payableAmount > 0 ? `${formatMoney(payableAmount)} à verser` : undefined}
             icon={CircleDollarSign}
             label="Payables"
             tone="warning"
@@ -136,6 +171,7 @@ export default function CommissionsPage() {
             value={isLoading ? "—" : paidCount}
           />
           <MetricCard
+            detail="Hors annulations"
             icon={Banknote}
             label="Total commissions"
             tone="primary"
@@ -146,6 +182,44 @@ export default function CommissionsPage() {
         {error ? <AlertMessage>{error}</AlertMessage> : null}
 
         <section className="app-surface overflow-hidden">
+          {/* ── Filtres ──────────────────────────────────────── */}
+          <div className="flex flex-wrap gap-3 border-b border-border p-4">
+            <div className="relative flex-1 min-w-48">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/35"
+                size={15}
+              />
+              <input
+                className="app-field h-9 min-h-0 w-full pl-8 text-sm"
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Rechercher apporteur, groupe…"
+                type="search"
+                value={search}
+              />
+            </div>
+            <select
+              className="app-field h-9 min-h-0 w-auto text-sm"
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+              value={statusFilter}
+            >
+              {statusOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            {(statusFilter || search) ? (
+              <button
+                className="h-9 rounded-md px-3 text-sm font-semibold text-black/50 hover:text-black"
+                onClick={() => { setStatusFilter(""); setSearch(""); }}
+                type="button"
+              >
+                Réinitialiser
+              </button>
+            ) : null}
+          </div>
+
+          {/* ── Tableau ──────────────────────────────────────── */}
           {isLoading ? (
             <LoadingState label="Chargement des commissions" />
           ) : !auth?.authenticated ? (
@@ -153,33 +227,32 @@ export default function CommissionsPage() {
               action={<PageAction href="/login">Se connecter</PageAction>}
               title="Session requise"
             />
-          ) : snapshots.length ? (
+          ) : filtered.length ? (
             <div className="overflow-x-auto">
               <table className="app-table app-table-responsive">
                 <thead>
                   <tr>
                     <th>Contrat</th>
                     <th>Apporteur</th>
-                    <th>Prime RC</th>
+                    <th>Montants ASS</th>
                     <th>Commission</th>
                     <th>Net Horus</th>
+                    <th>Date</th>
                     <th>Statut</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {snapshots.map((snapshot) => (
+                  {filtered.map((snapshot) => (
                     <tr key={snapshot.id}>
-                      {/* Contrat */}
                       <td data-label="Contrat">
-                        <a
+                        <Link
                           className="text-sm font-extrabold text-primary hover:underline"
                           href={`/contracts/${snapshot.contract}`}
                         >
                           #{snapshot.contract}
-                        </a>
+                        </Link>
                       </td>
 
-                      {/* Apporteur */}
                       <td data-label="Apporteur">
                         <div className="flex items-center gap-2.5">
                           <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-black text-primary">
@@ -187,7 +260,7 @@ export default function CommissionsPage() {
                           </span>
                           <div className="min-w-0">
                             <p className="truncate font-extrabold">
-                              {snapshot.contributor_username}
+                              {snapshot.contributor_full_name}
                             </p>
                             <p className="mt-0.5 truncate text-xs text-black/40">
                               {snapshot.organization_name}
@@ -196,34 +269,36 @@ export default function CommissionsPage() {
                         </div>
                       </td>
 
-                      {/* Prime RC */}
-                      <td
-                        className="font-bold tabular-nums"
-                        data-label="Prime RC"
-                      >
-                        {formatMoney(snapshot.prime_rc_ass)}
+                      <td data-label="Montants ASS">
+                        <p className="font-bold tabular-nums">{formatMoney(snapshot.prime_rc_ass)}</p>
+                        <p className="mt-0.5 text-xs text-black/40">
+                          TTC {formatMoney(snapshot.ttc_ass)}
+                        </p>
                       </td>
 
-                      {/* Commission */}
                       <td data-label="Commission">
                         <p className="font-extrabold tabular-nums">
                           {formatMoney(snapshot.commission_total)}
                         </p>
                         <p className="mt-0.5 text-xs text-black/40">
-                          {snapshot.commission_percent_used}% +{" "}
-                          {formatMoney(snapshot.commission_fixed_policy_fee_used)}
+                          {formatMoney(snapshot.commission_prime_rc_amount)} RC +{" "}
+                          {formatMoney(snapshot.commission_policy_fee_amount)} police
                         </p>
                       </td>
 
-                      {/* Net Horus */}
-                      <td
-                        className="font-extrabold tabular-nums"
-                        data-label="Net Horus"
-                      >
+                      <td className="font-extrabold tabular-nums" data-label="Net Horus">
                         {formatMoney(snapshot.net_to_horus)}
                       </td>
 
-                      {/* Statut */}
+                      <td data-label="Date">
+                        <p className="text-sm font-semibold">{formatDate(snapshot.created_at)}</p>
+                        {snapshot.updated_at !== snapshot.created_at ? (
+                          <p className="mt-0.5 text-xs text-black/40">
+                            màj {formatDate(snapshot.updated_at)}
+                          </p>
+                        ) : null}
+                      </td>
+
                       <td data-label="Statut">
                         <div className="flex flex-wrap items-center gap-2">
                           <StatusBadge status={snapshot.status} />
@@ -240,7 +315,7 @@ export default function CommissionsPage() {
                               }
                               value={snapshot.status}
                             >
-                              {statuses.map((s) => (
+                              {editableStatuses.map((s) => (
                                 <option key={s.value} value={s.value}>
                                   {s.label}
                                 </option>
@@ -254,6 +329,11 @@ export default function CommissionsPage() {
                 </tbody>
               </table>
             </div>
+          ) : snapshots.length && (statusFilter || search) ? (
+            <EmptyState
+              description="Modifiez ou réinitialisez les filtres."
+              title="Aucun résultat"
+            />
           ) : (
             <EmptyState title="Aucune commission calculée" />
           )}
@@ -274,10 +354,14 @@ function countByStatus(snapshots: CommissionSnapshot[], status: CommissionSnapsh
   return snapshots.filter((s) => s.status === status).length;
 }
 
-function totalCommission(snapshots: CommissionSnapshot[]) {
-  return snapshots.reduce((t, s) => t + s.commission_total, 0);
-}
-
 function formatMoney(value: number) {
   return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value) + " FCFA";
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }

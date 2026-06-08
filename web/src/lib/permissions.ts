@@ -47,6 +47,22 @@ export function canUpdateCommissionStatus(user: User) {
   );
 }
 
+export function canViewConfig(user: User) {
+  return Boolean(user && user.role === "ADMIN_GENERAL");
+}
+
+export function canViewPayments(user: User) {
+  return Boolean(user && ["ADMIN_GENERAL", "ADMIN_GROUP", "FINANCE"].includes(user.role));
+}
+
+export function canManageOrganizations(user: User) {
+  return Boolean(user && user.role === "ADMIN_GENERAL");
+}
+
+export function canViewOrganizations(user: User) {
+  return Boolean(user && ["ADMIN_GENERAL", "ADMIN_GROUP"].includes(user.role));
+}
+
 export function roleLabel(role: AuthUser["role"]) {
   return {
     ADMIN_GENERAL: "Admin général",

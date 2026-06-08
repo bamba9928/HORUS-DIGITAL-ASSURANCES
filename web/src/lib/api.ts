@@ -65,21 +65,38 @@ export async function fetchApi<T>(path: string, init?: RequestInit): Promise<T> 
 }
 
 async function parseApiError(response: Response) {
-  const detail = await response.text();
-  if (!detail) {
-    return "";
-  }
+  const text = await response.text();
+  if (!text) return "";
 
   try {
-    const parsed = JSON.parse(detail) as { detail?: unknown } | Record<string, unknown>;
-    if ("detail" in parsed && typeof parsed.detail === "string") {
-      return parsed.detail;
+    const parsed = JSON.parse(text) as unknown;
+    if (typeof parsed === "string") return parsed;
+    if (Array.isArray(parsed)) {
+      return parsed.filter((v): v is string => typeof v === "string").join(" | ") || text;
+    }
+    if (parsed && typeof parsed === "object") {
+      const obj = parsed as Record<string, unknown>;
+      if (typeof obj.detail === "string") return obj.detail;
+      const messages: string[] = [];
+      for (const [key, value] of Object.entries(obj)) {
+        if (Array.isArray(value)) {
+          const strs = value.filter((v): v is string => typeof v === "string");
+          if (key === "non_field_errors") {
+            messages.push(...strs);
+          } else {
+            messages.push(...strs.map((m) => `${key} : ${m}`));
+          }
+        } else if (typeof value === "string") {
+          messages.push(key === "detail" ? value : `${key} : ${value}`);
+        }
+      }
+      if (messages.length) return messages.join(" | ");
     }
   } catch {
-    return detail;
+    return text;
   }
 
-  return detail;
+  return text;
 }
 
 function isUnsafeMethod(method: string) {
@@ -161,6 +178,22 @@ export async function createUser(payload: CreateUserPayload) {
   });
 }
 
+export type UpdateUserPayload = {
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  role?: AuthUser["role"];
+  organization?: number | null;
+  is_active?: boolean;
+};
+
+export async function updateUser(userId: number, payload: UpdateUserPayload) {
+  return fetchApi<ManagedUser>(`/accounts/users/${userId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
 export type OrganizationOption = {
   id: number;
   name: string;
@@ -168,8 +201,43 @@ export type OrganizationOption = {
   is_active: boolean;
 };
 
+export type Organization = OrganizationOption & {
+  user_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreateOrganizationPayload = {
+  name: string;
+  code: string;
+};
+
+export type UpdateOrganizationPayload = {
+  name?: string;
+  code?: string;
+  is_active?: boolean;
+};
+
 export async function listOrganizations() {
   return fetchApi<ApiListResponse<OrganizationOption>>("/organizations/");
+}
+
+export async function fetchOrganizations() {
+  return fetchApi<ApiListResponse<Organization>>("/organizations/");
+}
+
+export async function createOrganization(payload: CreateOrganizationPayload) {
+  return fetchApi<Organization>("/organizations/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateOrganization(orgId: number, payload: UpdateOrganizationPayload) {
+  return fetchApi<Organization>(`/organizations/${orgId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function updateUserCommission(
@@ -224,6 +292,7 @@ export type CommissionSnapshot = {
   contract: number;
   contributor: number;
   contributor_username: string;
+  contributor_full_name: string;
   organization: number;
   organization_name: string;
   status: "PENDING" | "PAYABLE" | "PAID" | "CANCELLED" | "DISPUTED";
@@ -237,6 +306,7 @@ export type CommissionSnapshot = {
   commission_total: number;
   net_to_horus: number;
   created_at: string;
+  updated_at: string;
 };
 
 export async function listCommissionSnapshots() {
@@ -326,6 +396,7 @@ export type ContractListItem = {
   organization_name: string;
   contributor: number;
   contributor_username: string;
+  contributor_full_name: string;
   vehicle_label: string;
   prime_rc_ass: number | null;
   cout_police_ass: number;
@@ -338,14 +409,56 @@ export type ContractListItem = {
   updated_at: string;
 };
 
+export type PlatformConfig = {
+  ass_mock_enabled: boolean;
+  ass_real_calls_allowed: boolean;
+  ass_policy_fee: number;
+  ass_partner_segment: string;
+  ass_base_url: string;
+  ass_credentials_set: boolean;
+  debug: boolean;
+  environment: "development" | "production";
+  language_code: string;
+  time_zone: string;
+};
+
+export async function fetchPlatformConfig() {
+  return fetchApi<PlatformConfig>("/config/");
+}
+
+export type PaymentStatus = "PENDING" | "CONFIRMED" | "FAILED" | "CANCELLED" | "REFUNDED";
+
 export type ContractPayment = {
   id: number;
   amount: number;
-  status: "PENDING" | "CONFIRMED" | "FAILED" | "CANCELLED" | "REFUNDED";
+  status: PaymentStatus;
   external_reference: string;
   confirmed_at: string | null;
   created_at: string;
+  created_by_username: string | null;
 };
+
+export type PaymentListItem = {
+  id: number;
+  contract: number;
+  organization_name: string;
+  contract_internal_status: string;
+  amount: number;
+  status: PaymentStatus;
+  external_reference: string;
+  confirmed_at: string | null;
+  created_by: number | null;
+  created_by_username: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function listPayments(filters?: { status?: PaymentStatus }) {
+  const params = new URLSearchParams();
+  if (filters?.status) params.set("status", filters.status);
+  const query = params.toString();
+  return fetchApi<ApiListResponse<PaymentListItem>>(`/payments/${query ? `?${query}` : ""}`);
+}
 
 export type ContractCommissionSnapshot = {
   id: number;
@@ -498,7 +611,11 @@ export type ConfirmedPayment = {
   confirmed_at: string | null;
 };
 
-export async function confirmContractPayment(contractId: number, amount: number) {
+export async function confirmContractPayment(
+  contractId: number,
+  amount: number,
+  externalReference = "",
+) {
   return fetchApi<{
     contract_id: number;
     internal_status: string;
@@ -507,7 +624,7 @@ export async function confirmContractPayment(contractId: number, amount: number)
     method: "POST",
     body: JSON.stringify({
       amount,
-      external_reference: "MANUAL-WEB-TEST",
+      external_reference: externalReference,
     }),
   });
 }

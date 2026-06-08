@@ -36,6 +36,23 @@ import {
   canManageContractWorkflow,
 } from "@/lib/permissions";
 
+type DraftVehicle = {
+  brand?: string; model?: string; registration?: string; chassis?: string;
+  energy?: string; fiscalPower?: string; seats?: string; firstCirculationDate?: string;
+  effectDate?: string; duration?: string; periodicity?: string; personType?: string;
+  subcategory?: string; cylindree?: string; motoUsage?: string;
+};
+type DraftPerson = { firstName?: string; lastName?: string; phone?: string; email?: string; };
+type DraftPayload = {
+  vehicle?: DraftVehicle;
+  fleet?: { vehicles?: (DraftVehicle & { id?: string; trailers?: { registration?: string; brand?: string; model?: string; }[] })[] };
+  garage?: { subcategory?: string; nombreCarte?: string; registration?: string; effectDate?: string; duration?: string; periodicity?: string; };
+  policyholder?: DraftPerson;
+  insured?: DraftPerson;
+  guarantees?: number[];
+  guaranteeOptions?: Record<string, string | undefined>;
+};
+
 const WORKFLOW_STEPS = ["DRAFT", "QUOTE_READY", "PAYMENT_PENDING", "PAID", "ISSUED"] as const;
 const STEP_LABELS: Record<string, string> = {
   DRAFT: "Brouillon",
@@ -223,6 +240,9 @@ export default function ContractDetailPage() {
                   <div className="flex flex-wrap gap-x-8 gap-y-3">
                     <InfoField label="Immatriculation" value={contract.immatriculation || "—"} mono />
                     <InfoField label="Créé le" value={formatDate(contract.created_at)} />
+                    {contract.date_expiration ? (
+                      <InfoField label="Expiration" value={formatDate(contract.date_expiration)} />
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -313,6 +333,8 @@ export default function ContractDetailPage() {
             <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
               {/* Left column */}
               <div className="space-y-5">
+                <DraftDetailsPanel contract={contract} />
+
                 <Panel title="Paiements">
                   <div className="overflow-x-auto">
                     <table className="app-table app-table-responsive">
@@ -611,6 +633,165 @@ export default function ContractDetailPage() {
 }
 
 /* ── Sub-components ──────────────────────────────────────────────── */
+
+function DraftDetailsPanel({ contract }: { contract: ContractDetail }) {
+  const payload = contract.draft_payload as DraftPayload;
+  const { vehicle, fleet, garage, policyholder, insured, guarantees, guaranteeOptions } = payload;
+
+  const isEmpty =
+    !vehicle && !fleet?.vehicles?.length && !garage && !policyholder && !insured;
+
+  function personName(p: DraftPerson | undefined) {
+    if (!p) return "—";
+    return [p.firstName, p.lastName].filter(Boolean).join(" ") || "—";
+  }
+
+  function durationLabel(v: { duration?: string; periodicity?: string }) {
+    if (!v.duration) return null;
+    return `${v.duration} ${v.periodicity === "JOUR" ? "jour(s)" : "mois"}`;
+  }
+
+  return (
+    <Panel title="Détails du contrat">
+      {isEmpty ? (
+        <p className="text-sm font-semibold text-black/38">Brouillon vide.</p>
+      ) : (
+        <div className="space-y-6">
+          {/* ── Véhicule (mono) ───────────────────────────── */}
+          {vehicle && contract.contract_type !== "GARAGE" ? (
+            <div>
+              <SectionLabel>Véhicule</SectionLabel>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                {vehicle.brand ? <InfoField label="Marque" value={vehicle.brand} /> : null}
+                {vehicle.model ? <InfoField label="Modèle" value={vehicle.model} /> : null}
+                {(vehicle.registration || contract.immatriculation) ? (
+                  <InfoField label="Immatriculation" value={vehicle.registration || contract.immatriculation} mono />
+                ) : null}
+                {vehicle.energy ? <InfoField label="Énergie" value={vehicle.energy} /> : null}
+                {vehicle.fiscalPower ? <InfoField label="Puissance" value={`${vehicle.fiscalPower} CV`} /> : null}
+                {vehicle.seats ? <InfoField label="Places" value={vehicle.seats} /> : null}
+                {vehicle.firstCirculationDate ? (
+                  <InfoField label="1ère circulat." value={vehicle.firstCirculationDate} />
+                ) : null}
+                {vehicle.effectDate ? <InfoField label="Date d'effet" value={vehicle.effectDate} /> : null}
+                {durationLabel(vehicle) ? (
+                  <InfoField label="Durée" value={durationLabel(vehicle)!} />
+                ) : null}
+                {vehicle.subcategory ? <InfoField label="Genre" value={vehicle.subcategory} /> : null}
+              </div>
+            </div>
+          ) : null}
+
+          {/* ── Garage ───────────────────────────────────── */}
+          {garage && contract.contract_type === "GARAGE" ? (
+            <div>
+              <SectionLabel>Garage</SectionLabel>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                {garage.subcategory ? <InfoField label="Genre" value={garage.subcategory} /> : null}
+                {garage.nombreCarte ? <InfoField label="Nb cartes" value={garage.nombreCarte} /> : null}
+                {garage.registration ? <InfoField label="Immatriculation" value={garage.registration} mono /> : null}
+                {garage.effectDate ? <InfoField label="Date d'effet" value={garage.effectDate} /> : null}
+                {durationLabel(garage) ? <InfoField label="Durée" value={durationLabel(garage)!} /> : null}
+              </div>
+            </div>
+          ) : null}
+
+          {/* ── Flotte ───────────────────────────────────── */}
+          {fleet?.vehicles?.length ? (
+            <div>
+              <SectionLabel>{fleet.vehicles.length} véhicule(s) de flotte</SectionLabel>
+              <div className="space-y-1.5">
+                {fleet.vehicles.map((v, i) => (
+                  <div
+                    className="flex items-center gap-3 rounded-lg border border-border px-3 py-2 text-sm"
+                    key={v.id ?? i}
+                  >
+                    <span className="min-w-0 flex-1 font-semibold">
+                      {[v.brand, v.model].filter(Boolean).join(" ") || `Véhicule ${i + 1}`}
+                    </span>
+                    <span className="shrink-0 font-mono text-xs text-black/45">
+                      {v.registration || v.chassis || "—"}
+                    </span>
+                    {v.trailers?.length ? (
+                      <span className="shrink-0 text-xs text-black/38">
+                        {v.trailers.length} rem.
+                      </span>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {/* ── Souscripteur / Assuré ────────────────────── */}
+          {(policyholder || insured) ? (
+            <div className="grid gap-5 sm:grid-cols-2">
+              {policyholder ? (
+                <div>
+                  <SectionLabel>Souscripteur</SectionLabel>
+                  <div className="space-y-3">
+                    <InfoField label="Nom complet" value={personName(policyholder)} />
+                    {policyholder.phone ? <InfoField label="Téléphone" value={policyholder.phone} /> : null}
+                    {policyholder.email ? <InfoField label="Email" value={policyholder.email} /> : null}
+                  </div>
+                </div>
+              ) : null}
+              {insured ? (
+                <div>
+                  <SectionLabel>Assuré</SectionLabel>
+                  <div className="space-y-3">
+                    <InfoField label="Nom complet" value={personName(insured)} />
+                    {insured.phone ? <InfoField label="Téléphone" value={insured.phone} /> : null}
+                    {insured.email ? <InfoField label="Email" value={insured.email} /> : null}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* ── Garanties ────────────────────────────────── */}
+          {guarantees?.length ? (
+            <div>
+              <SectionLabel>Garanties ASS</SectionLabel>
+              <div className="flex flex-wrap gap-1.5">
+                {guarantees.map((g) => (
+                  <span
+                    className="rounded-md bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary"
+                    key={g}
+                  >
+                    Garantie {g}
+                  </span>
+                ))}
+              </div>
+              {guaranteeOptions && Object.entries(guaranteeOptions).some(([, v]) => v) ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {Object.entries(guaranteeOptions)
+                    .filter(([, v]) => v)
+                    .map(([k, v]) => (
+                      <span
+                        className="rounded-md border border-border px-2.5 py-1 text-xs font-semibold text-black/55"
+                        key={k}
+                      >
+                        {k}: {v}
+                      </span>
+                    ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-3 text-[10.5px] font-black uppercase tracking-wide text-black/38">
+      {children}
+    </p>
+  );
+}
 
 function Panel({ children, title }: { children: React.ReactNode; title: string }) {
   return (

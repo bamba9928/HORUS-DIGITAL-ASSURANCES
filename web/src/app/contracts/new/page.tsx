@@ -25,6 +25,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
@@ -223,10 +224,18 @@ const durationOptions = Array.from({ length: 12 }, (_, index) => ({
   label: `${index + 1} mois`,
 }));
 
+const VALID_CONTRACT_TYPES = ["AUTO_MONO", "FLEET", "BUS_SCHOOL", "GARAGE"] as const;
+
 export default function NewContractPage() {
   const { auth, isLoading: isAuthLoading } = useAuth();
+  const searchParams = useSearchParams();
   const [step, setStep] = useState(1);
-  const [contractType, setContractType] = useState("AUTO_MONO");
+  const [contractType, setContractType] = useState(() => {
+    const type = searchParams.get("type")?.toUpperCase();
+    return type && (VALID_CONTRACT_TYPES as readonly string[]).includes(type)
+      ? type
+      : "AUTO_MONO";
+  });
   const [vehicle, setVehicle] = useState<VehicleForm>(emptyVehicle);
   const [fleetVehicles, setFleetVehicles] = useState<FleetVehicle[]>([]);
   const [selectedGuarantees, setSelectedGuarantees] = useState<number[]>([]);

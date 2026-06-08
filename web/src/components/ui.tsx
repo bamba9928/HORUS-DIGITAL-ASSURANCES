@@ -11,28 +11,40 @@ import {
 import Link from "next/link";
 
 /* ── PageAction ──────────────────────────────────────────────────── */
-export function PageAction({
-  href,
-  icon: Icon,
-  children,
-  variant = "primary",
-}: {
-  href: string;
+type PageActionProps = {
   icon?: typeof ArrowRight;
   children: React.ReactNode;
   variant?: "primary" | "secondary";
-}) {
-  return (
-    <Link
-      className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-[9px] px-4 text-[13.5px] font-bold transition ${
-        variant === "primary"
-          ? "bg-gradient-to-br from-primary to-[var(--primary-strong)] text-white shadow-sm shadow-primary/30 hover:shadow-[0_4px_14px_0_rgba(150,0,192,0.35)] hover:brightness-105"
-          : "border border-border bg-white text-black/80 shadow-[var(--shadow-xs)] hover:bg-muted hover:border-[var(--border-strong)]"
-      }`}
-      href={href}
-    >
+} & ({ href: string; onClick?: never } | { onClick: () => void; href?: never });
+
+export function PageAction({
+  href,
+  onClick,
+  icon: Icon,
+  children,
+  variant = "primary",
+}: PageActionProps) {
+  const className = `inline-flex h-9 items-center justify-center gap-1.5 rounded-[9px] px-4 text-[13.5px] font-bold transition ${
+    variant === "primary"
+      ? "bg-gradient-to-br from-primary to-[var(--primary-strong)] text-white shadow-sm shadow-primary/30 hover:shadow-[0_4px_14px_0_rgba(150,0,192,0.35)] hover:brightness-105"
+      : "border border-border bg-white text-black/80 shadow-[var(--shadow-xs)] hover:bg-muted hover:border-[var(--border-strong)]"
+  }`;
+  const content = (
+    <>
       {Icon ? <Icon size={14} /> : null}
       <span className="hidden sm:inline">{children}</span>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button className={className} onClick={onClick} type="button">
+        {content}
+      </button>
+    );
+  }
+  return (
+    <Link className={className} href={href!}>
+      {content}
     </Link>
   );
 }

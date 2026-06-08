@@ -22,7 +22,7 @@ const contractTypes = [
   {
     name: "Automobile",
     description: "Véhicule individuel RC + options",
-    href: "/contracts/new",
+    href: "/contracts/new?type=AUTO_MONO",
     icon: CarFront,
     gradient: "from-blue-500 to-blue-700",
     bg: "bg-blue-50",
@@ -32,7 +32,7 @@ const contractTypes = [
   {
     name: "Moto",
     description: "Deux et trois roues",
-    href: "/contracts/new",
+    href: "/contracts/new?type=AUTO_MONO",
     icon: Bike,
     gradient: "from-violet-500 to-violet-700",
     bg: "bg-violet-50",
@@ -42,7 +42,7 @@ const contractTypes = [
   {
     name: "Flotte",
     description: "Multi-véhicules + remorques",
-    href: "/contracts/new",
+    href: "/contracts/new?type=FLEET",
     icon: Truck,
     gradient: "from-sky-500 to-sky-700",
     bg: "bg-sky-50",
@@ -52,7 +52,7 @@ const contractTypes = [
   {
     name: "Bus École",
     description: "Transport scolaire",
-    href: "/contracts/new",
+    href: "/contracts/new?type=BUS_SCHOOL",
     icon: Bus,
     gradient: "from-emerald-500 to-emerald-700",
     bg: "bg-emerald-50",
@@ -62,7 +62,7 @@ const contractTypes = [
   {
     name: "Garage",
     description: "Responsabilité civile garage",
-    href: "/contracts/new",
+    href: "/contracts/new?type=GARAGE",
     icon: Wrench,
     gradient: "from-amber-500 to-amber-600",
     bg: "bg-amber-50",

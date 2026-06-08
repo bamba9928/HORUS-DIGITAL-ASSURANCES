@@ -2,7 +2,9 @@
 
 import {
   BadgePercent,
+  Banknote,
   Boxes,
+  Building2,
   ChevronDown,
   FilePlus2,
   FileText,
@@ -28,6 +30,9 @@ import {
   canManageReferentials,
   canManageUsers,
   canViewAssIntegration,
+  canViewConfig,
+  canViewOrganizations,
+  canViewPayments,
   roleLabel,
 } from "@/lib/permissions";
 
@@ -36,10 +41,13 @@ const navigation = [
   { href: "/contracts/new", label: "Nouveau contrat", icon: FilePlus2 },
   { href: "/contracts", label: "Contrats", icon: FileText },
   { href: "/commissions", label: "Commissions", icon: BadgePercent },
+  { href: "/payments", label: "Paiements", icon: Banknote },
   { href: "/users", label: "Utilisateurs", icon: Users },
+  { href: "/organizations", label: "Organisations", icon: Building2 },
 ];
 
 const settingsNavigation = [
+  { href: "/config", label: "Configuration", icon: Settings },
   { href: "/referentials/brands", label: "Référentiels", icon: Boxes },
   { href: "/integrations/ass", label: "Intégration ASS", icon: ShieldCheck },
 ];
@@ -65,9 +73,12 @@ export function AppShell({
   const visibleNavigation = navigation.filter((item) => {
     if (item.href === "/contracts/new") return canCreateContract(user);
     if (item.href === "/users") return canManageUsers(user);
+    if (item.href === "/organizations") return canViewOrganizations(user);
+    if (item.href === "/payments") return canViewPayments(user);
     return true;
   });
   const visibleSettingsNavigation = settingsNavigation.filter((item) => {
+    if (item.href === "/config") return canViewConfig(user);
     if (item.href === "/referentials/brands") return canManageReferentials(user);
     if (item.href === "/integrations/ass") return canViewAssIntegration(user);
     return false;

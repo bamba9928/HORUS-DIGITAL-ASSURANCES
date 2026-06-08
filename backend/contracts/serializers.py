@@ -165,7 +165,13 @@ class ContractDraftSerializer(serializers.ModelSerializer):
 class ContractListSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source="organization.name", read_only=True)
     contributor_username = serializers.CharField(source="contributor.username", read_only=True)
+    contributor_full_name = serializers.SerializerMethodField()
     vehicle_label = serializers.SerializerMethodField()
+
+    def get_contributor_full_name(self, obj):
+        user = obj.contributor
+        full = f"{user.first_name} {user.last_name}".strip()
+        return full or user.username
 
     class Meta:
         model = Contract
@@ -178,6 +184,7 @@ class ContractListSerializer(serializers.ModelSerializer):
             "organization_name",
             "contributor",
             "contributor_username",
+            "contributor_full_name",
             "vehicle_label",
             "prime_rc_ass",
             "cout_police_ass",
@@ -240,6 +247,7 @@ class ContractDetailSerializer(ContractListSerializer):
                 "external_reference": payment.external_reference,
                 "confirmed_at": payment.confirmed_at,
                 "created_at": payment.created_at,
+                "created_by_username": payment.created_by.username if payment.created_by_id else None,
             }
             for payment in contract.payments.all()
         ]

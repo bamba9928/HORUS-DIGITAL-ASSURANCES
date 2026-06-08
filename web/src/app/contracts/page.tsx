@@ -313,7 +313,7 @@ export default function ContractsPage() {
                           </span>
                           <div className="min-w-0">
                             <p className="truncate font-semibold">
-                              {contract.contributor_username}
+                              {contract.contributor_full_name}
                             </p>
                             <p className="mt-0.5 truncate text-xs text-black/38">
                               {contract.organization_name}

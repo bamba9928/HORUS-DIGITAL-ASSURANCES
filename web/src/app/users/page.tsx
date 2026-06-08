@@ -1,8 +1,9 @@
 "use client";
 
-import { Percent, Plus, RefreshCw, UserPlus, Users } from "lucide-react";
+import { Pencil, Percent, Plus, RefreshCw, UserPlus, Users, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
+import { useAuth } from "@/components/AuthProvider";
 import { AppShell } from "@/components/AppShell";
 import {
   AlertMessage,
@@ -14,11 +15,10 @@ import {
 } from "@/components/ui";
 import {
   createUser,
-  fetchCurrentUser,
   listOrganizations,
   listUsers,
+  updateUser,
   updateUserCommission,
-  type AuthState,
   type CreateUserPayload,
   type ManagedUser,
   type OrganizationOption,
@@ -33,75 +33,67 @@ const roles = [
 ] as const;
 
 export default function UsersPage() {
-  const [auth, setAuth] = useState<AuthState | null>(null);
+  const { auth, isLoading: authLoading } = useAuth();
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [organizations, setOrganizations] = useState<OrganizationOption[]>([]);
   const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [isDataLoading, setIsDataLoading] = useState(false);
+  const [editTarget, setEditTarget] = useState<ManagedUser | null>(null);
+
+  const canManageUsers = userCanManageUsers(auth?.user);
+  const canCreateAdminRoles = auth?.user?.role === "ADMIN_GENERAL";
+  const isLoading = authLoading || isDataLoading;
 
   async function refresh() {
+    if (!auth?.authenticated || !canManageUsers) return;
     setError("");
-    setIsLoading(true);
+    setIsDataLoading(true);
     try {
-      const current = await fetchCurrentUser();
-      setAuth(current);
-      if (current.authenticated && userCanManageUsers(current.user)) {
-        const [usersResponse, organizationsResponse] = await Promise.all([
-          listUsers(),
-          listOrganizations(),
-        ]);
-        setUsers(usersResponse.results);
-        setOrganizations(organizationsResponse.results);
-      } else {
-        setUsers([]);
-        setOrganizations([]);
-      }
+      const [usersRes, orgsRes] = await Promise.all([listUsers(), listOrganizations()]);
+      setUsers(usersRes.results);
+      setOrganizations(orgsRes.results);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Chargement impossible.");
     } finally {
-      setIsLoading(false);
+      setIsDataLoading(false);
     }
   }
 
   useEffect(() => {
-    let isCancelled = false;
+    if (authLoading) return;
+    let cancelled = false;
 
-    async function loadInitialData() {
-      try {
-        const current = await fetchCurrentUser();
-        if (isCancelled) {
-          return;
+    async function load() {
+      if (!auth?.authenticated || !userCanManageUsers(auth.user)) {
+        if (!cancelled) {
+          setUsers([]);
+          setOrganizations([]);
         }
-        setAuth(current);
-        if (current.authenticated && userCanManageUsers(current.user)) {
-          const [usersResponse, organizationsResponse] = await Promise.all([
-            listUsers(),
-            listOrganizations(),
-          ]);
-          if (!isCancelled) {
-            setUsers(usersResponse.results);
-            setOrganizations(organizationsResponse.results);
-          }
+        return;
+      }
+      if (!cancelled) setIsDataLoading(true);
+      try {
+        const [usersRes, orgsRes] = await Promise.all([listUsers(), listOrganizations()]);
+        if (!cancelled) {
+          setUsers(usersRes.results);
+          setOrganizations(orgsRes.results);
         }
       } catch (err) {
-        if (!isCancelled) {
+        if (!cancelled) {
           setError(err instanceof Error ? err.message : "Chargement impossible.");
         }
       } finally {
-        if (!isCancelled) {
-          setIsLoading(false);
-        }
+        if (!cancelled) setIsDataLoading(false);
       }
     }
 
-    void loadInitialData();
+    void load();
     return () => {
-      isCancelled = true;
+      cancelled = true;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, auth?.authenticated]);
 
-  const canCreateAdminRoles = auth?.user?.role === "ADMIN_GENERAL";
-  const canManageUsers = userCanManageUsers(auth?.user);
   const configuredContributors = users.filter(
     (user) => user.role === "CONTRIBUTOR" && user.has_configured_commission,
   ).length;
@@ -133,7 +125,7 @@ export default function UsersPage() {
             value={users.filter((user) => user.role === "CONTRIBUTOR").length}
           />
           <MetricCard
-            detail="Apporteurs prêts pour l’émission"
+            detail="Apporteurs prêts pour l'émission"
             icon={Percent}
             label="Commissions configurées"
             tone="success"
@@ -180,7 +172,12 @@ export default function UsersPage() {
                   </thead>
                   <tbody>
                     {users.map((user) => (
-                      <UserRow key={user.id} onSaved={refresh} user={user} />
+                      <UserRow
+                        key={user.id}
+                        onEdit={setEditTarget}
+                        onSaved={refresh}
+                        user={user}
+                      />
                     ))}
                   </tbody>
                 </table>
@@ -191,6 +188,16 @@ export default function UsersPage() {
           </section>
         </div>
       </div>
+
+      {editTarget ? (
+        <EditUserModal
+          canCreateAdminRoles={canCreateAdminRoles}
+          onClose={() => setEditTarget(null)}
+          onSaved={refresh}
+          organizations={organizations}
+          user={editTarget}
+        />
+      ) : null}
     </AppShell>
   );
 }
@@ -351,7 +358,15 @@ function CreateUserPanel({
   );
 }
 
-function UserRow({ user, onSaved }: { user: ManagedUser; onSaved: () => Promise<void> }) {
+function UserRow({
+  user,
+  onSaved,
+  onEdit,
+}: {
+  user: ManagedUser;
+  onSaved: () => Promise<void>;
+  onEdit: (user: ManagedUser) => void;
+}) {
   const [percent, setPercent] = useState(user.commission_percent_on_prime_rc ?? "");
   const [fixed, setFixed] = useState(user.commission_fixed_on_policy_fee?.toString() ?? "");
   const [error, setError] = useState("");
@@ -374,10 +389,17 @@ function UserRow({ user, onSaved }: { user: ManagedUser; onSaved: () => Promise<
   }
 
   return (
-    <tr>
+    <tr className={!user.is_active ? "opacity-55" : ""}>
       <td data-label="Utilisateur">
         <div>
-          <p className="font-extrabold">{user.username}</p>
+          <div className="flex items-center gap-2">
+            <p className="font-extrabold">{user.username}</p>
+            {!user.is_active ? (
+              <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600">
+                Inactif
+              </span>
+            ) : null}
+          </div>
           <p className="mt-1 text-xs font-semibold text-black/45">{user.email || "Sans email"}</p>
           {error ? <p className="mt-2 text-xs font-bold text-red-700">{error}</p> : null}
         </div>
@@ -414,16 +436,179 @@ function UserRow({ user, onSaved }: { user: ManagedUser; onSaved: () => Promise<
         />
       </td>
       <td data-label="Action">
-        <button
-          className="h-10 rounded-md bg-black px-3 text-xs font-extrabold text-white hover:bg-black/80 disabled:bg-black/20"
-          disabled={user.role !== "CONTRIBUTOR" || isSaving}
-          onClick={saveCommission}
-          type="button"
-        >
-          {isSaving ? "Enregistrement..." : "Enregistrer"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            className="flex h-10 items-center gap-1.5 rounded-md border border-border bg-white px-3 text-xs font-extrabold hover:bg-muted"
+            onClick={() => onEdit(user)}
+            type="button"
+          >
+            <Pencil size={13} />
+            Modifier
+          </button>
+          <button
+            className="h-10 rounded-md bg-black px-3 text-xs font-extrabold text-white hover:bg-black/80 disabled:bg-black/20"
+            disabled={user.role !== "CONTRIBUTOR" || isSaving}
+            onClick={saveCommission}
+            type="button"
+          >
+            {isSaving ? "..." : "Enregistrer"}
+          </button>
+        </div>
       </td>
     </tr>
+  );
+}
+
+function EditUserModal({
+  user,
+  organizations,
+  canCreateAdminRoles,
+  onClose,
+  onSaved,
+}: {
+  user: ManagedUser;
+  organizations: OrganizationOption[];
+  canCreateAdminRoles: boolean;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const { auth } = useAuth();
+  const isAdminGroup = auth?.user?.role === "ADMIN_GROUP";
+
+  const [form, setForm] = useState({
+    first_name: user.first_name,
+    last_name: user.last_name,
+    email: user.email,
+    role: user.role as string,
+    organization: user.organization?.toString() ?? "",
+    is_active: user.is_active,
+  });
+  const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  const visibleRoles = useMemo(
+    () => roles.filter((r) => canCreateAdminRoles || !r.value.startsWith("ADMIN")),
+    [canCreateAdminRoles],
+  );
+
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError("");
+    setIsSaving(true);
+    try {
+      await updateUser(user.id, {
+        first_name: form.first_name,
+        last_name: form.last_name,
+        email: form.email,
+        role: form.role as ManagedUser["role"],
+        organization: form.organization ? Number(form.organization) : null,
+        is_active: form.is_active,
+      });
+      await onSaved();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Mise à jour impossible.");
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="app-surface w-full max-w-md overflow-y-auto p-6">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="font-extrabold">Modifier {user.username}</h2>
+            <p className="text-sm font-medium text-black/45">Profil et accès</p>
+          </div>
+          <button
+            className="flex size-8 items-center justify-center rounded-md border border-border hover:bg-muted"
+            onClick={onClose}
+            type="button"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <form className="mt-5 space-y-3.5" onSubmit={handleSubmit}>
+          <div className="grid grid-cols-2 gap-3">
+            <Field
+              label="Prénom"
+              onChange={(v) => setForm({ ...form, first_name: v })}
+              value={form.first_name}
+            />
+            <Field
+              label="Nom"
+              onChange={(v) => setForm({ ...form, last_name: v })}
+              value={form.last_name}
+            />
+          </div>
+          <Field
+            label="Email"
+            onChange={(v) => setForm({ ...form, email: v })}
+            type="email"
+            value={form.email}
+          />
+          <label className="block">
+            <span className="text-xs font-extrabold uppercase text-black/52">Rôle</span>
+            <select
+              className="app-field mt-1.5"
+              onChange={(e) => setForm({ ...form, role: e.target.value })}
+              value={form.role}
+            >
+              {visibleRoles.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-xs font-extrabold uppercase text-black/52">Groupe</span>
+            <select
+              className="app-field mt-1.5"
+              disabled={isAdminGroup}
+              onChange={(e) => setForm({ ...form, organization: e.target.value })}
+              required={form.role !== "ADMIN_GENERAL"}
+              value={form.organization}
+            >
+              <option value="">Sélectionner un groupe</option>
+              {organizations.map((org) => (
+                <option key={org.id} value={org.id}>
+                  {org.name} ({org.code})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-border p-3 hover:bg-muted">
+            <input
+              checked={form.is_active}
+              className="size-4 accent-primary"
+              onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
+              type="checkbox"
+            />
+            <div>
+              <p className="text-sm font-bold">Compte actif</p>
+              <p className="text-xs text-black/45">
+                {form.is_active ? "L'utilisateur peut se connecter" : "Connexion bloquée"}
+              </p>
+            </div>
+          </label>
+          {error ? <AlertMessage>{error}</AlertMessage> : null}
+          <button
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary font-extrabold text-white hover:bg-[var(--primary-strong)] disabled:bg-black/25"
+            disabled={isSaving}
+            type="submit"
+          >
+            {isSaving ? "Enregistrement..." : "Enregistrer les modifications"}
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }
 
