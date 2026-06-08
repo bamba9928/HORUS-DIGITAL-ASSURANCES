@@ -671,11 +671,14 @@ function DraftDetailsPanel({ contract }: { contract: ContractDetail }) {
                 {vehicle.fiscalPower ? <InfoField label="Puissance" value={`${vehicle.fiscalPower} CV`} /> : null}
                 {vehicle.seats ? <InfoField label="Places" value={vehicle.seats} /> : null}
                 {vehicle.firstCirculationDate ? (
-                  <InfoField label="1ère circulat." value={vehicle.firstCirculationDate} />
+                  <InfoField label="1ère circulat." value={formatDate(vehicle.firstCirculationDate)} />
                 ) : null}
-                {vehicle.effectDate ? <InfoField label="Date d'effet" value={vehicle.effectDate} /> : null}
+                {vehicle.effectDate ? <InfoField label="Date d'effet" value={formatDate(vehicle.effectDate)} /> : null}
                 {durationLabel(vehicle) ? (
                   <InfoField label="Durée" value={durationLabel(vehicle)!} />
+                ) : null}
+                {contract.date_expiration ? (
+                  <InfoField label="Échéance" value={formatDate(contract.date_expiration)} />
                 ) : null}
                 {vehicle.subcategory ? <InfoField label="Genre" value={vehicle.subcategory} /> : null}
               </div>
@@ -690,8 +693,11 @@ function DraftDetailsPanel({ contract }: { contract: ContractDetail }) {
                 {garage.subcategory ? <InfoField label="Genre" value={garage.subcategory} /> : null}
                 {garage.nombreCarte ? <InfoField label="Nb cartes" value={garage.nombreCarte} /> : null}
                 {garage.registration ? <InfoField label="Immatriculation" value={garage.registration} mono /> : null}
-                {garage.effectDate ? <InfoField label="Date d'effet" value={garage.effectDate} /> : null}
+                {garage.effectDate ? <InfoField label="Date d'effet" value={formatDate(garage.effectDate)} /> : null}
                 {durationLabel(garage) ? <InfoField label="Durée" value={durationLabel(garage)!} /> : null}
+                {contract.date_expiration ? (
+                  <InfoField label="Échéance" value={formatDate(contract.date_expiration)} />
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -1008,8 +1014,15 @@ function formatMoney(value: number) {
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("fr-FR", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  // Extraire directement YYYY-MM-DD pour éviter les décalages de fuseau horaire
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+  // Fallback pour les formats non ISO
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return value;
+  return [
+    String(d.getDate()).padStart(2, "0"),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    d.getFullYear(),
+  ].join("-");
 }

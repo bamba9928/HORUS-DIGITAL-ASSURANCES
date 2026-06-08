@@ -1451,7 +1451,7 @@ function GuaranteeSelector({
               key={guarantee.value}
               onClick={() => onToggle(code)}
               type="button"
-              className={`group relative flex items-start gap-4 rounded-xl border-2 p-4 text-left transition-all ${
+              className={`group relative flex items-center gap-4 rounded-xl border-2 p-4 text-left transition-all ${
                 selected
                   ? "border-primary bg-primary/5 shadow-sm shadow-primary/10"
                   : "border-border bg-white hover:border-primary/30 hover:bg-primary/3"
@@ -1459,7 +1459,7 @@ function GuaranteeSelector({
             >
               {/* Icône garantie */}
               <div
-                className={`mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl transition-colors ${
+                className={`flex size-10 shrink-0 items-center justify-center rounded-xl transition-colors ${
                   selected ? "bg-primary/15" : "bg-black/5 group-hover:bg-primary/8"
                 }`}
               >
@@ -1483,7 +1483,7 @@ function GuaranteeSelector({
 
               {/* Check indicator */}
               <div
-                className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-all ${
+                className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-all ${
                   selected
                     ? "border-primary bg-primary"
                     : "border-black/20 group-hover:border-primary/40"

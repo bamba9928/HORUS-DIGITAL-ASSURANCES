@@ -67,7 +67,10 @@ export function AppShell({
   const router = useRouter();
   const { auth, isLoading: isAuthLoading, refreshAuth } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("horus-sidebar") === "collapsed";
+  });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const user = auth?.user;
   const visibleNavigation = navigation.filter((item) => {
@@ -208,7 +211,13 @@ export function AppShell({
               aria-expanded={!sidebarCollapsed}
               aria-label={sidebarCollapsed ? "Déplier le menu" : "Replier le menu"}
               className="hidden size-9 items-center justify-center rounded-lg border border-border text-black/50 transition hover:bg-muted hover:text-black lg:flex"
-              onClick={() => setSidebarCollapsed((c) => !c)}
+              onClick={() =>
+                setSidebarCollapsed((c) => {
+                  const next = !c;
+                  localStorage.setItem("horus-sidebar", next ? "collapsed" : "expanded");
+                  return next;
+                })
+              }
               title={sidebarCollapsed ? "Déplier le menu" : "Replier le menu"}
               type="button"
             >
@@ -234,7 +243,7 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="mx-auto min-w-0 max-w-[1440px] px-4 py-6 pb-24 sm:px-6 sm:py-7 lg:px-8 lg:pb-10">
+        <main className="min-w-0 px-4 py-6 pb-24 sm:px-6 sm:py-7 lg:px-8 lg:pb-10">
           {children}
         </main>
       </div>

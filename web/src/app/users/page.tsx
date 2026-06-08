@@ -1,6 +1,7 @@
 "use client";
 
-import { Pencil, Percent, Plus, RefreshCw, UserPlus, Users, X } from "lucide-react";
+import { Pencil, Percent, RefreshCw, UserPlus, Users, X } from "lucide-react";
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -14,12 +15,10 @@ import {
   StatusBadge,
 } from "@/components/ui";
 import {
-  createUser,
   listOrganizations,
   listUsers,
   updateUser,
   updateUserCommission,
-  type CreateUserPayload,
   type ManagedUser,
   type OrganizationOption,
 } from "@/lib/api";
@@ -79,9 +78,8 @@ export default function UsersPage() {
           setOrganizations(orgsRes.results);
         }
       } catch (err) {
-        if (!cancelled) {
+        if (!cancelled)
           setError(err instanceof Error ? err.message : "Chargement impossible.");
-        }
       } finally {
         if (!cancelled) setIsDataLoading(false);
       }
@@ -95,34 +93,42 @@ export default function UsersPage() {
   }, [authLoading, auth?.authenticated]);
 
   const configuredContributors = users.filter(
-    (user) => user.role === "CONTRIBUTOR" && user.has_configured_commission,
+    (u) => u.role === "CONTRIBUTOR" && u.has_configured_commission,
   ).length;
 
   return (
     <AppShell
       actions={
-        <button
-          aria-label="Actualiser les utilisateurs"
-          className="flex size-10 items-center justify-center rounded-md border border-border bg-white hover:bg-muted disabled:text-black/30"
-          disabled={isLoading}
-          onClick={() => void refresh()}
-          title="Actualiser"
-          type="button"
-        >
-          <RefreshCw className={isLoading ? "animate-spin" : ""} size={18} />
-        </button>
+        <div className="flex items-center gap-2">
+          {canManageUsers ? (
+            <PageAction href="/users/new" icon={UserPlus}>
+              Nouveau compte
+            </PageAction>
+          ) : null}
+          <button
+            aria-label="Actualiser"
+            className="flex size-9 items-center justify-center rounded-[9px] border border-border bg-white text-black/50 shadow-xs transition hover:bg-muted disabled:text-black/25"
+            disabled={isLoading}
+            onClick={() => void refresh()}
+            title="Actualiser"
+            type="button"
+          >
+            <RefreshCw className={isLoading ? "animate-spin" : ""} size={15} />
+          </button>
+        </div>
       }
       description="Comptes, rôles et paramètres de commission"
       title="Utilisateurs"
     >
       <div className="space-y-5">
+        {/* ── KPI cards ──────────────────────── */}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
           <MetricCard icon={Users} label="Utilisateurs" value={users.length} />
           <MetricCard
             icon={UserPlus}
             label="Apporteurs"
             tone="primary"
-            value={users.filter((user) => user.role === "CONTRIBUTOR").length}
+            value={users.filter((u) => u.role === "CONTRIBUTOR").length}
           />
           <MetricCard
             detail="Apporteurs prêts pour l'émission"
@@ -135,58 +141,53 @@ export default function UsersPage() {
 
         {error ? <AlertMessage>{error}</AlertMessage> : null}
 
-        <div
-          className={`grid items-start gap-5 ${
-            canManageUsers ? "xl:grid-cols-[340px_minmax(0,1fr)]" : ""
-          }`}
-        >
-          {canManageUsers ? (
-            <CreateUserPanel
-              canCreateAdminRoles={canCreateAdminRoles}
-              disabled={!auth?.authenticated}
-              onCreated={refresh}
-              organizations={organizations}
+        {/* ── Table ──────────────────────────── */}
+        <section className="app-surface overflow-hidden">
+          {isLoading ? (
+            <LoadingState label="Chargement des utilisateurs" />
+          ) : !auth?.authenticated ? (
+            <EmptyState
+              action={<PageAction href="/login">Se connecter</PageAction>}
+              title="Session requise"
             />
-          ) : null}
-
-          <section className="app-surface overflow-hidden">
-            {isLoading ? (
-              <LoadingState label="Chargement des utilisateurs" />
-            ) : !auth?.authenticated ? (
-              <EmptyState
-                action={<PageAction href="/login">Se connecter</PageAction>}
-                title="Session requise"
-              />
-            ) : users.length ? (
-              <div className="overflow-x-auto">
-                <table className="app-table app-table-responsive">
-                  <thead>
-                    <tr>
-                      <th>Utilisateur</th>
-                      <th>Rôle</th>
-                      <th>Groupe</th>
-                      <th>Prime RC</th>
-                      <th>Police</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {users.map((user) => (
-                      <UserRow
-                        key={user.id}
-                        onEdit={setEditTarget}
-                        onSaved={refresh}
-                        user={user}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <EmptyState title="Aucun utilisateur accessible" />
-            )}
-          </section>
-        </div>
+          ) : users.length ? (
+            <div className="overflow-x-auto">
+              <table className="app-table app-table-responsive">
+                <thead>
+                  <tr>
+                    <th>Utilisateur</th>
+                    <th>Rôle</th>
+                    <th>Groupe</th>
+                    <th>Prime RC</th>
+                    <th>Police</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((user) => (
+                    <UserRow
+                      key={user.id}
+                      onEdit={setEditTarget}
+                      onSaved={refresh}
+                      user={user}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState
+              action={
+                canManageUsers ? (
+                  <PageAction href="/users/new" icon={UserPlus}>
+                    Créer le premier compte
+                  </PageAction>
+                ) : undefined
+              }
+              title="Aucun utilisateur accessible"
+            />
+          )}
+        </section>
       </div>
 
       {editTarget ? (
@@ -202,161 +203,7 @@ export default function UsersPage() {
   );
 }
 
-function CreateUserPanel({
-  canCreateAdminRoles,
-  disabled,
-  onCreated,
-  organizations,
-}: {
-  canCreateAdminRoles: boolean;
-  disabled: boolean;
-  onCreated: () => Promise<void>;
-  organizations: OrganizationOption[];
-}) {
-  const [form, setForm] = useState({
-    username: "",
-    password: "",
-    first_name: "",
-    last_name: "",
-    email: "",
-    role: "CONTRIBUTOR",
-    organization: "",
-  });
-  const [error, setError] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const visibleRoles = useMemo(
-    () => roles.filter((role) => canCreateAdminRoles || !role.value.startsWith("ADMIN")),
-    [canCreateAdminRoles],
-  );
-  const selectedOrganization =
-    form.organization ||
-    (organizations.length === 1 ? String(organizations[0].id) : "");
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    setIsSubmitting(true);
-    const payload: CreateUserPayload = {
-      username: form.username,
-      password: form.password,
-      first_name: form.first_name,
-      last_name: form.last_name,
-      email: form.email,
-      role: form.role as CreateUserPayload["role"],
-      organization: selectedOrganization ? Number(selectedOrganization) : undefined,
-    };
-    try {
-      await createUser(payload);
-      setForm({
-        username: "",
-        password: "",
-        first_name: "",
-        last_name: "",
-        email: "",
-        role: "CONTRIBUTOR",
-        organization: "",
-      });
-      await onCreated();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Création impossible.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  return (
-    <aside className="app-surface p-5">
-      <div className="flex items-center gap-3">
-        <span className="flex size-10 items-center justify-center rounded-md bg-primary text-white">
-          <UserPlus size={20} />
-        </span>
-        <div>
-          <h2 className="font-extrabold">Nouveau compte</h2>
-          <p className="text-sm font-medium text-black/45">Accès et rattachement</p>
-        </div>
-      </div>
-      <form className="mt-5 space-y-3.5" onSubmit={handleSubmit}>
-        <Field
-          disabled={disabled}
-          label="Identifiant"
-          onChange={(value) => setForm({ ...form, username: value })}
-          required
-          value={form.username}
-        />
-        <Field
-          disabled={disabled}
-          label="Mot de passe"
-          onChange={(value) => setForm({ ...form, password: value })}
-          required
-          type="password"
-          value={form.password}
-        />
-        <div className="grid grid-cols-2 gap-3">
-          <Field
-            disabled={disabled}
-            label="Prénom"
-            onChange={(value) => setForm({ ...form, first_name: value })}
-            value={form.first_name}
-          />
-          <Field
-            disabled={disabled}
-            label="Nom"
-            onChange={(value) => setForm({ ...form, last_name: value })}
-            value={form.last_name}
-          />
-        </div>
-        <Field
-          disabled={disabled}
-          label="Email"
-          onChange={(value) => setForm({ ...form, email: value })}
-          type="email"
-          value={form.email}
-        />
-        <label className="block">
-          <span className="text-xs font-extrabold uppercase text-black/52">Rôle</span>
-          <select
-            className="app-field mt-1.5"
-            disabled={disabled}
-            onChange={(event) => setForm({ ...form, role: event.target.value })}
-            value={form.role}
-          >
-            {visibleRoles.map((role) => (
-              <option key={role.value} value={role.value}>
-                {role.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="text-xs font-extrabold uppercase text-black/52">Groupe</span>
-          <select
-            className="app-field mt-1.5"
-            disabled={disabled}
-            onChange={(event) => setForm({ ...form, organization: event.target.value })}
-            required={form.role !== "ADMIN_GENERAL"}
-            value={selectedOrganization}
-          >
-            <option value="">Sélectionner un groupe</option>
-            {organizations.map((organization) => (
-              <option key={organization.id} value={organization.id}>
-                {organization.name} ({organization.code})
-              </option>
-            ))}
-          </select>
-        </label>
-        {error ? <AlertMessage>{error}</AlertMessage> : null}
-        <button
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary font-extrabold text-white hover:bg-[var(--primary-strong)] disabled:bg-black/25"
-          disabled={disabled || isSubmitting}
-          type="submit"
-        >
-          <Plus size={17} />
-          {isSubmitting ? "Création..." : "Créer le compte"}
-        </button>
-      </form>
-    </aside>
-  );
-}
+/* ── UserRow ──────────────────────────────────────────────────────── */
 
 function UserRow({
   user,
@@ -400,15 +247,17 @@ function UserRow({
               </span>
             ) : null}
           </div>
-          <p className="mt-1 text-xs font-semibold text-black/45">{user.email || "Sans email"}</p>
+          <p className="mt-1 text-xs font-semibold text-black/45">
+            {user.email || "Sans email"}
+          </p>
           {error ? <p className="mt-2 text-xs font-bold text-red-700">{error}</p> : null}
         </div>
       </td>
       <td data-label="Rôle">
         <StatusBadge status={user.role} />
       </td>
-      <td data-label="Groupe" className="font-bold">
-        {user.organization_name ?? "-"}
+      <td className="font-bold" data-label="Groupe">
+        {user.organization_name ?? "—"}
       </td>
       <td data-label="Prime RC">
         <div className="relative">
@@ -416,7 +265,7 @@ function UserRow({
             aria-label={`Commission Prime RC de ${user.username}`}
             className="app-field h-10 min-h-10 w-28 pr-8"
             disabled={user.role !== "CONTRIBUTOR"}
-            onChange={(event) => setPercent(event.target.value)}
+            onChange={(e) => setPercent(e.target.value)}
             type="number"
             value={percent}
           />
@@ -430,7 +279,7 @@ function UserRow({
           aria-label={`Commission fixe de ${user.username}`}
           className="app-field h-10 min-h-10 w-28"
           disabled={user.role !== "CONTRIBUTOR"}
-          onChange={(event) => setFixed(event.target.value)}
+          onChange={(e) => setFixed(e.target.value)}
           type="number"
           value={fixed}
         />
@@ -458,6 +307,8 @@ function UserRow({
     </tr>
   );
 }
+
+/* ── EditUserModal ────────────────────────────────────────────────── */
 
 function EditUserModal({
   user,
@@ -612,6 +463,8 @@ function EditUserModal({
   );
 }
 
+/* ── Field ────────────────────────────────────────────────────────── */
+
 function Field({
   disabled,
   label,
@@ -633,7 +486,7 @@ function Field({
       <input
         className="app-field mt-1.5"
         disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         required={required}
         type={type}
         value={value}
