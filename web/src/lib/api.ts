@@ -125,6 +125,8 @@ export type AuthUser = {
   organization: number | null;
   organization_name: string | null;
   has_configured_commission: boolean;
+  is_active: boolean;
+  date_joined: string;
 };
 
 export type AuthState = {
@@ -153,8 +155,6 @@ export async function logout() {
 export type ManagedUser = AuthUser & {
   commission_percent_on_prime_rc: string | null;
   commission_fixed_on_policy_fee: number | null;
-  is_active: boolean;
-  date_joined: string;
 };
 
 export type CreateUserPayload = {
@@ -169,6 +169,29 @@ export type CreateUserPayload = {
 
 export async function listUsers() {
   return fetchApi<ApiListResponse<ManagedUser>>("/accounts/users/");
+}
+
+export type UpdateProfilePayload = {
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+};
+
+export async function updateProfile(payload: UpdateProfilePayload) {
+  return fetchApi<AuthUser>("/accounts/profile/", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function changePassword(payload: {
+  current_password: string;
+  new_password: string;
+}) {
+  return fetchApi<{ detail: string }>("/accounts/profile/change-password/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function createUser(payload: CreateUserPayload) {
@@ -384,6 +407,7 @@ export type ContractInternalStatus =
   | "QUOTE_READY"
   | "PAYMENT_PENDING"
   | "PAID"
+  | "ISSUING"
   | "ISSUED"
   | "CANCELLED";
 

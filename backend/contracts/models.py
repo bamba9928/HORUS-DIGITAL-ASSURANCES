@@ -16,6 +16,7 @@ class Contract(models.Model):
         QUOTE_READY = "QUOTE_READY", "Devis pret"
         PAYMENT_PENDING = "PAYMENT_PENDING", "Paiement en attente"
         PAID = "PAID", "Paye"
+        ISSUING = "ISSUING", "Emission en cours"
         ISSUED = "ISSUED", "Emis"
         CANCELLED = "CANCELLED", "Annule"
 
@@ -62,6 +63,7 @@ class Contract(models.Model):
     ass_response_payload = models.JSONField(default=dict, blank=True)
     ass_issue_request_payload = models.JSONField(default=dict, blank=True)
     ass_issue_response_payload = models.JSONField(default=dict, blank=True)
+    issuance_started_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

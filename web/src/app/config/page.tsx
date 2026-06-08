@@ -6,7 +6,6 @@ import {
   Boxes,
   Building2,
   CheckCircle2,
-  Clock,
   Globe,
   KeyRound,
   RefreshCw,
@@ -64,7 +63,6 @@ export default function ConfigPage() {
     }
     void load();
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, auth?.authenticated]);
 
   return (
@@ -131,15 +129,11 @@ export default function ConfigPage() {
                     label="Mode mock"
                     value={config.ass_mock_enabled ? "Activé" : "Désactivé"}
                     ok={!config.ass_mock_enabled}
-                    okLabel="Réel"
-                    warnLabel="Mock"
                   />
                   <ConfigRow
                     label="Appels réels autorisés"
                     value={config.ass_real_calls_allowed ? "Oui" : "Non"}
                     ok={config.ass_real_calls_allowed}
-                    okLabel="Oui"
-                    warnLabel="Non"
                   />
                   <ConfigRow
                     label="Frais de police (cout_police_ass)"
@@ -162,8 +156,6 @@ export default function ConfigPage() {
                     label="Identifiants API"
                     value={config.ass_credentials_set ? "Configurés" : "Non configurés"}
                     ok={config.ass_credentials_set}
-                    okLabel="Configurés"
-                    warnLabel="Manquants"
                   />
                 </div>
               ) : null}
@@ -227,15 +219,11 @@ export default function ConfigPage() {
                     label="Environnement"
                     value={config.environment === "production" ? "Production" : "Développement"}
                     ok={config.environment === "production"}
-                    okLabel="Production"
-                    warnLabel="Développement"
                   />
                   <ConfigRow
                     label="Mode debug"
                     value={config.debug ? "Activé" : "Désactivé"}
                     ok={!config.debug}
-                    okLabel="Désactivé"
-                    warnLabel="Activé"
                   />
                   <ConfigRow
                     label="Langue"
@@ -263,8 +251,6 @@ export default function ConfigPage() {
                     label="Identifiants ASS"
                     value={config.ass_credentials_set ? "Définis" : "Manquants"}
                     ok={config.ass_credentials_set}
-                    okLabel="Définis"
-                    warnLabel="Manquants"
                   />
                   <ConfigRow
                     label="Appels réseau mock"
@@ -315,16 +301,12 @@ function ConfigRow({
   ok,
   neutral = false,
   mono = false,
-  okLabel,
-  warnLabel,
 }: {
   label: string;
   value: string;
   ok?: boolean;
   neutral?: boolean;
   mono?: boolean;
-  okLabel?: string;
-  warnLabel?: string;
 }) {
   let icon: React.ReactNode = null;
   if (!neutral) {

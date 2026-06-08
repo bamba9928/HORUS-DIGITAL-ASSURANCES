@@ -535,17 +535,21 @@ function SessionControl({
       }`}
     >
       {collapsed ? null : (
-        <>
+        <Link
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 transition hover:bg-white/[0.07]"
+          href="/profile"
+          title="Mon profil"
+        >
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.09] text-[10px] font-black text-white">
             {initials}
           </span>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0">
             <p className="truncate text-xs font-bold text-white/80">{name}</p>
             <p className="truncate text-[10px] font-semibold text-white/30">
               {roleLabel(auth.user.role)}
             </p>
           </div>
-        </>
+        </Link>
       )}
       <button
         aria-label="Se déconnecter"

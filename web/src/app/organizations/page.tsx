@@ -76,7 +76,6 @@ export default function OrganizationsPage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, auth?.authenticated]);
 
   const filtered = useMemo(() => {

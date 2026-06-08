@@ -99,7 +99,6 @@ export default function AssIntegrationPage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, auth?.authenticated]);
 
   return (
@@ -284,7 +283,7 @@ function RegistrationVerificationPanel({ isMock }: { isMock: boolean }) {
   return (
     <section className="app-surface overflow-hidden">
       <div className="border-b border-border px-5 py-3.5">
-        <h2 className="text-[13.5px] font-extrabold">Vérification d'immatriculation</h2>
+        <h2 className="text-[13.5px] font-extrabold">Vérification d&apos;immatriculation</h2>
         <p className="mt-0.5 text-xs font-medium text-black/40">
           Interroger le registre ASS
         </p>

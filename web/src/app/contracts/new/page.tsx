@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
@@ -173,18 +173,6 @@ type FleetCoverage = {
   personType: string;
 };
 
-// Contrat remorque : tracteur déjà assuré dans ASS + données de la remorque
-type RemorqueForm = {
-  referenceVehicule: string; // immatriculation du véhicule tracteur (déjà assuré dans ASS)
-  immatriculation: string;
-  brand: string;
-  model: string;
-  effectDate: string;
-  duration: string;
-  periodicity: string;
-  personType: string;
-};
-
 const emptyGuaranteeOptions: GuaranteeOptionsForm = {
   garantiesOptPT: "",
   garantiesOptAR: "",
@@ -208,17 +196,6 @@ const emptyFleetCoverage: FleetCoverage = {
   personType: "MORALE",
 };
 
-const emptyRemorque: RemorqueForm = {
-  referenceVehicule: "",
-  immatriculation: "",
-  brand: "",
-  model: "",
-  effectDate: "",
-  duration: "12",
-  periodicity: "MOIS",
-  personType: "PHYSIQUE",
-};
-
 const durationOptions = Array.from({ length: 12 }, (_, index) => ({
   value: String(index + 1),
   label: `${index + 1} mois`,
@@ -227,6 +204,14 @@ const durationOptions = Array.from({ length: 12 }, (_, index) => ({
 const VALID_CONTRACT_TYPES = ["AUTO_MONO", "FLEET", "BUS_SCHOOL", "GARAGE"] as const;
 
 export default function NewContractPage() {
+  return (
+    <Suspense fallback={null}>
+      <NewContractPageContent />
+    </Suspense>
+  );
+}
+
+function NewContractPageContent() {
   const { auth, isLoading: isAuthLoading } = useAuth();
   const searchParams = useSearchParams();
   const [step, setStep] = useState(1);
@@ -250,8 +235,6 @@ export default function NewContractPage() {
   const [contractTypes, setContractTypes] = useState<SelectOption[]>([]);
   const [categories, setCategories] = useState<SelectOption[]>([]);
   const [subcategories, setSubcategories] = useState<SelectOption[]>([]);
-  const [trailerCategories, setTrailerCategories] = useState<SelectOption[]>([]);
-  const [trailerSubcategories, setTrailerSubcategories] = useState<SelectOption[]>([]);
   const [brands, setBrands] = useState<SelectOption[]>([]);
   const [energies, setEnergies] = useState<SelectOption[]>([]);
   const [guarantees, setGuarantees] = useState<SelectOption[]>([]);
@@ -270,7 +253,6 @@ export default function NewContractPage() {
   const [showErrors, setShowErrors] = useState(false);
   const [garage, setGarage] = useState<GarageForm>(emptyGarage);
   const [fleetCoverage, setFleetCoverage] = useState<FleetCoverage>(emptyFleetCoverage);
-  const [remorque, setRemorque] = useState<RemorqueForm>(emptyRemorque);
   const [registrationLookupState, setRegistrationLookupState] =
     useState<RegistrationLookupState>("idle");
   const [registrationLookupMessage, setRegistrationLookupMessage] = useState("");
@@ -285,7 +267,6 @@ export default function NewContractPage() {
     Promise.all([
       fetchOptions("/referentials/contract-types/"),
       fetchOptions("/referentials/vehicle-categories/"),
-      fetchOptions("/referentials/vehicle-categories/?context=trailer"),
       fetchVehicleBrands(),
       fetchOptions("/referentials/energies/"),
       fetchOptions("/referentials/guarantees/"),
@@ -295,7 +276,6 @@ export default function NewContractPage() {
         ([
           typeData,
           categoryData,
-          trailerCategoryData,
           brandData,
           energyData,
           guaranteeData,
@@ -303,7 +283,6 @@ export default function NewContractPage() {
         ]) => {
           setContractTypes(typeData);
           setCategories(categoryData.filter((item) => item.value !== "REMORQUE"));
-          setTrailerCategories(trailerCategoryData);
           setBrands(brandData);
           setEnergies(energyData);
           setGuarantees(guaranteeData);
@@ -1907,99 +1886,6 @@ function FleetCoverageFields({
   );
 }
 
-function RemorqueFields({
-  brands,
-  onCreateBrand,
-  remorque,
-  showErrors = false,
-  updateRemorque,
-}: {
-  brands: SelectOption[];
-  onCreateBrand: (label: string) => Promise<SelectOption | undefined>;
-  remorque: RemorqueForm;
-  showErrors?: boolean;
-  updateRemorque: (field: keyof RemorqueForm, value: string) => void;
-}) {
-  return (
-    <>
-      <FormBlock icon={CarFront} title="Remorque">
-        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
-          <strong>Condition ASS :</strong> le véhicule tracteur doit déjà être assuré digitalement
-          dans ASS (même compagnie). La première remorque rattachée à un tracteur est à RC = 0.
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <TextField
-            error={showErrors && !remorque.referenceVehicule.trim() ? "L'immatriculation du tracteur est obligatoire" : ""}
-            helper="Immatriculation du véhicule tracteur (déjà assuré dans ASS)"
-            label="Référence tracteur"
-            onChange={(value) => updateRemorque("referenceVehicule", value)}
-            placeholder="DK-0000-KO"
-            required
-            value={remorque.referenceVehicule}
-          />
-          <TextField
-            error={showErrors && !remorque.immatriculation.trim() ? "L'immatriculation de la remorque est obligatoire" : ""}
-            label="Immatriculation remorque"
-            onChange={(value) => updateRemorque("immatriculation", value)}
-            placeholder="KL2365HA"
-            required
-            value={remorque.immatriculation}
-          />
-          <SelectSearch
-            createLabel="Ajouter la marque"
-            error={showErrors && !remorque.brand.trim() ? "La marque est obligatoire" : ""}
-            label="Marque"
-            onCreate={onCreateBrand}
-            onChange={(value) => updateRemorque("brand", value)}
-            options={brands}
-            placeholder="Sélectionner une marque"
-            required
-            value={remorque.brand}
-          />
-          <TextField
-            error={showErrors && !remorque.model.trim() ? "Le modèle est obligatoire" : ""}
-            label="Modèle"
-            onChange={(value) => updateRemorque("model", value)}
-            placeholder="Plateau"
-            required
-            value={remorque.model}
-          />
-        </div>
-      </FormBlock>
-      <FormBlock icon={CalendarRange} title="Couverture">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <SelectField
-            error={showErrors && !remorque.duration ? "La durée est obligatoire" : ""}
-            label="Durée"
-            onChange={(value) => updateRemorque("duration", value)}
-            options={durationOptions}
-            placeholder="Choisir une durée"
-            required
-            value={remorque.duration}
-          />
-          <DatePicker
-            error={showErrors && !remorque.effectDate ? "La date d'effet est obligatoire" : ""}
-            label="Date d'effet"
-            minDate={TODAY}
-            onChange={(value) => updateRemorque("effectDate", value)}
-            required
-            value={remorque.effectDate}
-          />
-          <SelectField
-            label="Type de personne"
-            onChange={(value) => updateRemorque("personType", value)}
-            options={[
-              { value: "PHYSIQUE", label: "Personne physique" },
-              { value: "MORALE", label: "Personne morale" },
-            ]}
-            value={remorque.personType}
-          />
-        </div>
-      </FormBlock>
-    </>
-  );
-}
-
 function FleetSection({
   addTrailer,
   brands,
@@ -2264,143 +2150,6 @@ function SummarySection({
 
 function SummaryGrid({ children }: { children: React.ReactNode }) {
   return <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm max-sm:grid-cols-1">{children}</dl>;
-}
-
-function ContractSummary({
-  contractTypeLabel,
-  fleetCoverage,
-  fleetVehicles,
-  garage,
-  guaranteeOptions,
-  guarantees,
-  insured,
-  isFleet,
-  isGarage,
-  policyholder,
-  sameAsPolicyholder,
-  selectedGuarantees,
-  vehicle,
-}: {
-  contractTypeLabel: string;
-  fleetCoverage: FleetCoverage;
-  fleetVehicles: FleetVehicle[];
-  garage: GarageForm;
-  guaranteeOptions: GuaranteeOptionsForm;
-  guarantees: SelectOption[];
-  insured: PersonForm;
-  isFleet: boolean;
-  isGarage: boolean;
-  policyholder: PersonForm;
-  sameAsPolicyholder: boolean;
-  selectedGuarantees: number[];
-  vehicle: VehicleForm;
-}) {
-  const optionLabels = guaranteeLabels(guarantees, selectedGuarantees);
-  const optionSummaryText = guaranteeOptionSummary(guaranteeOptions);
-  const coverageSource = isFleet ? fleetCoverage : vehicle;
-
-  return (
-    <div className="space-y-4">
-      {/* ── Client ── */}
-      <SummarySection icon={UserRound} title="Client">
-        <SummaryGrid>
-          <SummaryItem label="Souscripteur" value={personLabel(policyholder)} />
-          <SummaryItem
-            label="Assuré"
-            value={sameAsPolicyholder ? "Identique au souscripteur" : personLabel(insured)}
-          />
-          <SummaryItem label="Téléphone" value={policyholder.phone || "—"} />
-          {policyholder.email ? <SummaryItem label="Email" value={policyholder.email} /> : null}
-          <SummaryItem label="Adresse" value={policyholder.address || "—"} />
-        </SummaryGrid>
-      </SummarySection>
-
-      {/* ── Véhicule / Garage / Flotte ── */}
-      <SummarySection
-        icon={isGarage ? Warehouse : isFleet ? FileText : CarFront}
-        title={isFleet ? `Flotte (${fleetVehicles.length} véhicule${fleetVehicles.length > 1 ? "s" : ""})` : isGarage ? "Garage" : "Véhicule"}
-      >
-        {isFleet ? (
-          <FleetSummary fleetVehicles={fleetVehicles} />
-        ) : isGarage ? (
-          <SummaryGrid>
-            <SummaryItem label="Type de contrat" value={contractTypeLabel} />
-            <SummaryItem label="Genre" value={garage.subcategory || "—"} />
-            <SummaryItem label="Immatriculation" value={garage.registration || "—"} />
-            <SummaryItem label="Nombre de cartes" value={garage.nombreCarte || "—"} />
-          </SummaryGrid>
-        ) : (
-          <SummaryGrid>
-            <SummaryItem label="Type de contrat" value={contractTypeLabel} />
-            <SummaryItem label="Immatriculation" value={vehicle.registration || "—"} />
-            <SummaryItem label="Marque / Modèle" value={`${vehicle.brand || "—"} ${vehicle.model || ""}`.trim()} />
-            <SummaryItem label="Genre" value={vehicle.subcategory || "—"} />
-            <SummaryItem label="Énergie" value={vehicle.energy || "—"} />
-            <SummaryItem
-              label={vehicle.cylindree ? "Cylindrée" : "Puissance fiscale"}
-              value={vehicle.cylindree ? `${vehicle.cylindree} cm³` : vehicle.fiscalPower ? `${vehicle.fiscalPower} CV` : "—"}
-            />
-            {vehicle.seats ? <SummaryItem label="Nb places" value={vehicle.seats} /> : null}
-          </SummaryGrid>
-        )}
-      </SummarySection>
-
-      {/* ── Couverture ── */}
-      <SummarySection icon={CalendarRange} title="Couverture">
-        <SummaryGrid>
-          <SummaryItem
-            label="Date d'effet"
-            value={(isGarage ? garage.effectDate : coverageSource.effectDate) || "—"}
-          />
-          <SummaryItem
-            label="Durée"
-            value={
-              (isGarage ? garage.duration : coverageSource.duration)
-                ? `${isGarage ? garage.duration : coverageSource.duration} mois`
-                : "—"
-            }
-          />
-          {isFleet ? (
-            <SummaryItem
-              label="Type de personne"
-              value={fleetCoverage.personType === "MORALE" ? "Personne morale" : "Personne physique"}
-            />
-          ) : null}
-        </SummaryGrid>
-      </SummarySection>
-
-      {/* ── Garanties ── */}
-      <SummarySection icon={ShieldCheck} title="Garanties">
-        {/* Incluses */}
-        <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-black/35">Incluses</p>
-        <div className="mb-4 flex flex-wrap gap-2">
-          {["RC", "CEDEAO"].map((g) => (
-            <span key={g} className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-extrabold text-emerald-700">
-              <Check size={11} strokeWidth={3} />
-              {g}
-            </span>
-          ))}
-        </div>
-        {/* Optionnelles */}
-        <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-black/35">Optionnelles</p>
-        {optionLabels.length ? (
-          <div className="flex flex-wrap gap-2">
-            {optionLabels.map((label) => (
-              <span key={label} className="flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/5 px-3 py-1 text-xs font-extrabold text-primary">
-                <Check size={11} strokeWidth={3} />
-                {label}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm font-semibold text-black/35">Aucune garantie optionnelle</p>
-        )}
-        {optionSummaryText ? (
-          <p className="mt-3 rounded-lg bg-primary/5 px-3 py-2 text-xs font-bold text-primary/70">{optionSummaryText}</p>
-        ) : null}
-      </SummarySection>
-    </div>
-  );
 }
 
 function QuoteResultPanel({ quote }: { quote: ContractQuote }) {

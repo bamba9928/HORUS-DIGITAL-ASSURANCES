@@ -76,7 +76,6 @@ export default function PaymentsPage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, auth?.authenticated]);
 
   function handleStatusChange(next: PaymentStatus | "") {
@@ -316,6 +315,7 @@ const CONTRACT_STATUS_LABELS: Record<string, string> = {
   QUOTE_READY: "Devis prêt",
   PAYMENT_PENDING: "Paiement en attente",
   PAID: "Payé",
+  ISSUING: "Émission en cours",
   ISSUED: "Émis",
   CANCELLED: "Annulé",
 };

@@ -13,22 +13,24 @@ API REST de la plateforme Horus Assurances Digital.
 ## Démarrage
 
 ```bash
+# Depuis la racine du projet
+
 # Copier les variables d'environnement
-cp .env.example .env
+cp backend/.env.example backend/.env
 
 # Installer les dépendances (avec uv)
-uv sync
+uv sync --group dev
 # ou avec pip :
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 
 # Appliquer les migrations
-python manage.py migrate
+uv run python backend/manage.py migrate
 
 # Créer un superutilisateur (rôle ADMIN_GENERAL)
-python manage.py createsuperuser
+uv run python backend/manage.py createsuperuser
 
 # Lancer le serveur de développement
-python manage.py runserver
+uv run python backend/manage.py runserver
 # → http://localhost:8000
 ```
 
@@ -77,7 +79,7 @@ CRUD complet accessible aux `ADMIN_GENERAL`.
 ### `contracts`
 Cycle de vie complet des contrats d'assurance :
 - Types : `AUTO_MONO`, `MOTO`, `FLEET`, `BUS_SCHOOL`, `GARAGE`
-- Statuts internes : `DRAFT → QUOTE_READY → PAYMENT_PENDING → PAID → ISSUED / CANCELLED`
+- Statuts internes : `DRAFT → QUOTE_READY → PAYMENT_PENDING → PAID → ISSUING → ISSUED / CANCELLED`
 - Payload JSON `draft_payload` stockant les données de souscription
 - Intégration A.A.S pour le calcul (quote) et l'émission (issue)
 
@@ -109,10 +111,8 @@ de `settings.py`. Accessible aux `ADMIN_GENERAL` uniquement.
 
 ```bash
 # Lancer tous les tests
-pytest
+uv run pytest
 
-# Avec couverture
-pytest --cov=.
 ```
 
 ## Production
@@ -128,5 +128,5 @@ export SECURE_SSL_REDIRECT=True
 python manage.py collectstatic --no-input
 
 # Lancer avec Gunicorn
-gunicorn config.wsgi:application --bind 0.0.0.0:8000
+uv run gunicorn config.wsgi:application --chdir backend --bind 0.0.0.0:8000
 ```

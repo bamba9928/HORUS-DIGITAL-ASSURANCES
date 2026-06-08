@@ -11,6 +11,8 @@ from accounts.models import User
 from accounts.permissions import can_manage_commission, can_manage_user
 from accounts.serializers import (
     AuthLoginSerializer,
+    ChangePasswordSerializer,
+    ProfileUpdateSerializer,
     UserCommissionSerializer,
     UserCreateSerializer,
     UserReadSerializer,
@@ -118,6 +120,38 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         return Response(UserReadSerializer(user).data)
+
+
+class ProfileView(APIView):
+    """Profil du compte connecté — lecture et mise à jour des champs personnels."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response(UserReadSerializer(request.user).data)
+
+    def patch(self, request):
+        serializer = ProfileUpdateSerializer(
+            request.user, data=request.data, partial=True, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(UserReadSerializer(user).data)
+
+
+class ChangePasswordView(APIView):
+    """Changement de mot de passe du compte connecté."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from django.contrib.auth import update_session_auth_hash
+
+        serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        request.user.set_password(serializer.validated_data["new_password"])
+        request.user.save(update_fields=["password"])
+        # Maintenir la session active après changement de mot de passe
+        update_session_auth_hash(request, request.user)
+        return Response({"detail": "Mot de passe mis à jour avec succès."})
 
 
 class UserCommissionView(APIView):

@@ -35,6 +35,7 @@ const statusTabs: { label: string; value: ContractInternalStatus | "" }[] = [
   { label: "Devis prêts", value: "QUOTE_READY" },
   { label: "Paiement", value: "PAYMENT_PENDING" },
   { label: "Payés", value: "PAID" },
+  { label: "En émission", value: "ISSUING" },
   { label: "Émis", value: "ISSUED" },
   { label: "Annulés", value: "CANCELLED" },
 ];

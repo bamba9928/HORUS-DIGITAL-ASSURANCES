@@ -52,7 +52,6 @@ export function DashboardAssStockCard() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, auth?.authenticated]);
 
   const qrCount = stock?.available_qr;

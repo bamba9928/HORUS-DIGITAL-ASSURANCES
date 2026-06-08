@@ -1,7 +1,6 @@
 "use client";
 
 import { Pencil, Percent, RefreshCw, UserPlus, Users, X } from "lucide-react";
-import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -89,8 +88,7 @@ export default function UsersPage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, auth?.authenticated]);
+  }, [authLoading, auth?.authenticated, auth?.user]);
 
   const configuredContributors = users.filter(
     (u) => u.role === "CONTRIBUTOR" && u.has_configured_commission,

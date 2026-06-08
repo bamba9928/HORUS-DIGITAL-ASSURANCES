@@ -155,8 +155,14 @@ def test_vehicle_brand_search_uses_imported_referential():
 
 
 @pytest.mark.django_db
-def test_vehicle_brand_can_be_added_when_missing():
+def test_authenticated_contributor_can_add_vehicle_brand_when_missing():
+    contributor = User.objects.create_user(
+        username="brand-contributor-create",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+    )
     client = APIClient()
+    client.force_authenticate(contributor)
 
     create_response = client.post(
         "/api/referentials/vehicle-brands/",
@@ -175,6 +181,20 @@ def test_vehicle_brand_can_be_added_when_missing():
     }
     assert search_response.status_code == 200
     assert search_response.data["results"] == [create_response.data]
+
+
+@pytest.mark.django_db
+def test_anonymous_user_cannot_add_vehicle_brand():
+    client = APIClient()
+
+    response = client.post(
+        "/api/referentials/vehicle-brands/",
+        {"label": "Marque Anonyme Interdite"},
+        format="json",
+    )
+
+    assert response.status_code in {401, 403}
+    assert not VehicleBrand.objects.filter(value="MARQUE ANONYME INTERDITE").exists()
 
 
 @pytest.mark.django_db

@@ -140,10 +140,38 @@ def _build_quote(contract_type, prime_rc_ass, breakdown, items):
     return quote
 
 
-@transaction.atomic
 def issue_contract(contract, ass_client=None):
     ass_client = ass_client or AssClient()
+    contract, already_issued = reserve_contract_issue(contract.pk)
+    if already_issued:
+        return build_issue_result(contract)
 
+    try:
+        request_payload, ass_response, issue_data = call_ass_issue(contract, ass_client)
+        contract = finalize_contract_issue(
+            contract_id=contract.pk,
+            request_payload=request_payload,
+            ass_response=ass_response,
+            issue_data=issue_data,
+        )
+    except Exception:
+        release_contract_issue(contract.pk)
+        raise
+
+    return build_issue_result(contract)
+
+
+@transaction.atomic
+def reserve_contract_issue(contract_id):
+    contract = (
+        Contract.objects.select_for_update()
+        .select_related("contributor")
+        .get(pk=contract_id)
+    )
+    if contract.internal_status == Contract.InternalStatus.ISSUED:
+        return contract, True
+    if contract.internal_status == Contract.InternalStatus.ISSUING:
+        raise ContractIssueError("Une emission ASS est deja en cours pour ce contrat.")
     if contract.internal_status != Contract.InternalStatus.PAID:
         raise ContractIssueError("Le paiement doit etre confirme avant emission.")
     if not has_confirmed_payment(contract):
@@ -153,9 +181,23 @@ def issue_contract(contract, ass_client=None):
     if not contract.contributor.has_configured_commission:
         raise CommissionNotConfiguredError("Commission non configuree pour cet apporteur.")
 
-    reference = contract.reference_trx_partner or build_reference_trx_partner(contract)
-    contract.reference_trx_partner = reference
+    if not contract.reference_trx_partner:
+        contract.reference_trx_partner = build_reference_trx_partner(contract)
+    contract.internal_status = Contract.InternalStatus.ISSUING
+    contract.issuance_started_at = timezone.now()
+    contract.save(
+        update_fields=[
+            "reference_trx_partner",
+            "internal_status",
+            "issuance_started_at",
+            "updated_at",
+        ]
+    )
+    return contract, False
 
+
+def call_ass_issue(contract, ass_client):
+    reference = contract.reference_trx_partner
     if contract.contract_type == Contract.ContractType.AUTO_MONO:
         request_payload = build_auto_issue_payload(contract, reference)
         ass_response = ass_client.issue_auto_contract(request_payload)
@@ -199,6 +241,21 @@ def issue_contract(contract, ass_client=None):
     else:
         raise ContractIssueError("Ce type de contrat n'est pas encore actif pour emission.")
 
+    return request_payload, ass_response, issue_data
+
+
+@transaction.atomic
+def finalize_contract_issue(*, contract_id, request_payload, ass_response, issue_data):
+    contract = (
+        Contract.objects.select_for_update()
+        .select_related("contributor")
+        .get(pk=contract_id)
+    )
+    if contract.internal_status == Contract.InternalStatus.ISSUED:
+        return contract
+    if contract.internal_status != Contract.InternalStatus.ISSUING:
+        raise ContractIssueError("La reservation d'emission ASS n'est plus active.")
+
     snapshot_values = build_commission_snapshot_values(
         contributor=contract.contributor,
         prime_rc_ass=contract.prime_rc_ass,
@@ -218,12 +275,16 @@ def issue_contract(contract, ass_client=None):
     contract.immatriculation = issue_data.get("immatriculation", "")
     contract.attestation_number = issue_data.get("attestationNumber", "")
     contract.secure_key = issue_data.get("secureKey", "")
-    contract.reference_externe = issue_data.get("referenceExterne", reference)
+    contract.reference_externe = issue_data.get(
+        "referenceExterne",
+        contract.reference_trx_partner,
+    )
     contract.date_expiration = parse_ass_datetime(issue_data.get("dateExpiration", ""))
     contract.link_attestation_digitale = issue_data.get("linkAttestation", "")
     contract.link_attestation_cedeao = issue_data.get("linkCarteBrune", "")
     contract.ass_issue_request_payload = request_payload
     contract.ass_issue_response_payload = ass_response
+    contract.issuance_started_at = None
     contract.save(
         update_fields=[
             "reference_trx_partner",
@@ -238,10 +299,30 @@ def issue_contract(contract, ass_client=None):
             "link_attestation_cedeao",
             "ass_issue_request_payload",
             "ass_issue_response_payload",
+            "issuance_started_at",
+            "updated_at",
+        ]
+    )
+    return contract
+
+
+@transaction.atomic
+def release_contract_issue(contract_id):
+    contract = Contract.objects.select_for_update().get(pk=contract_id)
+    if contract.internal_status != Contract.InternalStatus.ISSUING:
+        return
+    contract.internal_status = Contract.InternalStatus.PAID
+    contract.issuance_started_at = None
+    contract.save(
+        update_fields=[
+            "internal_status",
+            "issuance_started_at",
             "updated_at",
         ]
     )
 
+
+def build_issue_result(contract):
     return {
         "contract_id": contract.id,
         "internal_status": contract.internal_status,

@@ -162,6 +162,7 @@ export function StatusBadge({ status }: { status: string }) {
     QUOTE_READY:     { label: "Devis prêt",        className: "bg-blue-50 text-blue-700",          dot: "bg-blue-500",    icon: CheckCircle2  },
     PAYMENT_PENDING: { label: "Paiement attendu",  className: "bg-amber-50 text-amber-700",        dot: "bg-amber-400",   icon: CircleDashed  },
     PAID:            { label: "Payé",              className: "bg-emerald-50 text-emerald-700",    dot: "bg-emerald-500", icon: CheckCircle2  },
+    ISSUING:         { label: "Émission en cours", className: "bg-violet-50 text-violet-700",      dot: "bg-violet-400",  icon: CircleDashed  },
     ISSUED:          { label: "Émis",              className: "bg-violet-50 text-violet-700",      dot: "bg-violet-500",  icon: CheckCircle2  },
     CANCELLED:       { label: "Annulé",            className: "bg-red-50 text-red-600",            dot: "bg-red-400",     icon: AlertCircle   },
     PENDING:         { label: "En attente",        className: "bg-slate-100 text-slate-600",       dot: "bg-slate-400",   icon: CircleDashed  },

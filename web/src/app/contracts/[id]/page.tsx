@@ -53,12 +53,20 @@ type DraftPayload = {
   guaranteeOptions?: Record<string, string | undefined>;
 };
 
-const WORKFLOW_STEPS = ["DRAFT", "QUOTE_READY", "PAYMENT_PENDING", "PAID", "ISSUED"] as const;
+const WORKFLOW_STEPS = [
+  "DRAFT",
+  "QUOTE_READY",
+  "PAYMENT_PENDING",
+  "PAID",
+  "ISSUING",
+  "ISSUED",
+] as const;
 const STEP_LABELS: Record<string, string> = {
   DRAFT: "Brouillon",
   QUOTE_READY: "Devis",
   PAYMENT_PENDING: "Paiement",
   PAID: "Payé",
+  ISSUING: "Émission",
   ISSUED: "Émis",
 };
 

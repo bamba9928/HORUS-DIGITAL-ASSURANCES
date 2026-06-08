@@ -43,22 +43,23 @@ HorusAssurancesDigital/
 ### Backend
 
 ```bash
-cd backend
+# Depuis la racine du projet
 
 # Copier et configurer les variables d'environnement
-cp .env.example .env
+cp backend/.env.example backend/.env
 
 # Installer les dépendances
-uv sync   # ou : pip install -r requirements.txt
+uv sync --group dev
+# ou : pip install -r backend/requirements.txt
 
 # Appliquer les migrations
-python manage.py migrate
+uv run python backend/manage.py migrate
 
 # Créer un superutilisateur
-python manage.py createsuperuser
+uv run python backend/manage.py createsuperuser
 
 # Lancer le serveur de développement
-python manage.py runserver
+uv run python backend/manage.py runserver
 # → API disponible sur http://localhost:8000
 ```
 
@@ -90,17 +91,18 @@ npm run dev
 ## Workflow contrat
 
 ```
-DRAFT → QUOTE_READY → PAYMENT_PENDING → PAID → ISSUED
-                                                   ↓
-                                               CANCELLED (depuis tout statut)
+DRAFT → QUOTE_READY → PAYMENT_PENDING → PAID → ISSUING → ISSUED
+                                                             ↓
+                                                         CANCELLED
 ```
 
 1. **DRAFT** — Brouillon en cours de saisie
 2. **QUOTE_READY** — Devis calculé (appel API A.A.S)
 3. **PAYMENT_PENDING** — En attente de paiement
 4. **PAID** — Paiement confirmé
-5. **ISSUED** — Attestation émise (appel API A.A.S)
-6. **CANCELLED** — Annulé
+5. **ISSUING** — Émission A.A.S réservée et en cours
+6. **ISSUED** — Attestation émise (appel API A.A.S)
+7. **CANCELLED** — Annulé
 
 ## Types de contrats
 

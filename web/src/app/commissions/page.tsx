@@ -89,7 +89,6 @@ export default function CommissionsPage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, auth?.authenticated]);
 
   async function updateStatus(id: number, status: CommissionSnapshot["status"]) {
