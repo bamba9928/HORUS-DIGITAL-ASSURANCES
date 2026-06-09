@@ -166,11 +166,11 @@ export default function PaymentsPage() {
             <div className="relative min-w-48 flex-1">
               <Search
                 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/30"
-                size={14}
+                size={15}
               />
               <input
                 aria-label="Rechercher"
-                className="app-field app-field-with-icon w-full text-sm"
+                className="app-field app-field-with-icon h-9 min-h-0 w-full text-sm"
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Contrat, référence, organisation…"
                 type="search"
@@ -180,7 +180,7 @@ export default function PaymentsPage() {
 
             <select
               aria-label="Statut"
-              className="app-field text-sm"
+              className="app-field h-9 min-h-0 w-auto text-sm"
               onChange={(e) => handleStatusChange(e.target.value as PaymentStatus | "")}
               value={statusFilter}
             >
@@ -256,11 +256,11 @@ function PaymentRow({ payment }: { payment: PaymentListItem }) {
       {/* Contrat */}
       <td>
         <Link
-          className="inline-flex items-center gap-1 text-sm font-extrabold text-primary hover:underline"
+          className="inline-flex items-center justify-center size-7 rounded-md text-primary hover:bg-primary/10 transition"
           href={`/contracts/${payment.contract}`}
+          title="Voir le contrat"
         >
-          #{payment.contract}
-          <ExternalLink size={11} />
+          <ExternalLink size={14} />
         </Link>
         <p className="mt-0.5 text-xs text-black/38">
           {CONTRACT_STATUS_LABELS[payment.contract_internal_status] ??

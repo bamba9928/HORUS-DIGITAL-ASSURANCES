@@ -1,6 +1,6 @@
 "use client";
 
-import { BadgePercent, Banknote, CircleDollarSign, RefreshCw, Search, WalletCards } from "lucide-react";
+import { BadgePercent, Banknote, CircleDollarSign, ExternalLink, RefreshCw, Search, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -189,7 +189,7 @@ export default function CommissionsPage() {
                 size={15}
               />
               <input
-                className="app-field h-9 min-h-0 w-full pl-8 text-sm"
+                className="app-field app-field-with-icon h-9 min-h-0 w-full text-sm"
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Rechercher apporteur, groupe…"
                 type="search"
@@ -245,10 +245,11 @@ export default function CommissionsPage() {
                     <tr key={snapshot.id}>
                       <td data-label="Contrat">
                         <Link
-                          className="text-sm font-extrabold text-primary hover:underline"
+                          className="inline-flex items-center justify-center size-7 rounded-md text-primary hover:bg-primary/10 transition"
                           href={`/contracts/${snapshot.contract}`}
+                          title="Voir le contrat"
                         >
-                          #{snapshot.contract}
+                          <ExternalLink size={14} />
                         </Link>
                       </td>
 

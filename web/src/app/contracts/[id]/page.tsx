@@ -29,6 +29,7 @@ import {
   type ContractDetail,
   type ContractQuote,
   type IssueResult,
+  type QuoteBreakdown,
 } from "@/lib/api";
 import {
   canCancelContract,
@@ -504,44 +505,12 @@ export default function ContractDetailPage() {
                   </div>
                 </section>
 
-                {/* Quote result */}
-                {quote ? (
-                  <section className="app-surface overflow-hidden animate-fade-in">
-                    <div className="border-b border-border px-4 py-3.5">
-                      <h2 className="text-[13.5px] font-extrabold">Devis calculé</h2>
-                    </div>
-                    <div className="divide-y divide-border">
-                      <QuoteRow label="Type" value={quote.type} text />
-                      <QuoteRow label="Prime RC" value={formatMoney(quote.prime_rc_ass)} />
-                      <QuoteRow label="Police ASS" value={formatMoney(quote.policy_fee_ass)} />
-                      {quote.taxe !== undefined ? (
-                        <QuoteRow label="Taxe" value={formatMoney(quote.taxe ?? 0)} />
-                      ) : null}
-                      {quote.cedeao !== undefined ? (
-                        <QuoteRow label="CEDEAO" value={formatMoney(quote.cedeao ?? 0)} />
-                      ) : null}
-                      {quote.reduction !== undefined && (quote.reduction ?? 0) > 0 ? (
-                        <QuoteRow
-                          label="Réduction"
-                          value={`−${formatMoney(quote.reduction ?? 0)}`}
-                          reduction
-                        />
-                      ) : null}
-                      {quote.prime_totale !== undefined ? (
-                        <QuoteRow
-                          label="Prime totale"
-                          value={formatMoney(quote.prime_totale ?? 0)}
-                          total
-                        />
-                      ) : null}
-                    </div>
-                    {quote.warnings.length ? (
-                      <div className="m-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-bold text-amber-800">
-                        {quote.warnings.join(" ")}
-                      </div>
-                    ) : null}
-                  </section>
-                ) : null}
+                {/* Tarification — permanent dès qu'un devis existe */}
+                <TarificationPanel
+                  breakdown={contract.quote_breakdown}
+                  contractType={contract.contract_type}
+                  freshQuote={quote}
+                />
 
                 {/* Attestations */}
                 <AttestationsPanel
@@ -917,6 +886,106 @@ function ActionButton({
   );
 }
 
+function TarificationPanel({
+  breakdown,
+  contractType,
+  freshQuote,
+}: {
+  breakdown: QuoteBreakdown | null;
+  contractType: string;
+  freshQuote: ContractQuote | null;
+}) {
+  // Pas de données → rien à afficher
+  if (!breakdown && !freshQuote) return null;
+
+  // Fusion : on préfère les données fraîches du serveur (breakdown persistant)
+  // mais on garde les warnings / fleet items du quote state en mémoire
+  const b: QuoteBreakdown = breakdown ?? {
+    prime_rc_ass: freshQuote!.prime_rc_ass,
+    cout_police: freshQuote!.policy_fee_ass,
+    taxe: freshQuote!.taxe,
+    cedeao: freshQuote!.cedeao,
+    reduction: freshQuote!.reduction,
+    prime_ag: freshQuote!.prime_ag,
+    fonds_garantie: freshQuote!.fonds_garantie,
+    prime_totale: freshQuote!.prime_totale,
+  };
+
+  const warnings = freshQuote?.warnings ?? [];
+  const fleetItems = freshQuote?.items ?? [];
+  const isFleet = contractType === "FLEET";
+
+  return (
+    <section className="app-surface overflow-hidden animate-fade-in">
+      <div className="border-b border-border px-4 py-3.5">
+        <h2 className="text-[13.5px] font-extrabold">Tarification</h2>
+      </div>
+      <div className="divide-y divide-border">
+        <QuoteRow label="Prime RC" value={formatMoney(b.prime_rc_ass)} />
+        <QuoteRow label="Police ASS" value={formatMoney(b.cout_police)} />
+        {b.taxe !== undefined && b.taxe !== null ? (
+          <QuoteRow label="Taxe" value={formatMoney(b.taxe)} />
+        ) : null}
+        {b.cedeao !== undefined && b.cedeao !== null ? (
+          <QuoteRow label="CEDEAO" value={formatMoney(b.cedeao)} />
+        ) : null}
+        {b.fonds_garantie !== undefined && b.fonds_garantie !== null && b.fonds_garantie > 0 ? (
+          <QuoteRow label="Fonds de garantie" value={formatMoney(b.fonds_garantie)} />
+        ) : null}
+        {b.prime_ag !== undefined && b.prime_ag !== null && b.prime_ag > 0 ? (
+          <QuoteRow label="Prime AG" value={formatMoney(b.prime_ag)} />
+        ) : null}
+        {b.reduction !== undefined && b.reduction !== null && b.reduction > 0 ? (
+          <QuoteRow
+            label="Réduction"
+            value={`−${formatMoney(b.reduction)}`}
+            reduction
+          />
+        ) : null}
+        {b.prime_totale !== undefined && b.prime_totale !== null ? (
+          <QuoteRow
+            label="Prime totale"
+            value={formatMoney(b.prime_totale)}
+            total
+          />
+        ) : null}
+      </div>
+
+      {/* Véhicules flotte si disponibles en mémoire */}
+      {isFleet && fleetItems.length > 0 ? (
+        <div className="border-t border-border">
+          <div className="px-4 pb-2 pt-3">
+            <p className="text-[10px] font-black uppercase tracking-wide text-black/38">
+              Véhicules ({fleetItems.length})
+            </p>
+          </div>
+          <div className="divide-y divide-border pb-2">
+            {fleetItems.map((item) => (
+              <div
+                className="flex items-center justify-between px-4 py-2"
+                key={item.request_id}
+              >
+                <span className="truncate text-xs font-semibold text-black/55">
+                  {item.label}
+                </span>
+                <span className="shrink-0 pl-4 text-xs font-extrabold tabular-nums">
+                  {formatMoney(item.prime_rc_ass)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {warnings.length > 0 ? (
+        <div className="m-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-bold text-amber-800">
+          {warnings.join(" ")}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function AttestationsPanel({
   attestations,
   fallback,
@@ -982,30 +1051,32 @@ function AttestationsPanel({
                   label="Expiration"
                   value={a.date_expiration ? formatDate(a.date_expiration) : "—"}
                 />
-                <div className="flex flex-wrap gap-3 text-[13px] font-bold">
-                  {a.link_attestation_digitale ? (
-                    <a
-                      className="inline-flex items-center gap-1 text-primary hover:underline"
-                      href={a.link_attestation_digitale}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      Attestation
-                      <ExternalLink size={11} />
-                    </a>
-                  ) : null}
-                  {a.link_attestation_cedeao ? (
-                    <a
-                      className="inline-flex items-center gap-1 text-primary hover:underline"
-                      href={a.link_attestation_cedeao}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      Carte brune
-                      <ExternalLink size={11} />
-                    </a>
-                  ) : null}
-                </div>
+                {(a.link_attestation_digitale || a.link_attestation_cedeao) ? (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {a.link_attestation_digitale ? (
+                      <a
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary/10 px-3 text-[12px] font-bold text-primary transition hover:bg-primary/20"
+                        href={a.link_attestation_digitale}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <ExternalLink size={11} />
+                        Attestation digitale
+                      </a>
+                    ) : null}
+                    {a.link_attestation_cedeao ? (
+                      <a
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-amber-50 px-3 text-[12px] font-bold text-amber-700 transition hover:bg-amber-100"
+                        href={a.link_attestation_cedeao}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <ExternalLink size={11} />
+                        Carte brune CEDEAO
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>

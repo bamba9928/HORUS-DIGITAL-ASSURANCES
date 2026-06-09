@@ -678,6 +678,11 @@ def build_bus_rc_payload(vehicle):
         "genre": vehicle.get("subcategory"),
         "energie": vehicle.get("energy"),
         "nombrePlace": to_int(vehicle.get("seats"), default=1),
+        "valeurNeuve": to_int(vehicle.get("newValue"), default=0),
+        "valeurActuelle": to_int(vehicle.get("currentValue"), default=0),
+        "garanties": [],
+        "cout_police": ASS_POLICY_FEE,
+        "remise_rc": 0,
     }
 
 
@@ -695,12 +700,11 @@ def build_bus_issue_payload(contract, reference):
         "periodicite": periodicity,
         "police": f"HORUS-BUS-{contract.id}",
         "referenceTrxPartner": reference,
+        "cout_police": ASS_POLICY_FEE,
+        "remise_rc": 0,
         "souscripteur": policyholder,
         "assure": insured,
-        "vehicule": {
-            **build_issue_vehicle_payload(vehicle),
-            "nombrePlace": to_int(vehicle.get("seats"), default=1),
-        },
+        "vehicule": build_issue_vehicle_payload(vehicle),
     }
 
 
@@ -710,6 +714,11 @@ def build_garage_rc_payload(garage):
         "periodicite": vehicle_periodicity(garage),
         "genre": garage.get("subcategory"),
         "nombreCarte": to_int(garage.get("nombreCarte"), default=1),
+        "valeurNeuve": 0,
+        "valeurActuelle": 0,
+        "garanties": [],
+        "cout_police": ASS_POLICY_FEE,
+        "remise_rc": 0,
     }
 
 
@@ -730,6 +739,8 @@ def build_garage_issue_payload(contract, reference):
         "immatriculation": garage.get("registration") or "",
         "police": f"HORUS-GARAGE-{contract.id}",
         "referenceTrxPartner": reference,
+        "cout_police": ASS_POLICY_FEE,
+        "remise_rc": 0,
         "souscripteur": policyholder,
         "assure": insured,
     }
@@ -910,16 +921,12 @@ def add_months(value, months):
 
 
 def normalize_moto_usage(value):
-    mapping = {
-        "COMMERCIAL": "commerciale",
-        "COMMERCIALE": "commerciale",
-        "commerciale": "commerciale",
-        "NON_COMMERCIAL": "non_commerciale",
-        "NON_COMMERCIALE": "non_commerciale",
-        "non_commercial": "non_commerciale",
-        "non_commerciale": "non_commerciale",
-    }
-    return mapping.get(value, value)
+    upper = str(value or "").upper().removesuffix("E")
+    if upper == "COMMERCIAL":
+        return "COMMERCIALE"
+    if upper == "NON_COMMERCIAL":
+        return "NON_COMMERCIALE"
+    return value
 
 
 def vehicle_periodicity(vehicle, default="MOIS"):

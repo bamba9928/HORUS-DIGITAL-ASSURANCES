@@ -8,22 +8,38 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, Suspense, useState } from "react";
 
-import { AlertMessage } from "@/components/ui";
 import { useAuth } from "@/components/AuthProvider";
+import { AlertMessage } from "@/components/ui";
 import { login } from "@/lib/api";
 
 export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-[#f5f6f9]">
+          <span className="size-6 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
+        </main>
+      }
+    >
+      <LoginPageContent />
+    </Suspense>
+  );
+}
+
+function LoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { refreshAuth } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const redirectTo = searchParams.get("redirect") ?? "/";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -32,7 +48,7 @@ export default function LoginPage() {
     try {
       await login(username, password);
       await refreshAuth();
-      router.push("/");
+      router.push(redirectTo);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Connexion impossible.");
@@ -46,24 +62,16 @@ export default function LoginPage() {
       {/* ── Form side ──────────────────────────────────────────── */}
       <section className="relative flex min-h-screen flex-col bg-white px-6 py-8 sm:px-12">
         {/* Top bar */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-[var(--primary-strong)] text-sm font-black text-white shadow-lg shadow-primary/35">
-              H
+        <div className="flex items-center gap-2.5">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-[var(--primary-strong)] text-sm font-black text-white shadow-lg shadow-primary/35">
+            H
+          </span>
+          <div>
+            <span className="block text-sm font-black tracking-tight">HORUS</span>
+            <span className="block text-[10.5px] font-semibold text-black/38">
+              Assurances Digital
             </span>
-            <div>
-              <span className="block text-sm font-black tracking-tight">HORUS</span>
-              <span className="block text-[10.5px] font-semibold text-black/38">
-                Assurances Digital
-              </span>
-            </div>
           </div>
-          <Link
-            className="text-xs font-bold text-black/40 transition hover:text-black"
-            href="/"
-          >
-            ← Retour
-          </Link>
         </div>
 
         {/* Form centred */}

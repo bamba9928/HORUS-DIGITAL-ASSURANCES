@@ -965,13 +965,6 @@ function NewContractPageContent() {
                     {/* Text */}
                     <div className="min-w-0 text-center sm:text-left">
                       <p
-                        className={`hidden text-[9px] font-black uppercase tracking-wider sm:block ${
-                          active ? "text-white/55" : "opacity-45"
-                        }`}
-                      >
-                        Étape {index + 1}
-                      </p>
-                      <p
                         className={`truncate text-[10px] font-extrabold leading-tight sm:text-[13px] ${
                           active ? "text-white" : ""
                         }`}
@@ -1741,7 +1734,7 @@ function VehicleFields({
               required
               value={vehicle.registration}
             />
-            {registrationLookupState !== "idle" ? (
+            {registrationLookupState !== "idle" && registrationLookupState !== "not_found" ? (
               <p
                 className={`mt-2 flex items-center gap-1.5 text-xs font-bold ${
                   registrationLookupState === "found"

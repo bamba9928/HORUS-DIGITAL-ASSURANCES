@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from contracts.models import Contract
-from contracts.services import validate_guarantee_configuration
+from contracts.services import extract_rc_breakdown, validate_guarantee_configuration
 
 
 PHONE_PATTERN = re.compile(r"^7\d{0,8}$")
@@ -167,6 +167,10 @@ class ContractListSerializer(serializers.ModelSerializer):
     contributor_username = serializers.CharField(source="contributor.username", read_only=True)
     contributor_full_name = serializers.SerializerMethodField()
     vehicle_label = serializers.SerializerMethodField()
+    policy_number = serializers.SerializerMethodField()
+    client_name = serializers.SerializerMethodField()
+    client_phone = serializers.SerializerMethodField()
+    effect_date = serializers.SerializerMethodField()
 
     def get_contributor_full_name(self, obj):
         user = obj.contributor
@@ -186,6 +190,10 @@ class ContractListSerializer(serializers.ModelSerializer):
             "contributor_username",
             "contributor_full_name",
             "vehicle_label",
+            "policy_number",
+            "client_name",
+            "client_phone",
+            "effect_date",
             "prime_rc_ass",
             "cout_police_ass",
             "ttc_ass",
@@ -193,6 +201,8 @@ class ContractListSerializer(serializers.ModelSerializer):
             "attestation_number",
             "reference_externe",
             "date_expiration",
+            "link_attestation_digitale",
+            "link_attestation_cedeao",
             "created_at",
             "updated_at",
         ]
@@ -222,20 +232,107 @@ class ContractListSerializer(serializers.ModelSerializer):
         ]
         return " ".join(str(part) for part in label_parts if part)
 
+    def get_policy_number(self, contract):
+        issue_payload = self._as_dict(contract.ass_issue_request_payload)
+        fleet_payload = self._as_dict(issue_payload.get("flotte"))
+        return self._first_text(
+            issue_payload.get("police"),
+            fleet_payload.get("police"),
+        )
+
+    def get_client_name(self, contract):
+        draft_payload = self._as_dict(contract.draft_payload)
+        client = self._as_dict(
+            draft_payload.get("policyholder") or draft_payload.get("souscripteur")
+        )
+        first_name = self._first_text(
+            client.get("firstName"),
+            client.get("first_name"),
+            client.get("prenom"),
+        )
+        last_name = self._first_text(
+            client.get("lastName"),
+            client.get("last_name"),
+            client.get("nom"),
+            client.get("raisonSociale"),
+        )
+        return " ".join(part for part in [first_name, last_name] if part)
+
+    def get_client_phone(self, contract):
+        draft_payload = self._as_dict(contract.draft_payload)
+        client = self._as_dict(
+            draft_payload.get("policyholder") or draft_payload.get("souscripteur")
+        )
+        return self._first_text(
+            client.get("phone"),
+            client.get("cellulaire"),
+            client.get("telephone"),
+        )
+
+    def get_effect_date(self, contract):
+        draft_payload = self._as_dict(contract.draft_payload)
+        if contract.contract_type == Contract.ContractType.FLEET:
+            fleet = self._as_dict(draft_payload.get("fleet"))
+            vehicles = fleet.get("vehicles")
+            first_vehicle = (
+                self._as_dict(vehicles[0])
+                if isinstance(vehicles, list) and vehicles
+                else {}
+            )
+            effect_date = self._first_text(
+                fleet.get("effectDate"),
+                fleet.get("dateEffet"),
+                first_vehicle.get("effectDate"),
+                first_vehicle.get("dateEffet"),
+            )
+        elif contract.contract_type == Contract.ContractType.GARAGE:
+            garage = self._as_dict(draft_payload.get("garage"))
+            effect_date = self._first_text(
+                garage.get("effectDate"),
+                garage.get("dateEffet"),
+            )
+        else:
+            vehicle = self._as_dict(draft_payload.get("vehicle"))
+            effect_date = self._first_text(
+                vehicle.get("effectDate"),
+                vehicle.get("dateEffet"),
+            )
+
+        if effect_date:
+            return effect_date
+
+        issue_payload = self._as_dict(contract.ass_issue_request_payload)
+        fleet_payload = self._as_dict(issue_payload.get("flotte"))
+        return self._first_text(
+            issue_payload.get("dateEffet"),
+            fleet_payload.get("dateEffet"),
+        )
+
+    @staticmethod
+    def _as_dict(value):
+        return value if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _first_text(*values):
+        for value in values:
+            if value is not None and str(value).strip():
+                return str(value).strip()
+        return ""
+
 
 class ContractDetailSerializer(ContractListSerializer):
     payments = serializers.SerializerMethodField()
     commission_snapshot = serializers.SerializerMethodField()
     ass_attestations = serializers.SerializerMethodField()
+    quote_breakdown = serializers.SerializerMethodField()
 
     class Meta(ContractListSerializer.Meta):
         fields = ContractListSerializer.Meta.fields + [
             "draft_payload",
-            "link_attestation_digitale",
-            "link_attestation_cedeao",
             "payments",
             "commission_snapshot",
             "ass_attestations",
+            "quote_breakdown",
         ]
 
     def get_payments(self, contract):
@@ -391,3 +488,28 @@ class ContractDetailSerializer(ContractListSerializer):
             trailer.get("immatriculation"),
         ]
         return " ".join(str(part) for part in parts if part)
+
+    def get_quote_breakdown(self, contract):
+        """
+        Re-extrait le detail du tarif ASS depuis ass_response_payload (stocke lors
+        du calcul de devis). Permet d'afficher la ventilation de facon persistante.
+        Retourne None si aucun devis n'a encore ete calcule.
+        """
+        if not contract.prime_rc_ass:
+            return None
+        resp = contract.ass_response_payload
+        if not isinstance(resp, dict) or not resp:
+            return None
+
+        # Flotte : pas de breakdown unique — on retourne uniquement les totaux
+        if contract.contract_type == Contract.ContractType.FLEET:
+            return {
+                "prime_rc_ass": contract.prime_rc_ass,
+                "cout_police": contract.cout_police_ass,
+            }
+
+        breakdown = extract_rc_breakdown(resp)
+        base = {"prime_rc_ass": contract.prime_rc_ass, "cout_police": contract.cout_police_ass}
+        if not breakdown:
+            return base
+        return {**base, **breakdown}

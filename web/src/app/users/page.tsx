@@ -1,6 +1,7 @@
 "use client";
 
 import { Pencil, Percent, RefreshCw, UserPlus, Users, X } from "lucide-react";
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -238,7 +239,12 @@ function UserRow({
       <td data-label="Utilisateur">
         <div>
           <div className="flex items-center gap-2">
-            <p className="font-extrabold">{user.username}</p>
+            <Link
+              className="font-extrabold hover:text-primary hover:underline"
+              href={`/users/${user.id}`}
+            >
+              {user.username}
+            </Link>
             {!user.is_active ? (
               <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600">
                 Inactif
@@ -246,7 +252,7 @@ function UserRow({
             ) : null}
           </div>
           <p className="mt-1 text-xs font-semibold text-black/45">
-            {user.email || "Sans email"}
+            {[user.first_name, user.last_name].filter(Boolean).join(" ") || user.email || "Sans nom"}
           </p>
           {error ? <p className="mt-2 text-xs font-bold text-red-700">{error}</p> : null}
         </div>
@@ -293,7 +299,7 @@ function UserRow({
             Modifier
           </button>
           <button
-            className="h-10 rounded-md bg-black px-3 text-xs font-extrabold text-white hover:bg-black/80 disabled:bg-black/20"
+            className="h-10 rounded-md bg-gradient-to-br from-primary to-[var(--primary-strong)] px-3 text-xs font-extrabold text-white shadow-sm shadow-primary/30 hover:brightness-105 disabled:opacity-40"
             disabled={user.role !== "CONTRIBUTOR" || isSaving}
             onClick={saveCommission}
             type="button"

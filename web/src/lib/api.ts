@@ -21,6 +21,10 @@ export type GuaranteeOptionReferential = {
 
 type ApiListResponse<T> = {
   results: T[];
+  count?: number;
+  page?: number;
+  page_size?: number;
+  total_pages?: number;
   warning?: string;
 };
 
@@ -169,6 +173,10 @@ export type CreateUserPayload = {
 
 export async function listUsers() {
   return fetchApi<ApiListResponse<ManagedUser>>("/accounts/users/");
+}
+
+export async function fetchUserById(userId: number) {
+  return fetchApi<ManagedUser>(`/accounts/users/${userId}/`);
 }
 
 export type UpdateProfilePayload = {
@@ -398,8 +406,15 @@ export type ContractSummary = {
   total: number;
 };
 
-export async function fetchContractSummary() {
-  return fetchApi<ContractSummary>("/contracts/summary/");
+export async function fetchContractSummary(params?: {
+  contributor?: number;
+  organization?: number;
+}) {
+  const q = new URLSearchParams();
+  if (params?.contributor) q.set("contributor", String(params.contributor));
+  if (params?.organization) q.set("organization", String(params.organization));
+  const qs = q.toString();
+  return fetchApi<ContractSummary>(`/contracts/summary/${qs ? `?${qs}` : ""}`);
 }
 
 export type ContractInternalStatus =
@@ -422,6 +437,10 @@ export type ContractListItem = {
   contributor_username: string;
   contributor_full_name: string;
   vehicle_label: string;
+  policy_number: string;
+  client_name: string;
+  client_phone: string;
+  effect_date: string;
   prime_rc_ass: number | null;
   cout_police_ass: number;
   ttc_ass: number | null;
@@ -429,9 +448,28 @@ export type ContractListItem = {
   attestation_number: string;
   reference_externe: string;
   date_expiration: string | null;
+  link_attestation_digitale: string;
+  link_attestation_cedeao: string;
   created_at: string;
   updated_at: string;
 };
+
+export type ClientItem = {
+  phone: string;
+  nom: string;
+  prenom: string;
+  email: string;
+  person_type: "PHYSIQUE" | "MORALE";
+  contract_count: number;
+  contract_types: string[];
+  organizations: string[];
+  last_contract_id: number;
+  last_contract_date: string;
+};
+
+export async function listClients() {
+  return fetchApi<{ results: ClientItem[]; count: number }>("/contracts/clients/");
+}
 
 export type PlatformConfig = {
   ass_mock_enabled: boolean;
@@ -511,13 +549,23 @@ export type ContractAssAttestation = {
   link_attestation_cedeao: string;
 };
 
+export type QuoteBreakdown = {
+  prime_rc_ass: number;
+  cout_police: number;
+  taxe?: number;
+  cedeao?: number;
+  reduction?: number;
+  prime_ag?: number;
+  fonds_garantie?: number;
+  prime_totale?: number;
+};
+
 export type ContractDetail = ContractListItem & {
   draft_payload: Record<string, unknown>;
-  link_attestation_digitale: string;
-  link_attestation_cedeao: string;
   payments: ContractPayment[];
   commission_snapshot: ContractCommissionSnapshot | null;
   ass_attestations: ContractAssAttestation[];
+  quote_breakdown: QuoteBreakdown | null;
 };
 
 export type ContractDraft = {
@@ -537,6 +585,11 @@ export type ContractDraftPayload = {
 export async function listContracts(filters?: {
   status?: ContractInternalStatus | "";
   contract_type?: string;
+  search?: string;
+  page?: number;
+  page_size?: number;
+  contributor?: number;
+  organization?: number;
 }) {
   const params = new URLSearchParams();
   if (filters?.status) {
@@ -544,6 +597,21 @@ export async function listContracts(filters?: {
   }
   if (filters?.contract_type) {
     params.set("contract_type", filters.contract_type);
+  }
+  if (filters?.search) {
+    params.set("search", filters.search);
+  }
+  if (filters?.contributor) {
+    params.set("contributor", String(filters.contributor));
+  }
+  if (filters?.organization) {
+    params.set("organization", String(filters.organization));
+  }
+  if (filters?.page) {
+    params.set("page", String(filters.page));
+  }
+  if (filters?.page_size) {
+    params.set("page_size", String(filters.page_size));
   }
   const query = params.toString();
   return fetchApi<ApiListResponse<ContractListItem>>(`/contracts/${query ? `?${query}` : ""}`);

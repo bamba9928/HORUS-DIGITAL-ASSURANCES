@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
@@ -14,6 +15,7 @@ from contracts.services import (
     QuoteCalculationError,
     calculate_contract_quote,
     cancel_contract,
+    first_present,
     issue_contract,
 )
 from payments.services import PaymentConfirmationError, confirm_manual_payment
@@ -105,8 +107,62 @@ class ContractListView(AuthenticatedContractMixin, APIView):
                 return Response({"detail": "Type contrat invalide."}, status=status.HTTP_400_BAD_REQUEST)
             queryset = queryset.filter(contract_type=contract_type)
 
-        serializer = ContractListSerializer(queryset.order_by("-updated_at"), many=True)
-        return Response({"results": serializer.data})
+        contributor_param = request.query_params.get("contributor")
+        if contributor_param:
+            if not str(contributor_param).isdigit():
+                return Response({"detail": "Contributeur invalide."}, status=status.HTTP_400_BAD_REQUEST)
+            queryset = queryset.filter(contributor_id=int(contributor_param))
+
+        organization_param = request.query_params.get("organization")
+        if organization_param:
+            if not str(organization_param).isdigit():
+                return Response({"detail": "Organisation invalide."}, status=status.HTTP_400_BAD_REQUEST)
+            queryset = queryset.filter(organization_id=int(organization_param))
+
+        search = request.query_params.get("search", "").strip()
+        if search:
+            normalized_search = " ".join(search.upper().split())
+            search_query = Q(search_text__contains=normalized_search)
+            if normalized_search.isdigit():
+                search_query |= Q(pk=int(normalized_search))
+            queryset = queryset.filter(search_query)
+
+        queryset = queryset.order_by("-updated_at")
+        count = queryset.count()
+        page_number = None
+        page_size = None
+        page_size_param = request.query_params.get("page_size")
+        if page_size_param is not None:
+            try:
+                page_size = int(page_size_param)
+                page_number = int(request.query_params.get("page", "1"))
+            except ValueError:
+                return Response(
+                    {"detail": "Pagination invalide."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if page_size < 1 or page_size > 100 or page_number < 1:
+                return Response(
+                    {"detail": "Pagination invalide."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            start = (page_number - 1) * page_size
+            queryset = queryset[start : start + page_size]
+
+        serializer = ContractListSerializer(queryset, many=True)
+        response_data = {
+            "results": serializer.data,
+            "count": count,
+        }
+        if page_size is not None and page_number is not None:
+            response_data.update(
+                {
+                    "page": page_number,
+                    "page_size": page_size,
+                    "total_pages": max(1, (count + page_size - 1) // page_size),
+                }
+            )
+        return Response(response_data)
 
 
 class ContractDetailView(AuthenticatedContractMixin, APIView):
@@ -124,6 +180,15 @@ class ContractDetailView(AuthenticatedContractMixin, APIView):
 class ContractSummaryView(AuthenticatedContractMixin, APIView):
     def get(self, request):
         queryset = get_contract_queryset_for_user(request.user)
+
+        contributor_param = request.query_params.get("contributor")
+        if contributor_param and str(contributor_param).isdigit():
+            queryset = queryset.filter(contributor_id=int(contributor_param))
+
+        organization_param = request.query_params.get("organization")
+        if organization_param and str(organization_param).isdigit():
+            queryset = queryset.filter(organization_id=int(organization_param))
+
         return Response(
             {
                 "drafts": queryset.filter(internal_status=Contract.InternalStatus.DRAFT).count(),
@@ -254,3 +319,72 @@ class ContractCancelView(AuthenticatedContractMixin, APIView):
             return Response({"detail": str(exc)}, status=400)
 
         return Response(result)
+
+
+class ClientListView(AuthenticatedContractMixin, APIView):
+    def get(self, request):
+        queryset = (
+            get_contract_queryset_for_user(request.user)
+            .select_related("organization")
+            .order_by("-updated_at")
+        )
+
+        clients = {}
+
+        for contract in queryset:
+            payload = contract.draft_payload
+            if not isinstance(payload, dict):
+                continue
+
+            ph_data = payload.get("policyholder") or payload.get("souscripteur")
+            if not isinstance(ph_data, dict):
+                continue
+
+            phone = first_present(ph_data, ["phone", "cellulaire", "telephone"])
+            nom = first_present(ph_data, ["lastName", "last_name", "nom", "raisonSociale"])
+            if not phone or not nom:
+                continue
+
+            # person type is stored on the vehicle
+            vehicle = payload.get("vehicle") or {}
+            raw_type = (vehicle.get("personType") or vehicle.get("typePersonne")) if isinstance(vehicle, dict) else None
+            person_type = str(raw_type or "").upper() if str(raw_type or "").upper() in ("PHYSIQUE", "MORALE") else "PHYSIQUE"
+
+            if phone not in clients:
+                clients[phone] = {
+                    "phone": phone,
+                    "nom": nom,
+                    "prenom": first_present(ph_data, ["firstName", "first_name", "prenom"]),
+                    "email": first_present(ph_data, ["email"]),
+                    "person_type": person_type,
+                    "contract_count": 0,
+                    "contract_types": [],
+                    "organizations": [],
+                    "last_contract_id": contract.id,
+                    "last_contract_date": contract.updated_at,
+                }
+
+            client = clients[phone]
+            client["contract_count"] += 1
+
+            ctype = contract.contract_type
+            if ctype not in client["contract_types"]:
+                client["contract_types"].append(ctype)
+
+            org_name = contract.organization.name if contract.organization else None
+            if org_name and org_name not in client["organizations"]:
+                client["organizations"].append(org_name)
+
+            if contract.updated_at > client["last_contract_date"]:
+                client["last_contract_id"] = contract.id
+                client["last_contract_date"] = contract.updated_at
+
+        result = sorted(
+            [
+                {**c, "last_contract_date": c["last_contract_date"].isoformat()}
+                for c in clients.values()
+            ],
+            key=lambda c: (-c["contract_count"], c["nom"]),
+        )
+
+        return Response({"results": result, "count": len(result)})

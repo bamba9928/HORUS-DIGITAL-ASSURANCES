@@ -434,13 +434,22 @@ def test_contract_list_can_filter_by_status_and_contract_type_when_authenticated
         internal_status=Contract.InternalStatus.ISSUED,
         immatriculation="AA-917-XQ",
         attestation_number="SN-LIST-001",
+        link_attestation_digitale="https://example.test/attestation/SN-LIST-001",
+        link_attestation_cedeao="https://example.test/cedeao/SN-LIST-001",
         draft_payload={
             "vehicle": {
                 "brand": "TOYOTA",
                 "model": "YARIS",
                 "registration": "AA-917-XQ",
-            }
+                "effectDate": "2026-06-01",
+            },
+            "policyholder": {
+                "firstName": "Awa",
+                "lastName": "DIOP",
+                "phone": "771112233",
+            },
         },
+        ass_issue_request_payload={"police": "HORUS-POL-LIST-001"},
     )
     Contract.objects.create(
         organization=organization,
@@ -462,6 +471,83 @@ def test_contract_list_can_filter_by_status_and_contract_type_when_authenticated
     assert response.data["results"][0]["id"] == issued.id
     assert response.data["results"][0]["vehicle_label"] == "TOYOTA YARIS AA-917-XQ"
     assert response.data["results"][0]["attestation_number"] == "SN-LIST-001"
+    assert response.data["results"][0]["policy_number"] == "HORUS-POL-LIST-001"
+    assert response.data["results"][0]["client_name"] == "Awa DIOP"
+    assert response.data["results"][0]["client_phone"] == "771112233"
+    assert response.data["results"][0]["effect_date"] == "2026-06-01"
+    assert response.data["results"][0]["link_attestation_digitale"].endswith(
+        "/SN-LIST-001"
+    )
+
+    policy_response = client.get("/api/contracts/", {"search": "POL-LIST"})
+
+    assert policy_response.status_code == 200
+    assert [item["id"] for item in policy_response.data["results"]] == [issued.id]
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=True)
+def test_contract_list_supports_search_and_pagination():
+    client, contributor = make_authenticated_contract_client()
+    matching_contract = Contract.objects.create(
+        organization=contributor.organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.ISSUED,
+        draft_payload={
+            "policyholder": {
+                "firstName": "Fatou",
+                "lastName": "NDIAYE",
+            },
+            "vehicle": {"registration": "DK-2026-AA"},
+        },
+    )
+    Contract.objects.create(
+        organization=contributor.organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.MOTO,
+        internal_status=Contract.InternalStatus.DRAFT,
+        draft_payload={"policyholder": {"firstName": "Moussa", "lastName": "FALL"}},
+    )
+
+    response = client.get(
+        "/api/contracts/",
+        {"search": "Fatou", "page": 1, "page_size": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+    assert response.data["page"] == 1
+    assert response.data["page_size"] == 1
+    assert response.data["total_pages"] == 1
+    assert [item["id"] for item in response.data["results"]] == [
+        matching_contract.id
+    ]
+    matching_contract.refresh_from_db()
+    assert "FATOU" in matching_contract.search_text
+    assert "DK-2026-AA" in matching_contract.search_text
+
+
+@pytest.mark.django_db
+def test_contract_search_text_refreshes_when_draft_payload_changes():
+    _, contributor = make_authenticated_contract_client()
+    contract = Contract.objects.create(
+        organization=contributor.organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        draft_payload={
+            "policyholder": {"firstName": "Awa", "lastName": "DIOP"},
+        },
+    )
+
+    contract.draft_payload = {
+        "policyholder": {"firstName": "Mariama", "lastName": "BA"},
+    }
+    contract.save(update_fields=["draft_payload"])
+    contract.refresh_from_db()
+
+    assert "MARIAMA" in contract.search_text
+    assert "AWA" not in contract.search_text
 
 
 @pytest.mark.django_db

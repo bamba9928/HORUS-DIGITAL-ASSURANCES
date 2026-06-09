@@ -186,13 +186,13 @@ def test_moto_payload_uses_pdf_usage_values_and_expiration_date():
     )
     issue_payload = build_moto_issue_payload(contract, "REF-MOTO")
 
-    assert rc_payload["usage"] == "non_commerciale"
+    assert rc_payload["usage"] == "NON_COMMERCIALE"
     assert rc_payload["garanties"] == [2]
     assert rc_payload["garantiesOptPT"] == "OPTION_1"
     assert issue_payload["dateExpiration"] == "2025-01-10"
     assert issue_payload["periodicite"] == "MOIS"
     assert issue_payload["typePersonne"] == "PHYSIQUE"
-    assert issue_payload["vehicule"]["usage"] == "non_commerciale"
+    assert issue_payload["vehicule"]["usage"] == "NON_COMMERCIALE"
     assert issue_payload["vehicule"]["cylindre"] == 126
     assert issue_payload["garanties"] == [2]
     assert issue_payload["garantiesOptPT"] == "OPTION_1"

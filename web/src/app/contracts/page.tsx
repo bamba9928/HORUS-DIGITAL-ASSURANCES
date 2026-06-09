@@ -281,13 +281,6 @@ export default function ContractsPage() {
                       <td data-label="Dossier">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <Link
-                              className="text-sm font-extrabold text-primary hover:underline"
-                              href={`/contracts/${contract.id}`}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              #{contract.id}
-                            </Link>
                             <StatusBadge status={contract.internal_status} />
                           </div>
                           <div className="mt-1">

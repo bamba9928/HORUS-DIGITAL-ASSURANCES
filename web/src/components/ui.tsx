@@ -177,6 +177,12 @@ export function StatusBadge({ status }: { status: string }) {
     BROUILLON:       { label: "Brouillon ASS",     className: "bg-slate-100 text-slate-600",       dot: "bg-slate-400",   icon: CircleDashed  },
     ANNULE:          { label: "Annulé ASS",        className: "bg-red-50 text-red-600",            dot: "bg-red-400",     icon: AlertCircle   },
     "MODE TEST":     { label: "Mode test",         className: "bg-amber-50 text-amber-700",        dot: "bg-amber-400",   icon: CircleDashed  },
+    CONTRIBUTOR:     { label: "Apporteur",          className: "bg-primary/10 text-primary",         dot: "bg-primary",     icon: CheckCircle2  },
+    FINANCE:         { label: "Finance",             className: "bg-amber-50 text-amber-700",         dot: "bg-amber-400",   icon: CheckCircle2  },
+    ADMIN_GROUP:     { label: "Admin groupe",        className: "bg-blue-50 text-blue-700",           dot: "bg-blue-500",    icon: CheckCircle2  },
+    ADMIN_GENERAL:   { label: "Admin général",       className: "bg-violet-50 text-violet-700",       dot: "bg-violet-500",  icon: CheckCircle2  },
+    ACTIVE:          { label: "Actif",               className: "bg-emerald-50 text-emerald-700",     dot: "bg-emerald-500", icon: CheckCircle2  },
+    INACTIVE:        { label: "Inactif",             className: "bg-red-50 text-red-600",             dot: "bg-red-400",     icon: AlertCircle   },
   };
 
   const config = statusConfig[status] ?? {

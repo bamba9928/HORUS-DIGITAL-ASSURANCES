@@ -6,9 +6,11 @@ import {
   Boxes,
   Building2,
   ChevronDown,
+  CircleUser,
   FilePlus2,
   FileText,
   Gauge,
+  Layers,
   LogIn,
   LogOut,
   Menu,
@@ -16,12 +18,14 @@ import {
   PanelLeftOpen,
   Settings,
   ShieldCheck,
+  UserRound,
   Users,
+  Wallet,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { logout } from "@/lib/api";
@@ -39,9 +43,19 @@ import {
 const navigation = [
   { href: "/", label: "Tableau de bord", icon: Gauge },
   { href: "/contracts/new", label: "Nouveau contrat", icon: FilePlus2 },
+];
+
+const productionNavigation = [
   { href: "/contracts", label: "Contrats", icon: FileText },
+  { href: "/clients", label: "Clients", icon: UserRound },
+];
+
+const financeNavigation = [
   { href: "/commissions", label: "Commissions", icon: BadgePercent },
   { href: "/payments", label: "Paiements", icon: Banknote },
+];
+
+const compteNavigation = [
   { href: "/users", label: "Utilisateurs", icon: Users },
   { href: "/organizations", label: "Organisations", icon: Building2 },
 ];
@@ -67,17 +81,36 @@ export function AppShell({
   const router = useRouter();
   const { auth, isLoading: isAuthLoading, refreshAuth } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Redirection automatique vers /login si session expirée ou non authentifié
+  useEffect(() => {
+    if (isAuthLoading) return;
+    if (auth?.authenticated === false) {
+      const redirect = encodeURIComponent(pathname);
+      router.replace(`/login?redirect=${redirect}`);
+    }
+  }, [isAuthLoading, auth?.authenticated, pathname, router]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem("horus-sidebar") === "collapsed";
   });
+  const [productionOpen, setProductionOpen] = useState(false);
+  const [financeOpen, setFinanceOpen] = useState(false);
+  const [compteOpen, setCompteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const user = auth?.user;
   const visibleNavigation = navigation.filter((item) => {
     if (item.href === "/contracts/new") return canCreateContract(user);
+    return true;
+  });
+  const visibleProductionNavigation = productionNavigation;
+  const visibleFinanceNavigation = financeNavigation.filter((item) => {
+    if (item.href === "/payments") return canViewPayments(user);
+    return true;
+  });
+  const visibleCompteNavigation = compteNavigation.filter((item) => {
     if (item.href === "/users") return canManageUsers(user);
     if (item.href === "/organizations") return canViewOrganizations(user);
-    if (item.href === "/payments") return canViewPayments(user);
     return true;
   });
   const visibleSettingsNavigation = settingsNavigation.filter((item) => {
@@ -86,6 +119,18 @@ export function AppShell({
     if (item.href === "/integrations/ass") return canViewAssIntegration(user);
     return false;
   });
+  const productionActive = visibleProductionNavigation.some((item) =>
+    isActivePath(pathname, item.href),
+  );
+  const productionVisible = productionOpen || productionActive;
+  const financeActive = visibleFinanceNavigation.some((item) =>
+    isActivePath(pathname, item.href),
+  );
+  const financeVisible = financeOpen || financeActive;
+  const compteActive = visibleCompteNavigation.some((item) =>
+    isActivePath(pathname, item.href),
+  );
+  const compteVisible = compteOpen || compteActive;
   const settingsActive = visibleSettingsNavigation.some((item) =>
     isActivePath(pathname, item.href),
   );
@@ -120,7 +165,7 @@ export function AppShell({
               Navigation
             </p>
           )}
-          {visibleNavigation.filter((item) => navigation.indexOf(item) < 3).map((item) => (
+          {visibleNavigation.map((item) => (
             <NavItem
               active={isActivePath(pathname, item.href)}
               collapsed={sidebarCollapsed}
@@ -133,21 +178,27 @@ export function AppShell({
 
           <div className="my-3 border-t border-white/[0.07]" />
 
-          {sidebarCollapsed ? null : (
-            <p className="mb-1.5 px-3 text-[10px] font-black uppercase tracking-widest text-white/25">
-              Gestion
-            </p>
-          )}
-          {visibleNavigation.filter((item) => navigation.indexOf(item) >= 3).map((item) => (
-            <NavItem
-              active={isActivePath(pathname, item.href)}
-              collapsed={sidebarCollapsed}
-              href={item.href}
-              icon={item.icon}
-              key={item.href}
-              label={item.label}
-            />
-          ))}
+          <ProductionMenu
+            collapsed={sidebarCollapsed}
+            items={visibleProductionNavigation}
+            onToggle={() => setProductionOpen((c) => !c)}
+            open={productionVisible}
+            pathname={pathname}
+          />
+          <FinanceMenu
+            collapsed={sidebarCollapsed}
+            items={visibleFinanceNavigation}
+            onToggle={() => setFinanceOpen((c) => !c)}
+            open={financeVisible}
+            pathname={pathname}
+          />
+          <CompteMenu
+            collapsed={sidebarCollapsed}
+            items={visibleCompteNavigation}
+            onToggle={() => setCompteOpen((c) => !c)}
+            open={compteVisible}
+            pathname={pathname}
+          />
           <SettingsMenu
             collapsed={sidebarCollapsed}
             onToggle={() => setSettingsOpen((c) => !c)}
@@ -240,6 +291,9 @@ export function AppShell({
 
             {/* Actions slot */}
             {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+
+            {/* Session widget */}
+            <TopbarSession auth={auth} isLoading={isAuthLoading} onLogout={handleLogout} />
           </div>
         </header>
 
@@ -280,6 +334,27 @@ export function AppShell({
                   onClick={() => setMobileOpen(false)}
                 />
               ))}
+              <ProductionMenu
+                items={visibleProductionNavigation}
+                onNavigate={() => setMobileOpen(false)}
+                onToggle={() => setProductionOpen((c) => !c)}
+                open={productionVisible}
+                pathname={pathname}
+              />
+              <FinanceMenu
+                items={visibleFinanceNavigation}
+                onNavigate={() => setMobileOpen(false)}
+                onToggle={() => setFinanceOpen((c) => !c)}
+                open={financeVisible}
+                pathname={pathname}
+              />
+              <CompteMenu
+                items={visibleCompteNavigation}
+                onNavigate={() => setMobileOpen(false)}
+                onToggle={() => setCompteOpen((c) => !c)}
+                open={compteVisible}
+                pathname={pathname}
+              />
               <SettingsMenu
                 onNavigate={() => setMobileOpen(false)}
                 onToggle={() => setSettingsOpen((c) => !c)}
@@ -407,6 +482,228 @@ function NavItem({
   );
 }
 
+/* ── ProductionMenu ───────────────────────────────────────────────── */
+function ProductionMenu({
+  collapsed = false,
+  items,
+  onNavigate,
+  onToggle,
+  open,
+  pathname,
+}: {
+  collapsed?: boolean;
+  items: typeof productionNavigation;
+  onNavigate?: () => void;
+  onToggle: () => void;
+  open: boolean;
+  pathname: string;
+}) {
+  const active = items.some((item) => isActivePath(pathname, item.href));
+
+  if (!items.length) return null;
+
+  return (
+    <div>
+      <button
+        aria-expanded={open}
+        className={`group flex w-full items-center rounded-lg font-semibold transition ${
+          collapsed
+            ? "h-[52px] flex-col justify-center gap-0.5 px-1 text-center text-[9px] leading-[1.1]"
+            : "h-9 gap-2.5 px-3 text-[13px]"
+        } ${
+          active
+            ? "bg-primary/[0.18] font-bold text-white"
+            : "text-white/45 hover:bg-white/[0.07] hover:text-white/80"
+        }`}
+        onClick={onToggle}
+        title={collapsed ? "Production" : undefined}
+        type="button"
+      >
+        <span className="flex size-5 shrink-0 items-center justify-center">
+          <Layers size={collapsed ? 18 : 15} strokeWidth={active ? 2.5 : 1.8} />
+        </span>
+        <span className={collapsed ? "w-full font-bold" : "truncate"}>Production</span>
+        {collapsed ? null : (
+          <ChevronDown
+            className={`ml-auto transition-transform ${open ? "rotate-180" : ""}`}
+            size={14}
+          />
+        )}
+      </button>
+
+      {open ? (
+        <div
+          className={
+            collapsed
+              ? "mt-1 space-y-0.5 border-t border-white/[0.07] pt-1"
+              : "ml-4 mt-1 space-y-0.5 border-l border-white/[0.12] pl-2"
+          }
+        >
+          {items.map((item) => (
+            <NavItem
+              active={isActivePath(pathname, item.href)}
+              collapsed={collapsed}
+              href={item.href}
+              icon={item.icon}
+              key={item.href}
+              label={item.label}
+              onClick={onNavigate}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* ── CompteMenu ───────────────────────────────────────────────────── */
+function CompteMenu({
+  collapsed = false,
+  items,
+  onNavigate,
+  onToggle,
+  open,
+  pathname,
+}: {
+  collapsed?: boolean;
+  items: typeof compteNavigation;
+  onNavigate?: () => void;
+  onToggle: () => void;
+  open: boolean;
+  pathname: string;
+}) {
+  const active = items.some((item) => isActivePath(pathname, item.href));
+
+  if (!items.length) return null;
+
+  return (
+    <div>
+      <button
+        aria-expanded={open}
+        className={`group flex w-full items-center rounded-lg font-semibold transition ${
+          collapsed
+            ? "h-[52px] flex-col justify-center gap-0.5 px-1 text-center text-[9px] leading-[1.1]"
+            : "h-9 gap-2.5 px-3 text-[13px]"
+        } ${
+          active
+            ? "bg-primary/[0.18] font-bold text-white"
+            : "text-white/45 hover:bg-white/[0.07] hover:text-white/80"
+        }`}
+        onClick={onToggle}
+        title={collapsed ? "Compte" : undefined}
+        type="button"
+      >
+        <span className="flex size-5 shrink-0 items-center justify-center">
+          <CircleUser size={collapsed ? 18 : 15} strokeWidth={active ? 2.5 : 1.8} />
+        </span>
+        <span className={collapsed ? "w-full font-bold" : "truncate"}>Compte</span>
+        {collapsed ? null : (
+          <ChevronDown
+            className={`ml-auto transition-transform ${open ? "rotate-180" : ""}`}
+            size={14}
+          />
+        )}
+      </button>
+
+      {open ? (
+        <div
+          className={
+            collapsed
+              ? "mt-1 space-y-0.5 border-t border-white/[0.07] pt-1"
+              : "ml-4 mt-1 space-y-0.5 border-l border-white/[0.12] pl-2"
+          }
+        >
+          {items.map((item) => (
+            <NavItem
+              active={isActivePath(pathname, item.href)}
+              collapsed={collapsed}
+              href={item.href}
+              icon={item.icon}
+              key={item.href}
+              label={item.label}
+              onClick={onNavigate}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* ── FinanceMenu ──────────────────────────────────────────────────── */
+function FinanceMenu({
+  collapsed = false,
+  items,
+  onNavigate,
+  onToggle,
+  open,
+  pathname,
+}: {
+  collapsed?: boolean;
+  items: typeof financeNavigation;
+  onNavigate?: () => void;
+  onToggle: () => void;
+  open: boolean;
+  pathname: string;
+}) {
+  const active = items.some((item) => isActivePath(pathname, item.href));
+
+  if (!items.length) return null;
+
+  return (
+    <div>
+      <button
+        aria-expanded={open}
+        className={`group flex w-full items-center rounded-lg font-semibold transition ${
+          collapsed
+            ? "h-[52px] flex-col justify-center gap-0.5 px-1 text-center text-[9px] leading-[1.1]"
+            : "h-9 gap-2.5 px-3 text-[13px]"
+        } ${
+          active
+            ? "bg-primary/[0.18] font-bold text-white"
+            : "text-white/45 hover:bg-white/[0.07] hover:text-white/80"
+        }`}
+        onClick={onToggle}
+        title={collapsed ? "Finance" : undefined}
+        type="button"
+      >
+        <span className="flex size-5 shrink-0 items-center justify-center">
+          <Wallet size={collapsed ? 18 : 15} strokeWidth={active ? 2.5 : 1.8} />
+        </span>
+        <span className={collapsed ? "w-full font-bold" : "truncate"}>Finance</span>
+        {collapsed ? null : (
+          <ChevronDown
+            className={`ml-auto transition-transform ${open ? "rotate-180" : ""}`}
+            size={14}
+          />
+        )}
+      </button>
+
+      {open ? (
+        <div
+          className={
+            collapsed
+              ? "mt-1 space-y-0.5 border-t border-white/[0.07] pt-1"
+              : "ml-4 mt-1 space-y-0.5 border-l border-white/[0.12] pl-2"
+          }
+        >
+          {items.map((item) => (
+            <NavItem
+              active={isActivePath(pathname, item.href)}
+              collapsed={collapsed}
+              href={item.href}
+              icon={item.icon}
+              key={item.href}
+              label={item.label}
+              onClick={onNavigate}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /* ── SettingsMenu ─────────────────────────────────────────────────── */
 function SettingsMenu({
   collapsed = false,
@@ -494,73 +791,68 @@ function SessionControl({
   isLoading: boolean;
   onLogout: () => Promise<void>;
 }) {
+  if (isLoading || !auth?.authenticated || !auth?.user) return null;
+
+  return (
+    <button
+      aria-label="Se déconnecter"
+      className={`flex items-center rounded-lg text-white/35 transition hover:bg-red-500/15 hover:text-red-300 ${
+        collapsed
+          ? "size-[44px] justify-center"
+          : "h-9 w-full gap-2.5 px-3 text-[13px] font-semibold"
+      }`}
+      onClick={() => void onLogout()}
+      title="Se déconnecter"
+      type="button"
+    >
+      <LogOut size={15} />
+      {collapsed ? null : "Se déconnecter"}
+    </button>
+  );
+}
+
+/* ── TopbarSession ────────────────────────────────────────────────── */
+function TopbarSession({
+  auth,
+  isLoading,
+  onLogout,
+}: {
+  auth: ReturnType<typeof useAuth>["auth"];
+  isLoading: boolean;
+  onLogout: () => Promise<void>;
+}) {
   if (isLoading) {
     return (
-      <div
-        className={`flex h-[52px] items-center rounded-lg text-white/30 ${
-          collapsed ? "justify-center" : "px-3"
-        }`}
-      >
-        <span className="size-4 animate-spin rounded-full border-2 border-white/15 border-t-white/60" />
-      </div>
+      <span className="flex size-8 items-center justify-center">
+        <span className="size-4 animate-spin rounded-full border-2 border-black/15 border-t-black/45" />
+      </span>
     );
   }
 
   if (!auth?.authenticated || !auth.user) {
     return (
-      <NavItem
-        active={false}
-        collapsed={collapsed}
+      <Link
+        className="inline-flex h-9 items-center gap-1.5 rounded-[9px] border border-border bg-white px-3 text-[13px] font-bold text-black/70 shadow-xs transition hover:bg-muted"
         href="/login"
-        icon={LogIn}
-        label="Connexion"
-      />
+      >
+        <LogIn size={14} />
+        <span className="hidden sm:inline">Connexion</span>
+      </Link>
     );
   }
 
   const name =
     [auth.user.first_name, auth.user.last_name].filter(Boolean).join(" ") ||
     auth.user.username;
-  const initials = name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
 
   return (
-    <div
-      className={`flex min-h-[52px] items-center rounded-lg ${
-        collapsed ? "justify-center" : "gap-2 px-2"
-      }`}
+    <Link
+      className="rounded-lg px-2 py-1 text-[13px] font-bold transition hover:bg-muted hover:text-primary"
+      href="/profile"
+      title="Mon profil"
     >
-      {collapsed ? null : (
-        <Link
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 transition hover:bg-white/[0.07]"
-          href="/profile"
-          title="Mon profil"
-        >
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.09] text-[10px] font-black text-white">
-            {initials}
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-xs font-bold text-white/80">{name}</p>
-            <p className="truncate text-[10px] font-semibold text-white/30">
-              {roleLabel(auth.user.role)}
-            </p>
-          </div>
-        </Link>
-      )}
-      <button
-        aria-label="Se déconnecter"
-        className="flex size-8 shrink-0 items-center justify-center rounded-lg text-white/35 transition hover:bg-red-500/15 hover:text-red-300"
-        onClick={() => void onLogout()}
-        title="Se déconnecter"
-        type="button"
-      >
-        <LogOut size={16} />
-      </button>
-    </div>
+      {name}
+    </Link>
   );
 }
 

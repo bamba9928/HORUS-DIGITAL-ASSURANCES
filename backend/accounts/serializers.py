@@ -148,8 +148,10 @@ class UserUpdateSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         for field, value in validated_data.items():
             setattr(instance, field, value)
-        instance.full_clean()
-        instance.save()
+        # Exclure password : il n'est jamais modifié ici et sa validation
+        # ferait échouer full_clean si le hash est vide (compte de test, etc.)
+        instance.full_clean(exclude=["password"])
+        instance.save(update_fields=list(validated_data.keys()))
         return instance
 
 
@@ -161,7 +163,7 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         for field, value in validated_data.items():
             setattr(instance, field, value)
-        instance.full_clean()
+        instance.full_clean(exclude=["password"])
         instance.save(update_fields=list(validated_data.keys()))
         return instance
 
@@ -220,7 +222,7 @@ class UserCommissionSerializer(serializers.ModelSerializer):
         instance.commission_configured_by = actor
         instance.commission_configured_at = timezone.now()
         try:
-            instance.full_clean()
+            instance.full_clean(exclude=["password"])
         except DjangoValidationError as exc:
             raise serializers.ValidationError(exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
         instance.save(
