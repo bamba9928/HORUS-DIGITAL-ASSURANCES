@@ -1,9 +1,14 @@
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
 from django.db.models import Q
+from uuid import uuid4
+
+
+def generate_user_matricule():
+    return f"HOR-{uuid4().hex[:12].upper()}"
 
 
 class User(AbstractUser):
@@ -14,6 +19,23 @@ class User(AbstractUser):
         FINANCE = "FINANCE", "Finance / comptabilite"
 
     role = models.CharField(max_length=30, choices=Role.choices, default=Role.CONTRIBUTOR)
+    matricule = models.CharField(
+        max_length=20,
+        unique=True,
+        editable=False,
+        default=generate_user_matricule,
+    )
+    phone = models.CharField(
+        max_length=9,
+        blank=True,
+        validators=[
+            RegexValidator(
+                regex=r"^7\d{8}$",
+                message="Le téléphone doit contenir exactement 9 chiffres et commencer par 7.",
+            )
+        ],
+    )
+    address = models.TextField(blank=True)
     organization = models.ForeignKey(
         "organizations.Organization",
         on_delete=models.PROTECT,
@@ -74,7 +96,20 @@ class User(AbstractUser):
         if self.is_admin_general:
             return True
         if self.is_admin_group:
-            return self.organization_id and self.organization_id == target_user.organization_id
+            # Un admin groupe ne peut pas modifier (rétrograder, désactiver…)
+            # un admin général ni un autre admin groupe, même dans son organisation.
+            if target_user.is_admin_general or target_user.is_admin_group:
+                return False
+            return bool(self.organization_id and self.organization_id == target_user.organization_id)
+        return False
+
+    def can_view_user(self, target_user):
+        if self.id == target_user.id:
+            return True
+        if self.is_admin_general:
+            return True
+        if self.is_admin_group:
+            return bool(self.organization_id and self.organization_id == target_user.organization_id)
         return False
 
     def can_manage_commission(self, target_user):

@@ -7,9 +7,12 @@ import {
   CheckCircle2,
   Eye,
   EyeOff,
+  Hash,
   KeyRound,
   Lock,
-  Save,
+  Mail,
+  MapPin,
+  Phone,
   ShieldCheck,
   User,
 } from "lucide-react";
@@ -18,7 +21,7 @@ import { FormEvent, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
 import { AlertMessage, StatusBadge } from "@/components/ui";
-import { changePassword, updateProfile, type AuthUser } from "@/lib/api";
+import { changePassword, type AuthUser } from "@/lib/api";
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
 
@@ -62,7 +65,7 @@ function userInitials(firstName: string, lastName: string, username: string) {
 /* ── Page ────────────────────────────────────────────────────────── */
 
 export default function ProfilePage() {
-  const { auth, refreshAuth } = useAuth();
+  const { auth } = useAuth();
   const user = auth?.user;
 
   if (!user) {
@@ -104,7 +107,7 @@ export default function ProfilePage() {
             </div>
           </section>
 
-          <IdentitySection user={user} onSaved={refreshAuth} />
+          <IdentitySection user={user} />
           <PasswordSection />
         </div>
 
@@ -119,48 +122,7 @@ export default function ProfilePage() {
 
 /* ── Section Identité ────────────────────────────────────────────── */
 
-function IdentitySection({
-  user,
-  onSaved,
-}: {
-  user: AuthUser;
-  onSaved: () => void;
-}) {
-  const [form, setForm] = useState({
-    first_name: user.first_name ?? "",
-    last_name: user.last_name ?? "",
-    email: user.email ?? "",
-  });
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-
-  const isDirty =
-    form.first_name !== (user.first_name ?? "") ||
-    form.last_name !== (user.last_name ?? "") ||
-    form.email !== (user.email ?? "");
-
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError("");
-    setSuccess(false);
-    setIsSaving(true);
-    try {
-      await updateProfile({
-        first_name: form.first_name.trim(),
-        last_name: form.last_name.trim(),
-        email: form.email.trim(),
-      });
-      setSuccess(true);
-      onSaved();
-      setTimeout(() => setSuccess(false), 3000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Mise à jour impossible.");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
+function IdentitySection({ user }: { user: AuthUser }) {
   return (
     <section className="app-surface overflow-hidden">
       <div className="border-b border-border px-5 py-4 sm:px-6">
@@ -171,46 +133,19 @@ function IdentitySection({
           <h2 className="font-extrabold">Informations personnelles</h2>
         </div>
       </div>
-      <form className="space-y-4 p-5 sm:p-6" onSubmit={handleSubmit}>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <ProfileField
-            label="Prénom"
-            onChange={(v) => setForm({ ...form, first_name: v })}
-            value={form.first_name}
-          />
-          <ProfileField
-            label="Nom"
-            onChange={(v) => setForm({ ...form, last_name: v })}
-            value={form.last_name}
-          />
+      <div className="space-y-4 p-5 sm:p-6">
+        <p className="rounded-xl border border-border bg-muted/50 px-4 py-3 text-xs font-semibold text-black/55">
+          Ces informations sont gérées par un administrateur autorisé de votre groupe.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <ReadOnlyIdentityField icon={User} label="Prénom" value={user.first_name || "—"} />
+          <ReadOnlyIdentityField icon={User} label="Nom" value={user.last_name || "—"} />
+          <ReadOnlyIdentityField icon={Mail} label="Email" value={user.email || "—"} />
+          <ReadOnlyIdentityField icon={Phone} label="Téléphone" value={user.phone || "—"} />
+          <ReadOnlyIdentityField icon={Hash} label="Matricule" value={user.matricule} mono />
+          <ReadOnlyIdentityField icon={MapPin} label="Adresse" value={user.address || "—"} />
         </div>
-        <ProfileField
-          label="Email"
-          onChange={(v) => setForm({ ...form, email: v })}
-          type="email"
-          value={form.email}
-        />
-
-        {error ? <AlertMessage>{error}</AlertMessage> : null}
-
-        {success ? (
-          <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
-            <CheckCircle2 size={16} />
-            Profil mis à jour avec succès.
-          </div>
-        ) : null}
-
-        <div className="flex justify-end">
-          <button
-            className="flex h-10 items-center gap-2 rounded-xl bg-gradient-to-br from-primary to-[var(--primary-strong)] px-5 text-sm font-extrabold text-white shadow-sm shadow-primary/20 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
-            disabled={!isDirty || isSaving}
-            type="submit"
-          >
-            <Save size={15} />
-            {isSaving ? "Enregistrement…" : "Enregistrer"}
-          </button>
-        </div>
-      </form>
+      </div>
     </section>
   );
 }
@@ -385,6 +320,11 @@ function AccountInfoPanel({ user }: { user: AuthUser }) {
       value: user.username,
     },
     {
+      icon: Hash,
+      label: "Matricule",
+      value: user.matricule,
+    },
+    {
       icon: ShieldCheck,
       label: "Rôle",
       value: {
@@ -436,6 +376,28 @@ function AccountInfoPanel({ user }: { user: AuthUser }) {
 }
 
 /* ── Sub-components ──────────────────────────────────────────────── */
+
+function ReadOnlyIdentityField({
+  icon: Icon,
+  label,
+  mono = false,
+  value,
+}: {
+  icon: typeof User;
+  label: string;
+  mono?: boolean;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-black/[0.015] px-4 py-3">
+      <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-black/35">
+        <Icon size={12} />
+        {label}
+      </p>
+      <p className={`mt-1 text-sm font-bold ${mono ? "font-mono" : ""}`}>{value}</p>
+    </div>
+  );
+}
 
 function ProfileField({
   disabled,

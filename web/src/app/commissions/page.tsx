@@ -32,13 +32,23 @@ const statusOptions: { value: StatusFilter; label: string }[] = [
   { value: "DISPUTED", label: "Contestée" },
 ];
 
-const editableStatuses: { value: CommissionSnapshot["status"]; label: string }[] = [
-  { value: "PENDING", label: "En attente" },
-  { value: "PAYABLE", label: "Payable" },
-  { value: "PAID", label: "Payée" },
-  { value: "CANCELLED", label: "Annulée" },
-  { value: "DISPUTED", label: "Contestée" },
-];
+const STATUS_LABELS: Record<CommissionSnapshot["status"], string> = {
+  PENDING: "En attente",
+  PAYABLE: "Payable",
+  PAID: "Payée",
+  CANCELLED: "Annulée",
+  DISPUTED: "Contestée",
+};
+
+// Miroir des transitions autorisées côté backend (CANCELLED est posé
+// uniquement par l'annulation du contrat).
+const ALLOWED_TRANSITIONS: Record<CommissionSnapshot["status"], CommissionSnapshot["status"][]> = {
+  PENDING: ["PAYABLE", "PAID", "DISPUTED"],
+  PAYABLE: ["PAID", "PENDING", "DISPUTED"],
+  DISPUTED: ["PENDING", "PAYABLE"],
+  PAID: ["DISPUTED"],
+  CANCELLED: [],
+};
 
 export default function CommissionsPage() {
   const { auth, isLoading: authLoading } = useAuth();
@@ -302,7 +312,8 @@ export default function CommissionsPage() {
                       <td data-label="Statut">
                         <div className="flex flex-wrap items-center gap-2">
                           <StatusBadge status={snapshot.status} />
-                          {canUpdateStatus ? (
+                          {canUpdateStatus &&
+                          ALLOWED_TRANSITIONS[snapshot.status].length ? (
                             <select
                               aria-label={`Statut commission ${snapshot.id}`}
                               className="app-field h-8 min-h-0 w-auto rounded-lg py-0 text-xs"
@@ -315,14 +326,25 @@ export default function CommissionsPage() {
                               }
                               value={snapshot.status}
                             >
-                              {editableStatuses.map((s) => (
-                                <option key={s.value} value={s.value}>
-                                  {s.label}
+                              <option value={snapshot.status}>
+                                {STATUS_LABELS[snapshot.status]}
+                              </option>
+                              {ALLOWED_TRANSITIONS[snapshot.status].map((s) => (
+                                <option key={s} value={s}>
+                                  {STATUS_LABELS[s]}
                                 </option>
                               ))}
                             </select>
                           ) : null}
                         </div>
+                        {snapshot.paid_at ? (
+                          <p className="mt-1 text-xs text-black/40">
+                            Payée le {formatDate(snapshot.paid_at)}
+                            {snapshot.paid_by_username
+                              ? ` par ${snapshot.paid_by_username}`
+                              : ""}
+                          </p>
+                        ) : null}
                       </td>
                     </tr>
                   ))}

@@ -186,13 +186,15 @@ def test_moto_payload_uses_pdf_usage_values_and_expiration_date():
     )
     issue_payload = build_moto_issue_payload(contract, "REF-MOTO")
 
-    assert rc_payload["usage"] == "NON_COMMERCIALE"
+    # Valide en sandbox (2026-06-11) : l'API n'accepte que COMMERCIAL /
+    # NON_COMMERCIAL ; NON_COMMERCIALE est rejete ("Wrong value for rc.moto.usage").
+    assert rc_payload["usage"] == "NON_COMMERCIAL"
     assert rc_payload["garanties"] == [2]
     assert rc_payload["garantiesOptPT"] == "OPTION_1"
     assert issue_payload["dateExpiration"] == "2025-01-10"
     assert issue_payload["periodicite"] == "MOIS"
     assert issue_payload["typePersonne"] == "PHYSIQUE"
-    assert issue_payload["vehicule"]["usage"] == "NON_COMMERCIALE"
+    assert issue_payload["vehicule"]["usage"] == "NON_COMMERCIAL"
     assert issue_payload["vehicule"]["cylindre"] == 126
     assert issue_payload["garanties"] == [2]
     assert issue_payload["garantiesOptPT"] == "OPTION_1"
@@ -219,6 +221,10 @@ def test_fleet_quote_prices_second_trailer_with_remorque_rc_request():
                 "garantiesOptPT": "OPTION_1",
             },
             "fleet": {
+                "effectDate": "2026-06-01",
+                "duration": "3",
+                "periodicity": "MOIS",
+                "personType": "MORALE",
                 "vehicles": [
                     {
                         "id": "veh-1",
@@ -228,9 +234,9 @@ def test_fleet_quote_prices_second_trailer_with_remorque_rc_request():
                         "registration": "AA-917-XQ",
                         "energy": "ESSENCE",
                         "fiscalPower": "8",
-                        "duration": "3",
-                        "periodicity": "MOIS",
-                        "effectDate": "2026-06-01",
+                        "duration": "",
+                        "periodicity": "JOUR",
+                        "effectDate": "",
                         "trailers": [
                             {
                                 "id": "rem-1",
@@ -264,6 +270,10 @@ def test_fleet_quote_prices_second_trailer_with_remorque_rc_request():
         }
     ]
     assert contract.ass_request_payload["remorques"][0]["trailer_id"] == "rem-2"
+    assert contract.ass_request_payload["flotte"]["dateEffet"] == "2026-06-01"
+    assert contract.ass_request_payload["flotte"]["duree"] == 3
+    assert contract.ass_request_payload["flotte"]["periodicite"] == "MOIS"
+    assert contract.ass_request_payload["flotte"]["requests"][0]["duree"] == 3
     assert contract.ass_request_payload["flotte"]["requests"][0]["garanties"] == [1, 2]
     assert contract.ass_request_payload["flotte"]["requests"][0]["garantiesOptPT"] == "OPTION_1"
     assert contract.ass_response_payload["remorques"][0]["prime_rc_ass"] == 0
@@ -294,6 +304,10 @@ def test_fleet_issue_payload_reuses_rc_amounts_returned_by_ass_quote():
             "policyholder": TEST_POLICYHOLDER,
             "insured": TEST_INSURED,
             "fleet": {
+                "effectDate": "2026-07-01",
+                "duration": "12",
+                "periodicity": "MOIS",
+                "personType": "MORALE",
                 "vehicles": [
                     {
                         "id": "veh-1",
@@ -304,7 +318,7 @@ def test_fleet_issue_payload_reuses_rc_amounts_returned_by_ass_quote():
                         "fiscalPower": "8",
                         "duration": "3",
                         "periodicity": "JOUR",
-                        "personType": "MORALE",
+                        "personType": "PHYSIQUE",
                     }
                 ]
             }
@@ -314,7 +328,9 @@ def test_fleet_issue_payload_reuses_rc_amounts_returned_by_ass_quote():
     payload = build_fleet_issue_payload(contract, "REF-FLEET")
 
     assert payload["items"][0]["responsabiliteCivile"] == 24_000
-    assert payload["periodicite"] == "JOUR"
+    assert payload["dateEffet"] == "2026-07-01"
+    assert payload["duree"] == 12
+    assert payload["periodicite"] == "MOIS"
     assert payload["typePersonne"] == "MORALE"
     assert "garanties" not in payload
     assert payload["items"][0]["vehicule"]["garanties"] == [4]
@@ -338,6 +354,10 @@ def test_trailer_issue_payload_uses_issued_vehicle_reference_and_pdf_expiration_
             "policyholder": TEST_POLICYHOLDER,
             "insured": TEST_INSURED,
             "fleet": {
+                "effectDate": "2026-07-01",
+                "duration": "12",
+                "periodicity": "MOIS",
+                "personType": "MORALE",
                 "vehicles": [
                     {
                         "id": "veh-1",
@@ -347,7 +367,7 @@ def test_trailer_issue_payload_uses_issued_vehicle_reference_and_pdf_expiration_
                         "energy": "ESSENCE",
                         "duration": "6",
                         "periodicity": "JOUR",
-                        "personType": "MORALE",
+                        "personType": "PHYSIQUE",
                         "effectDate": "2024-07-11",
                         "trailers": [
                             {
@@ -392,12 +412,14 @@ def test_trailer_issue_payload_uses_issued_vehicle_reference_and_pdf_expiration_
 
     assert payloads[0]["responsabiliteCivile"] == 0
     assert payloads[0]["referenceVehicule"] == "REF-FLEET-1"
-    assert payloads[0]["periodicite"] == "JOUR"
+    assert payloads[0]["dateEffet"] == "2026-07-01"
+    assert payloads[0]["duree"] == 12
+    assert payloads[0]["periodicite"] == "MOIS"
     assert payloads[0]["typePersonne"] == "MORALE"
     assert payloads[0]["souscripteur"]["nom"] == "DIOP"
     assert payloads[0]["assure"]["nom"] == "NDIAYE"
-    assert payloads[0]["dateExpiration"] == "2024-07-16"
+    assert payloads[0]["dateExpiration"] == "2027-06-30"
     assert payloads[1]["responsabiliteCivile"] == 3_000
     assert payloads[1]["periodicite"] == "MOIS"
-    assert payloads[1]["typePersonne"] == "PHYSIQUE"
+    assert payloads[1]["typePersonne"] == "MORALE"
     assert payloads[1]["referenceTrxPartner"] == "REF-FLEET-REM-1-2"

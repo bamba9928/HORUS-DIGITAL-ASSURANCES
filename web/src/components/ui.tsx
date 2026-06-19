@@ -183,6 +183,7 @@ export function StatusBadge({ status }: { status: string }) {
     ADMIN_GENERAL:   { label: "Admin général",       className: "bg-violet-50 text-violet-700",       dot: "bg-violet-500",  icon: CheckCircle2  },
     ACTIVE:          { label: "Actif",               className: "bg-emerald-50 text-emerald-700",     dot: "bg-emerald-500", icon: CheckCircle2  },
     INACTIVE:        { label: "Inactif",             className: "bg-red-50 text-red-600",             dot: "bg-red-400",     icon: AlertCircle   },
+    SUSPENDED:       { label: "Suspendu",            className: "bg-amber-50 text-amber-700",         dot: "bg-amber-400",   icon: AlertCircle   },
   };
 
   const config = statusConfig[status] ?? {

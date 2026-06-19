@@ -9,6 +9,17 @@ class CommissionSnapshot(models.Model):
         CANCELLED = "CANCELLED", "Annulee"
         DISPUTED = "DISPUTED", "Contestee"
 
+    # Transitions autorisees via l'API de changement de statut.
+    # CANCELLED n'est jamais accessible par cette API : il est pose uniquement
+    # par l'annulation du contrat (cancel_contract).
+    ALLOWED_STATUS_TRANSITIONS = {
+        Status.PENDING: {Status.PAYABLE, Status.PAID, Status.DISPUTED},
+        Status.PAYABLE: {Status.PAID, Status.PENDING, Status.DISPUTED},
+        Status.DISPUTED: {Status.PENDING, Status.PAYABLE},
+        Status.PAID: {Status.DISPUTED},
+        Status.CANCELLED: frozenset(),
+    }
+
     contract = models.OneToOneField(
         "contracts.Contract",
         on_delete=models.PROTECT,
@@ -29,6 +40,14 @@ class CommissionSnapshot(models.Model):
     commission_policy_fee_amount = models.PositiveIntegerField()
     commission_total = models.PositiveIntegerField()
     net_to_horus = models.PositiveIntegerField()
+    paid_at = models.DateTimeField(null=True, blank=True)
+    paid_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        related_name="paid_commission_snapshots",
+        null=True,
+        blank=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

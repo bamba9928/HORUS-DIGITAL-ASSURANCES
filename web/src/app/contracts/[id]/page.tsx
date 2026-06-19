@@ -123,7 +123,12 @@ export default function ContractDetailPage() {
 
   const payableAmount = useMemo(() => {
     if (!contract?.prime_rc_ass) return null;
-    return contract.prime_rc_ass + contract.cout_police_ass;
+    // Le backend attend la prime totale ASS (taxe, CEDEAO, fonds de garantie…)
+    // quand elle existe ; sinon prime RC + coût de police.
+    const primeTotale = contract.quote_breakdown?.prime_totale;
+    return primeTotale && primeTotale > 0
+      ? primeTotale
+      : contract.prime_rc_ass + contract.cout_police_ass;
   }, [contract]);
 
   async function calculateQuote() {
@@ -491,7 +496,11 @@ export default function ContractDetailPage() {
                       </ActionButton>
                     ) : null}
 
-                    {canCancel && contract.internal_status === "ISSUED" ? (
+                    {/* Annulation flotte non supportée : attestations à annuler
+                        individuellement auprès d'ASS (garde-fou backend également). */}
+                    {canCancel &&
+                    contract.internal_status === "ISSUED" &&
+                    contract.contract_type !== "FLEET" ? (
                       <ActionButton
                         disabled={isActionLoading}
                         icon={XCircle}
@@ -1009,7 +1018,6 @@ function AttestationsPanel({
             immatriculation: "",
             reference_externe: fallback.referenceExterne,
             attestation_number: fallback.attestationNumber,
-            secure_key: "",
             date_expiration: fallback.dateExpiration,
             link_attestation_digitale: fallback.linkAttestation,
             link_attestation_cedeao: fallback.linkCarteBrune,

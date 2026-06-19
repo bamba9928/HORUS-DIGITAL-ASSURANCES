@@ -2,9 +2,11 @@ from pathlib import Path
 
 import dj_database_url
 from decouple import config
+from django.core.exceptions import ImproperlyConfigured
 
 from integrations.ass.constants import (
     ASS_API_PARTNER_SEGMENT as DEFAULT_ASS_API_PARTNER_SEGMENT,
+    ASS_ENDPOINT_CANCEL_ATTESTATION,
     ASS_SANDBOX_BASE_URL,
 )
 
@@ -22,6 +24,14 @@ ALLOWED_HOSTS = config(
     cast=lambda value: [item.strip() for item in value.split(",") if item.strip()],
 )
 
+# Refuse de demarrer avec la cle de dev des qu'un host non local est configure
+# (signal de deploiement) : empeche une mise en production avec une SECRET_KEY connue.
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "testserver", "[::1]"}
+if SECRET_KEY == "dev-only-change-me" and any(host not in _LOCAL_HOSTS for host in ALLOWED_HOSTS):
+    raise ImproperlyConfigured(
+        "DJANGO_SECRET_KEY doit etre defini (cle de dev detectee avec des hosts non locaux)."
+    )
+
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -38,6 +48,7 @@ INSTALLED_APPS = [
     'commissions',
     'payments',
     'referentials',
+    'integrations.ass',
 ]
 
 MIDDLEWARE = [
@@ -85,6 +96,18 @@ DATABASES = {
 
 AUTH_USER_MODEL = 'accounts.User'
 
+FRONTEND_BASE_URL = config("FRONTEND_BASE_URL", default="http://localhost:3000")
+EMAIL_BACKEND = config(
+    "EMAIL_BACKEND",
+    default="django.core.mail.backends.console.EmailBackend",
+)
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="no-reply@horus-assurances.sn")
+EMAIL_HOST = config("EMAIL_HOST", default="")
+EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
+EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
+
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -108,7 +131,15 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_THROTTLE_RATES': {
+        'auth_login': config('AUTH_LOGIN_THROTTLE_RATE', default='10/min'),
+        # Les CGU ASS imposent une frequence limite : borne les appels sandbox/prod par utilisateur.
+        'ass_verify': config('ASS_VERIFY_THROTTLE_RATE', default='30/min'),
+    },
 }
+
+# Sessions : 12 h par defaut (application financiere), ajustable par env.
+SESSION_COOKIE_AGE = config('SESSION_COOKIE_AGE', default=60 * 60 * 12, cast=int)
 
 CORS_ALLOWED_ORIGINS = config(
     "CORS_ALLOWED_ORIGINS",
@@ -136,7 +167,16 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# Django 5.1+ : STATICFILES_STORAGE n'existe plus, la configuration passe par STORAGES.
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -147,6 +187,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=False, cast=bool)
 SESSION_COOKIE_SECURE = config("SESSION_COOKIE_SECURE", default=False, cast=bool)
 CSRF_COOKIE_SECURE = config("CSRF_COOKIE_SECURE", default=False, cast=bool)
+
+# Derriere un reverse proxy (nginx, traefik...) qui termine le TLS : a activer
+# pour que Django reconnaisse les requetes HTTPS (sinon boucle de redirection
+# avec SECURE_SSL_REDIRECT=True).
+if config("USE_X_FORWARDED_PROTO", default=False, cast=bool):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 if SESSION_COOKIE_SECURE:
     SECURE_HSTS_SECONDS = 31536000
@@ -197,3 +243,8 @@ ASS_PASSWORD = config("ASS_PASSWORD", default="")
 ASS_POLICY_FEE = config("ASS_POLICY_FEE", default=3000, cast=int)
 ASS_MOCK_ENABLED = config("ASS_MOCK_ENABLED", default=True, cast=bool)
 ASS_REAL_CALLS_ALLOWED = config("ASS_REAL_CALLS_ALLOWED", default=False, cast=bool)
+# PDF: /qrcode.mono.cancel — Postman: /qrcode.cancel. Configurable pour basculer
+# sans redeploiement des que ASS confirme l'endpoint.
+ASS_CANCEL_ENDPOINT = config("ASS_CANCEL_ENDPOINT", default=ASS_ENDPOINT_CANCEL_ATTESTATION)
+# Seuil d'alerte stock QR sur le dashboard (et statut low_stock de l'API).
+ASS_QR_STOCK_ALERT_THRESHOLD = config("ASS_QR_STOCK_ALERT_THRESHOLD", default=10, cast=int)

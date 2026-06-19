@@ -1,7 +1,8 @@
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from common.pagination import PaginationError, paginate_queryset
 from payments.models import Payment
 from payments.serializers import PaymentSerializer
 
@@ -29,5 +30,13 @@ class PaymentListView(generics.ListAPIView):
         return qs
 
     def list(self, request, *args, **kwargs):
-        serializer = self.get_serializer(self.get_queryset(), many=True)
-        return Response({"results": serializer.data})
+        queryset = self.get_queryset()
+        try:
+            items, meta = paginate_queryset(request, queryset)
+        except PaginationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = self.get_serializer(items, many=True)
+        response_data = {"results": serializer.data}
+        if meta:
+            response_data.update(meta)
+        return Response(response_data)

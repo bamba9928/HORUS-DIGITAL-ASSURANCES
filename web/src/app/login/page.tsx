@@ -29,24 +29,33 @@ export default function LoginPage() {
   );
 }
 
+// N'accepte que des chemins internes pour éviter tout open redirect
+// (ex: /login?redirect=https://site-malveillant ou //site-malveillant).
+function sanitizeRedirect(value: string | null) {
+  if (!value) return "/";
+  if (!value.startsWith("/")) return "/";
+  if (value.startsWith("//") || value.startsWith("/\\")) return "/";
+  return value;
+}
+
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { refreshAuth } = useAuth();
-  const [username, setUsername] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const redirectTo = searchParams.get("redirect") ?? "/";
+  const redirectTo = sanitizeRedirect(searchParams.get("redirect"));
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setIsSubmitting(true);
     try {
-      await login(username, password);
+      await login(identifier.trim(), password);
       await refreshAuth();
       router.push(redirectTo);
       router.refresh();
@@ -84,10 +93,10 @@ function LoginPageContent() {
           </div>
 
           <form className="space-y-4" onSubmit={handleSubmit}>
-            {/* Username */}
+            {/* Identifiant */}
             <div>
               <label className="mb-1.5 block text-xs font-extrabold uppercase tracking-wider text-black/50">
-                Nom d&apos;utilisateur
+                Identifiant, email ou téléphone
               </label>
               <div className="relative">
                 <UserRound
@@ -98,10 +107,10 @@ function LoginPageContent() {
                   autoComplete="username"
                   autoFocus
                   className="app-field app-field-with-icon"
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="votre_identifiant"
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  placeholder="identifiant, email ou 77XXXXXXX"
                   required
-                  value={username}
+                  value={identifier}
                 />
               </div>
             </div>

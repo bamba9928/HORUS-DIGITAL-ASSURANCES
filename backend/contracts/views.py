@@ -1,21 +1,28 @@
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from common.pagination import PaginationError, paginate_queryset
 from contracts.models import Contract
-from contracts.serializers import ContractDetailSerializer, ContractDraftSerializer, ContractListSerializer
+from contracts.serializers import (
+    ContractDetailSerializer,
+    ContractDraftSerializer,
+    ContractListSerializer,
+    validate_fleet_coverage_for_quote,
+)
 from commissions.services import CommissionNotConfiguredError
+from integrations.ass.exceptions import AssIntegrationError
 from contracts.services import (
     ContractCancelError,
     ContractIssueError,
     QuoteCalculationError,
     calculate_contract_quote,
     cancel_contract,
-    first_present,
     issue_contract,
 )
 from payments.services import PaymentConfirmationError, confirm_manual_payment
@@ -128,40 +135,18 @@ class ContractListView(AuthenticatedContractMixin, APIView):
             queryset = queryset.filter(search_query)
 
         queryset = queryset.order_by("-updated_at")
-        count = queryset.count()
-        page_number = None
-        page_size = None
-        page_size_param = request.query_params.get("page_size")
-        if page_size_param is not None:
-            try:
-                page_size = int(page_size_param)
-                page_number = int(request.query_params.get("page", "1"))
-            except ValueError:
-                return Response(
-                    {"detail": "Pagination invalide."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            if page_size < 1 or page_size > 100 or page_number < 1:
-                return Response(
-                    {"detail": "Pagination invalide."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            start = (page_number - 1) * page_size
-            queryset = queryset[start : start + page_size]
+        try:
+            items, meta = paginate_queryset(request, queryset)
+        except PaginationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        serializer = ContractListSerializer(queryset, many=True)
+        serializer = ContractListSerializer(items, many=True)
         response_data = {
             "results": serializer.data,
-            "count": count,
+            "count": meta["count"] if meta else queryset.count(),
         }
-        if page_size is not None and page_number is not None:
-            response_data.update(
-                {
-                    "page": page_number,
-                    "page_size": page_size,
-                    "total_pages": max(1, (count + page_size - 1) // page_size),
-                }
-            )
+        if meta:
+            response_data.update(meta)
         return Response(response_data)
 
 
@@ -223,12 +208,17 @@ class ContractDraftDetailView(AuthenticatedContractMixin, generics.RetrieveUpdat
             return Response({"detail": "Permission refusee."}, status=status.HTTP_403_FORBIDDEN)
         was_quoted = contract.internal_status == Contract.InternalStatus.QUOTE_READY
         response = super().update(request, *args, **kwargs)
-        # L'utilisateur a modifié le brouillon : on remet à DRAFT pour invalider le devis précédent.
+        # L'utilisateur a modifié le brouillon : on remet à DRAFT pour invalider
+        # le devis précédent. UPDATE conditionnel atomique : si un paiement vient
+        # d'être confirmé en parallèle (statut passé à PAID), on ne touche à rien.
         if was_quoted and response.status_code in (200, 201):
-            contract.refresh_from_db(fields=["internal_status"])
-            if contract.internal_status == Contract.InternalStatus.QUOTE_READY:
-                contract.internal_status = Contract.InternalStatus.DRAFT
-                contract.save(update_fields=["internal_status", "updated_at"])
+            Contract.objects.filter(
+                pk=contract.pk,
+                internal_status=Contract.InternalStatus.QUOTE_READY,
+            ).update(
+                internal_status=Contract.InternalStatus.DRAFT,
+                updated_at=timezone.now(),
+            )
         return response
 
 
@@ -247,9 +237,13 @@ class ContractDraftQuoteView(AuthenticatedContractMixin, APIView):
             return Response({"detail": "Permission refusee."}, status=status.HTTP_403_FORBIDDEN)
 
         try:
+            if contract.contract_type == Contract.ContractType.FLEET:
+                validate_fleet_coverage_for_quote(contract.draft_payload)
             quote = calculate_contract_quote(contract)
         except (QuoteCalculationError, ValidationError) as exc:
             return Response({"detail": str(exc)}, status=400)
+        except AssIntegrationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
 
         return Response(
             {
@@ -270,7 +264,7 @@ class ContractConfirmPaymentView(AuthenticatedContractMixin, APIView):
             payment = confirm_manual_payment(
                 contract=contract,
                 amount=request.data.get("amount"),
-                external_reference=request.data.get("external_reference", "MANUAL-TEST"),
+                external_reference=request.data.get("external_reference", ""),
                 created_by=request.user,
             )
         except (PaymentConfirmationError, ValidationError) as exc:
@@ -300,6 +294,9 @@ class ContractIssueView(AuthenticatedContractMixin, APIView):
             result = issue_contract(contract)
         except (ContractIssueError, CommissionNotConfiguredError, ValidationError) as exc:
             return Response({"detail": str(exc)}, status=400)
+        except AssIntegrationError as exc:
+            # La reservation d'emission a deja ete liberee par issue_contract.
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
 
         return Response(result)
 
@@ -317,67 +314,60 @@ class ContractCancelView(AuthenticatedContractMixin, APIView):
             result = cancel_contract(contract, method=method, motif=motif)
         except (ContractCancelError, ValidationError) as exc:
             return Response({"detail": str(exc)}, status=400)
+        except AssIntegrationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
 
         return Response(result)
 
 
 class ClientListView(AuthenticatedContractMixin, APIView):
     def get(self, request):
-        queryset = (
+        # Agregation sur les champs denormalises (policyholder_*) : aucun
+        # chargement ni parsing des payloads JSON.
+        rows = (
             get_contract_queryset_for_user(request.user)
-            .select_related("organization")
+            .exclude(policyholder_phone="")
+            .exclude(policyholder_last_name="")
             .order_by("-updated_at")
+            .values(
+                "id",
+                "contract_type",
+                "updated_at",
+                "policyholder_phone",
+                "policyholder_last_name",
+                "policyholder_first_name",
+                "policyholder_email",
+                "policyholder_person_type",
+                "organization__name",
+            )
         )
 
         clients = {}
-
-        for contract in queryset:
-            payload = contract.draft_payload
-            if not isinstance(payload, dict):
-                continue
-
-            ph_data = payload.get("policyholder") or payload.get("souscripteur")
-            if not isinstance(ph_data, dict):
-                continue
-
-            phone = first_present(ph_data, ["phone", "cellulaire", "telephone"])
-            nom = first_present(ph_data, ["lastName", "last_name", "nom", "raisonSociale"])
-            if not phone or not nom:
-                continue
-
-            # person type is stored on the vehicle
-            vehicle = payload.get("vehicle") or {}
-            raw_type = (vehicle.get("personType") or vehicle.get("typePersonne")) if isinstance(vehicle, dict) else None
-            person_type = str(raw_type or "").upper() if str(raw_type or "").upper() in ("PHYSIQUE", "MORALE") else "PHYSIQUE"
-
-            if phone not in clients:
-                clients[phone] = {
+        for row in rows:
+            phone = row["policyholder_phone"]
+            client = clients.get(phone)
+            if client is None:
+                # Les lignes arrivent triees par -updated_at : la premiere vue
+                # porte donc le dernier contrat du client.
+                client = clients[phone] = {
                     "phone": phone,
-                    "nom": nom,
-                    "prenom": first_present(ph_data, ["firstName", "first_name", "prenom"]),
-                    "email": first_present(ph_data, ["email"]),
-                    "person_type": person_type,
+                    "nom": row["policyholder_last_name"],
+                    "prenom": row["policyholder_first_name"],
+                    "email": row["policyholder_email"],
+                    "person_type": row["policyholder_person_type"] or "PHYSIQUE",
                     "contract_count": 0,
                     "contract_types": [],
                     "organizations": [],
-                    "last_contract_id": contract.id,
-                    "last_contract_date": contract.updated_at,
+                    "last_contract_id": row["id"],
+                    "last_contract_date": row["updated_at"],
                 }
 
-            client = clients[phone]
             client["contract_count"] += 1
-
-            ctype = contract.contract_type
-            if ctype not in client["contract_types"]:
-                client["contract_types"].append(ctype)
-
-            org_name = contract.organization.name if contract.organization else None
+            if row["contract_type"] not in client["contract_types"]:
+                client["contract_types"].append(row["contract_type"])
+            org_name = row["organization__name"]
             if org_name and org_name not in client["organizations"]:
                 client["organizations"].append(org_name)
-
-            if contract.updated_at > client["last_contract_date"]:
-                client["last_contract_id"] = contract.id
-                client["last_contract_date"] = contract.updated_at
 
         result = sorted(
             [

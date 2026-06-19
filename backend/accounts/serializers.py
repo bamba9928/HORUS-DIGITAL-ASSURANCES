@@ -1,15 +1,74 @@
 from django.conf import settings
+from django.contrib.auth.password_validation import validate_password as django_validate_password
+from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode
 from django.utils import timezone
 from rest_framework import serializers
+import re
 
 from accounts.models import User
 from organizations.models import Organization
 
 
+ACCOUNT_PHONE_PATTERN = re.compile(r"^7\d{8}$")
+
+
+def normalize_account_phone(value):
+    normalized = re.sub(r"[\s().-]", "", str(value or "").strip())
+    if normalized and not ACCOUNT_PHONE_PATTERN.fullmatch(normalized):
+        raise serializers.ValidationError(
+            "Le téléphone doit contenir exactement 9 chiffres et commencer par 7."
+        )
+    return normalized
+
+
 class AuthLoginSerializer(serializers.Serializer):
-    username = serializers.CharField()
+    identifier = serializers.CharField(required=False, allow_blank=False)
+    username = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        write_only=True,
+    )
     password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        identifier = attrs.get("identifier") or attrs.get("username")
+        if not identifier:
+            raise serializers.ValidationError(
+                {"identifier": "L'identifiant, l'email ou le téléphone est obligatoire."}
+            )
+        identifier = identifier.strip()
+        compact_phone = re.sub(r"[\s().-]", "", identifier)
+        if ACCOUNT_PHONE_PATTERN.fullmatch(compact_phone):
+            identifier = compact_phone
+        attrs["identifier"] = identifier
+        return attrs
+
+
+class AccountIdentityValidationMixin:
+    def validate_email(self, value):
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            return ""
+        queryset = User.objects.filter(email__iexact=normalized)
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError("Cette adresse email est déjà utilisée.")
+        return normalized
+
+    def validate_phone(self, value):
+        normalized = normalize_account_phone(value)
+        if not normalized:
+            return ""
+        queryset = User.objects.filter(phone=normalized)
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError("Ce numéro de téléphone est déjà utilisé.")
+        return normalized
 
 
 class UserReadSerializer(serializers.ModelSerializer):
@@ -30,6 +89,9 @@ class UserReadSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "email",
+            "phone",
+            "address",
+            "matricule",
             "role",
             "organization",
             "organization_name",
@@ -42,8 +104,13 @@ class UserReadSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class UserCreateSerializer(serializers.ModelSerializer):
+class UserCreateSerializer(AccountIdentityValidationMixin, serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
+    phone = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=20,
+    )
     organization = serializers.PrimaryKeyRelatedField(
         queryset=Organization.objects.filter(is_active=True),
         required=False,
@@ -59,10 +126,13 @@ class UserCreateSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "email",
+            "phone",
+            "address",
+            "matricule",
             "role",
             "organization",
         ]
-        read_only_fields = ["id"]
+        read_only_fields = ["id", "matricule"]
 
     def validate(self, attrs):
         actor = self.context["request"].user
@@ -89,7 +159,26 @@ class UserCreateSerializer(serializers.ModelSerializer):
         else:
             raise serializers.ValidationError("Permission refusee.")
 
+        self._validate_password_strength(attrs)
         return attrs
+
+    def _validate_password_strength(self, attrs):
+        # Applique AUTH_PASSWORD_VALIDATORS (mots de passe communs, similarite
+        # avec l'identifiant, etc.) — le hash n'etant pas encore pose,
+        # full_clean() ne les verifie pas.
+        password = attrs.get("password")
+        if not password:
+            return
+        reference_user = User(
+            username=attrs.get("username", ""),
+            email=attrs.get("email", ""),
+            first_name=attrs.get("first_name", ""),
+            last_name=attrs.get("last_name", ""),
+        )
+        try:
+            django_validate_password(password, user=reference_user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"password": list(exc.messages)}) from exc
 
     def create(self, validated_data):
         password = validated_data.pop("password")
@@ -100,7 +189,12 @@ class UserCreateSerializer(serializers.ModelSerializer):
         return user
 
 
-class UserUpdateSerializer(serializers.ModelSerializer):
+class UserUpdateSerializer(AccountIdentityValidationMixin, serializers.ModelSerializer):
+    phone = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=20,
+    )
     organization = serializers.PrimaryKeyRelatedField(
         queryset=Organization.objects.filter(is_active=True),
         required=False,
@@ -113,6 +207,8 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "email",
+            "phone",
+            "address",
             "role",
             "organization",
             "is_active",
@@ -125,7 +221,11 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         organization = attrs.get("organization", target.organization)
 
         if actor.is_admin_group:
-            if role in {User.Role.ADMIN_GENERAL, User.Role.ADMIN_GROUP}:
+            if (
+                "role" in attrs
+                and role != target.role
+                and role in {User.Role.ADMIN_GENERAL, User.Role.ADMIN_GROUP}
+            ):
                 raise serializers.ValidationError(
                     {"role": "Un admin groupe ne peut pas definir ce role."}
                 )
@@ -155,10 +255,16 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         return instance
 
 
-class ProfileUpdateSerializer(serializers.ModelSerializer):
+class ProfileUpdateSerializer(AccountIdentityValidationMixin, serializers.ModelSerializer):
+    phone = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=20,
+    )
+
     class Meta:
         model = User
-        fields = ["first_name", "last_name", "email"]
+        fields = ["first_name", "last_name", "email", "phone", "address"]
 
     def update(self, instance, validated_data):
         for field, value in validated_data.items():
@@ -183,7 +289,33 @@ class ChangePasswordSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "Le nouveau mot de passe doit contenir au moins 8 caractères."
             )
+        try:
+            django_validate_password(value, user=self.context["request"].user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages)) from exc
         return value
+
+
+class AcceptInvitationSerializer(serializers.Serializer):
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    password = serializers.CharField(write_only=True, min_length=8)
+
+    def validate(self, attrs):
+        try:
+            user_id = force_str(urlsafe_base64_decode(attrs["uid"]))
+            user = User.objects.get(pk=user_id)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist) as exc:
+            raise serializers.ValidationError("Invitation invalide ou expirée.") from exc
+
+        if not default_token_generator.check_token(user, attrs["token"]):
+            raise serializers.ValidationError("Invitation invalide ou expirée.")
+        try:
+            django_validate_password(attrs["password"], user=user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"password": list(exc.messages)}) from exc
+        attrs["user"] = user
+        return attrs
 
 
 class UserCommissionSerializer(serializers.ModelSerializer):

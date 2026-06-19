@@ -11,8 +11,9 @@ from django.utils.dateparse import parse_datetime
 from commissions.models import CommissionSnapshot
 from commissions.services import CommissionNotConfiguredError, build_commission_snapshot_values
 from contracts.models import Contract
-from integrations.ass.client import AssClient
+from integrations.ass.client import AssClient, extract_available_qr
 from integrations.ass.constants import ASS_CANCEL_METHODS, ASS_POLICY_FEE, ASS_SUCCESS_STATUS
+from integrations.ass.exceptions import AssIntegrationError
 from payments.services import has_confirmed_payment
 
 
@@ -137,6 +138,11 @@ def _build_quote(contract_type, prime_rc_ass, breakdown, items):
             "cout_police": breakdown.get("cout_police", ASS_POLICY_FEE),
             "prime_totale": breakdown.get("prime_totale"),
         })
+        # Ventilation coherente a l'affichage : PrimeRC pure (sans CEDEAO),
+        # pour que la somme des lignes retombe sur la prime totale. Le contrat,
+        # lui, conserve `data` (RC + CEDEAO) comme assiette — decision actee.
+        if breakdown.get("prime_rc_ass"):
+            quote["prime_rc_ass"] = breakdown["prime_rc_ass"]
     return quote
 
 
@@ -146,19 +152,69 @@ def issue_contract(contract, ass_client=None):
     if already_issued:
         return build_issue_result(contract)
 
+    exchange = {}
     try:
-        request_payload, ass_response, issue_data = call_ass_issue(contract, ass_client)
+        _check_qr_stock(ass_client)
+        request_payload, ass_response, issue_data = call_ass_issue(
+            contract, ass_client, exchange=exchange
+        )
         contract = finalize_contract_issue(
             contract_id=contract.pk,
             request_payload=request_payload,
             ass_response=ass_response,
             issue_data=issue_data,
         )
-    except Exception:
-        release_contract_issue(contract.pk)
+    except Exception as exc:
+        # Persiste les echanges deja effectues : pour une flotte, les vehicules
+        # emis avant l'echec d'une remorque ont consomme des QR cote ASS — sans
+        # trace, impossible de diagnostiquer ou de reprendre proprement.
+        release_contract_issue(
+            contract.pk,
+            failed_request_payload=exchange.get("request"),
+            failed_response_payload=_failed_response_payload(exchange.get("response"), exc),
+        )
         raise
 
     return build_issue_result(contract)
+
+
+def _check_qr_stock(ass_client):
+    """Pre-controle best effort du stock QR avant emission.
+
+    Ne bloque que lorsque ASS repond explicitement un stock <= 0 (message clair
+    au lieu de l'erreur 73O). Une erreur reseau, un client de test sans
+    stock_qr ou un format inattendu n'empechent jamais l'emission.
+    """
+    stock_qr = getattr(ass_client, "stock_qr", None)
+    if stock_qr is None:
+        return
+    try:
+        response = stock_qr({"code": "1000"})
+    except AssIntegrationError:
+        return
+    available = extract_available_qr(response)
+    if available is not None and available <= 0:
+        raise ContractIssueError(
+            "Stock de QR codes ASS epuise : emission impossible. "
+            "Demandez un rechargement aupres d'ASS."
+        )
+
+
+def _failed_response_payload(partial_response, exc):
+    """Combine la derniere reponse ASS connue et l'erreur qui a interrompu l'emission."""
+    body = getattr(exc, "response_body", None)
+    if body is None:
+        error_payload = {"erreur_emission": str(exc)} if str(exc) else None
+    elif isinstance(body, (dict, list)):
+        error_payload = {"erreur_emission": body}
+    else:
+        error_payload = {"erreur_emission": str(body)[:2000]}
+
+    if partial_response is None:
+        return error_payload
+    if isinstance(partial_response, dict) and error_payload:
+        return {**partial_response, **error_payload}
+    return partial_response
 
 
 @transaction.atomic
@@ -196,19 +252,32 @@ def reserve_contract_issue(contract_id):
     return contract, False
 
 
-def call_ass_issue(contract, ass_client):
+def call_ass_issue(contract, ass_client, exchange=None):
+    """Appelle l'emission ASS adaptee au type de contrat.
+
+    ``exchange`` (dict mutable optionnel) est rempli au fil de l'eau avec les
+    cles "request"/"response" : les echanges deja effectues restent disponibles
+    pour persistance meme si un appel ulterieur echoue (flotte + remorques).
+    """
+    if exchange is None:
+        exchange = {}
     reference = contract.reference_trx_partner
+
     if contract.contract_type == Contract.ContractType.AUTO_MONO:
         request_payload = build_auto_issue_payload(contract, reference)
-        ass_response = ass_client.issue_auto_contract(request_payload)
-        issue_data = extract_issue_data(ass_response)
+        ass_response, issue_data = _call_single_issue(
+            ass_client.issue_auto_contract, request_payload, exchange
+        )
     elif contract.contract_type == Contract.ContractType.MOTO:
         request_payload = build_moto_issue_payload(contract, reference)
-        ass_response = ass_client.issue_moto_contract(request_payload)
-        issue_data = extract_issue_data(ass_response)
+        ass_response, issue_data = _call_single_issue(
+            ass_client.issue_moto_contract, request_payload, exchange
+        )
     elif contract.contract_type == Contract.ContractType.FLEET:
         fleet_request_payload = build_fleet_issue_payload(contract, reference)
+        exchange["request"] = {"flotte": fleet_request_payload, "remorques": []}
         fleet_response = ass_client.issue_fleet_contract(fleet_request_payload)
+        exchange["response"] = {"flotte": fleet_response, "remorques": []}
         fleet_issue_items = extract_fleet_issue_items(fleet_response)
         trailer_request_payloads = build_fleet_trailer_issue_payloads(
             contract=contract,
@@ -216,32 +285,35 @@ def call_ass_issue(contract, ass_client):
             fleet_request_payload=fleet_request_payload,
             fleet_issue_items=fleet_issue_items,
         )
-        trailer_responses = []
         for trailer_payload in trailer_request_payloads:
+            exchange["request"]["remorques"].append(trailer_payload)
             trailer_response = ass_client.issue_trailer_contract(trailer_payload)
+            exchange["response"]["remorques"].append(trailer_response)
             extract_issue_data(trailer_response)
-            trailer_responses.append(trailer_response)
-        request_payload = {
-            "flotte": fleet_request_payload,
-            "remorques": trailer_request_payloads,
-        }
-        ass_response = {
-            "flotte": fleet_response,
-            "remorques": trailer_responses,
-        }
+        request_payload = exchange["request"]
+        ass_response = exchange["response"]
         issue_data = fleet_issue_items[0]
     elif contract.contract_type == Contract.ContractType.BUS_SCHOOL:
         request_payload = build_bus_issue_payload(contract, reference)
-        ass_response = ass_client.issue_bus_contract(request_payload)
-        issue_data = extract_issue_data(ass_response)
+        ass_response, issue_data = _call_single_issue(
+            ass_client.issue_bus_contract, request_payload, exchange
+        )
     elif contract.contract_type == Contract.ContractType.GARAGE:
         request_payload = build_garage_issue_payload(contract, reference)
-        ass_response = ass_client.issue_garage_contract(request_payload)
-        issue_data = extract_issue_data(ass_response)
+        ass_response, issue_data = _call_single_issue(
+            ass_client.issue_garage_contract, request_payload, exchange
+        )
     else:
         raise ContractIssueError("Ce type de contrat n'est pas encore actif pour emission.")
 
     return request_payload, ass_response, issue_data
+
+
+def _call_single_issue(issue_method, request_payload, exchange):
+    exchange["request"] = request_payload
+    ass_response = issue_method(request_payload)
+    exchange["response"] = ass_response
+    return ass_response, extract_issue_data(ass_response)
 
 
 @transaction.atomic
@@ -307,22 +379,25 @@ def finalize_contract_issue(*, contract_id, request_payload, ass_response, issue
 
 
 @transaction.atomic
-def release_contract_issue(contract_id):
+def release_contract_issue(contract_id, *, failed_request_payload=None, failed_response_payload=None):
     contract = Contract.objects.select_for_update().get(pk=contract_id)
     if contract.internal_status != Contract.InternalStatus.ISSUING:
         return
     contract.internal_status = Contract.InternalStatus.PAID
     contract.issuance_started_at = None
-    contract.save(
-        update_fields=[
-            "internal_status",
-            "issuance_started_at",
-            "updated_at",
-        ]
-    )
+    update_fields = ["internal_status", "issuance_started_at", "updated_at"]
+    if failed_request_payload is not None:
+        contract.ass_issue_request_payload = failed_request_payload
+        update_fields.append("ass_issue_request_payload")
+    if failed_response_payload is not None:
+        contract.ass_issue_response_payload = failed_response_payload
+        update_fields.append("ass_issue_response_payload")
+    contract.save(update_fields=update_fields)
 
 
 def build_issue_result(contract):
+    # secure_key est stockee en base mais jamais exposee : la doc ASS la marque
+    # explicitement "a ignorer".
     return {
         "contract_id": contract.id,
         "internal_status": contract.internal_status,
@@ -330,16 +405,22 @@ def build_issue_result(contract):
         "reference_trx_partner": contract.reference_trx_partner,
         "reference_externe": contract.reference_externe,
         "attestation_number": contract.attestation_number,
-        "secure_key": contract.secure_key,
         "date_expiration": contract.date_expiration.isoformat() if contract.date_expiration else None,
         "link_attestation_digitale": contract.link_attestation_digitale,
         "link_attestation_cedeao": contract.link_attestation_cedeao,
     }
 
 
-@transaction.atomic
 def cancel_contract(contract, method, motif="", ass_client=None):
     ass_client = ass_client or AssClient()
+    if contract.contract_type == Contract.ContractType.FLEET:
+        # Les attestations flotte sont emises par vehicule/remorque (references
+        # individuelles) : l'endpoint d'annulation mono avec la reference parente
+        # n'annulerait rien cote ASS. A implementer par attestation.
+        raise ContractCancelError(
+            "L'annulation d'un contrat flotte n'est pas encore supportee : "
+            "chaque attestation doit etre annulee individuellement aupres d'ASS."
+        )
     if contract.internal_status != Contract.InternalStatus.ISSUED:
         raise ContractCancelError("Seuls les contrats emis peuvent etre annules.")
     if method not in ASS_CANCEL_METHODS:
@@ -354,18 +435,21 @@ def cancel_contract(contract, method, motif="", ass_client=None):
         "methode": method,
         "motif": motif,
     }
+    # Appel reseau hors transaction : pas de verrou DB pendant l'appel (30 s max)
+    # et le journal AssApiLog survit meme si la mise a jour locale echoue.
     ass_response = ass_client.cancel_attestation(request_payload)
     if not is_success_response(ass_response):
         raise ContractCancelError(response_message(ass_response, "Annulation ASS echouee."))
 
-    contract.internal_status = Contract.InternalStatus.CANCELLED
-    contract.ass_status = Contract.AssStatus.CANCELLED
-    contract.save(update_fields=["internal_status", "ass_status", "updated_at"])
+    with transaction.atomic():
+        contract.internal_status = Contract.InternalStatus.CANCELLED
+        contract.ass_status = Contract.AssStatus.CANCELLED
+        contract.save(update_fields=["internal_status", "ass_status", "updated_at"])
 
-    snapshot = getattr(contract, "commission_snapshot", None)
-    if snapshot is not None:
-        snapshot.status = CommissionSnapshot.Status.CANCELLED
-        snapshot.save(update_fields=["status", "updated_at"])
+        snapshot = getattr(contract, "commission_snapshot", None)
+        if snapshot is not None:
+            snapshot.status = CommissionSnapshot.Status.CANCELLED
+            snapshot.save(update_fields=["status", "updated_at"])
 
     return {
         "contract_id": contract.id,
@@ -468,22 +552,27 @@ def build_moto_issue_payload(contract, reference):
 
 
 def build_fleet_rc_payload(draft_payload):
-    vehicles = draft_payload.get("fleet", {}).get("vehicles", [])
-    periodicity = first_vehicle_periodicity(vehicles)
+    fleet = draft_payload.get("fleet", {})
+    vehicles = fleet.get("vehicles", [])
+    fleet_duration = fleet.get("duration")
+    periodicity = vehicle_periodicity(
+        fleet,
+        default=first_vehicle_periodicity(vehicles),
+    )
     guarantees = selected_guarantees(draft_payload)
     guarantee_options = selected_guarantee_options(draft_payload)
     return {
         "referenceFlotte": draft_payload.get("referenceFlotte", "HORUS-DRAFT-FLEET"),
         "periodicite": periodicity,
-        "duree": to_int(first_value(vehicles, "duration"), default=1),
-        "dateEffet": first_value(vehicles, "effectDate") or "",
+        "duree": to_int(fleet_duration or first_value(vehicles, "duration"), default=1),
+        "dateEffet": fleet.get("effectDate") or first_value(vehicles, "effectDate") or "",
         "cout_police": ASS_POLICY_FEE,
         "remise_rc": 0,
         "requests": [
             {
                 "requestId": vehicle.get("id"),
                 "puissanceFiscale": to_int(vehicle.get("fiscalPower"), default=1),
-                "duree": to_int(vehicle.get("duration"), default=1),
+                "duree": to_int(fleet_duration or vehicle.get("duration"), default=1),
                 "genre": vehicle.get("subcategory"),
                 "energie": vehicle.get("energy"),
                 "valeurNeuve": to_int(vehicle.get("newValue"), default=0),
@@ -497,19 +586,29 @@ def build_fleet_rc_payload(draft_payload):
 
 
 def build_fleet_issue_payload(contract, reference):
-    vehicles = contract.draft_payload.get("fleet", {}).get("vehicles", [])
+    fleet = contract.draft_payload.get("fleet", {})
+    vehicles = fleet.get("vehicles", [])
     prime_by_request_id = get_fleet_prime_rc_by_request_id(contract)
-    periodicity = first_vehicle_periodicity(vehicles)
+    periodicity = vehicle_periodicity(
+        fleet,
+        default=first_vehicle_periodicity(vehicles),
+    )
     guarantees = selected_guarantees(contract.draft_payload)
     guarantee_options = selected_guarantee_options(contract.draft_payload)
     policyholder = policyholder_payload(contract.draft_payload)
     insured = insured_payload(contract.draft_payload)
     return {
         "referenceFlotte": f"HORUS-FLEET-{contract.id}",
-        "dateEffet": first_value(vehicles, "effectDate") or "",
-        "duree": to_int(first_value(vehicles, "duration"), default=1),
+        "dateEffet": fleet.get("effectDate") or first_value(vehicles, "effectDate") or "",
+        "duree": to_int(
+            fleet.get("duration") or first_value(vehicles, "duration"),
+            default=1,
+        ),
         "periodicite": periodicity,
-        "typePersonne": first_vehicle_person_type(vehicles, default="MORALE"),
+        "typePersonne": vehicle_person_type(
+            fleet,
+            default=first_vehicle_person_type(vehicles, default="MORALE"),
+        ),
         "police": f"HORUS-FLEET-POL-{contract.id}",
         "cout_police": ASS_POLICY_FEE,
         "remise_rc": 0,
@@ -554,7 +653,8 @@ def calculate_trailer_quote_items(draft_payload, ass_client):
     items = []
     requests = []
     responses = []
-    for vehicle in draft_payload.get("fleet", {}).get("vehicles", []):
+    fleet = draft_payload.get("fleet", {})
+    for vehicle in fleet.get("vehicles", []):
         for index, trailer in enumerate(vehicle.get("trailers", []), start=1):
             if index == 1:
                 prime_rc_ass = 0
@@ -565,7 +665,7 @@ def calculate_trailer_quote_items(draft_payload, ass_client):
                     "data": 0,
                 }
             else:
-                request_payload = build_trailer_rc_payload(vehicle, trailer)
+                request_payload = build_trailer_rc_payload(vehicle, trailer, fleet=fleet)
                 response_payload = ass_client.calculate_trailer_rc(request_payload)
                 prime_rc_ass = extract_prime_rc(response_payload)
 
@@ -597,10 +697,17 @@ def calculate_trailer_quote_items(draft_payload, ass_client):
     return {"items": items, "requests": requests, "responses": responses}
 
 
-def build_trailer_rc_payload(vehicle, trailer):
-    periodicity = vehicle_periodicity(trailer, default=vehicle_periodicity(vehicle))
+def build_trailer_rc_payload(vehicle, trailer, fleet=None):
+    fleet = fleet or {}
+    periodicity = vehicle_periodicity(
+        fleet,
+        default=vehicle_periodicity(trailer, default=vehicle_periodicity(vehicle)),
+    )
     return {
-        "duree": to_int(trailer.get("duration") or vehicle.get("duration"), default=1),
+        "duree": to_int(
+            fleet.get("duration") or trailer.get("duration") or vehicle.get("duration"),
+            default=1,
+        ),
         "periodicite": periodicity,
         "referenceVehicule": vehicle.get("registration")
         or vehicle.get("chassis")
@@ -616,7 +723,8 @@ def build_fleet_trailer_issue_payloads(
     fleet_request_payload,
     fleet_issue_items,
 ):
-    vehicles = contract.draft_payload.get("fleet", {}).get("vehicles", [])
+    fleet = contract.draft_payload.get("fleet", {})
+    vehicles = fleet.get("vehicles", [])
     trailer_prime_by_id = get_trailer_prime_rc_by_id(contract)
     policyholder = policyholder_payload(contract.draft_payload)
     insured = insured_payload(contract.draft_payload)
@@ -636,14 +744,30 @@ def build_fleet_trailer_issue_payloads(
             or vehicle_request_item["referenceTrxPartner"]
         )
         for trailer_index, trailer in enumerate(vehicle.get("trailers", []), start=1):
-            duration = to_int(trailer.get("duration") or vehicle.get("duration"), default=1)
-            periodicity = vehicle_periodicity(trailer, default=vehicle_periodicity(vehicle))
+            duration = to_int(
+                fleet.get("duration") or trailer.get("duration") or vehicle.get("duration"),
+                default=1,
+            )
+            periodicity = vehicle_periodicity(
+                fleet,
+                default=vehicle_periodicity(
+                    trailer,
+                    default=vehicle_periodicity(vehicle),
+                ),
+            )
             payloads.append(
                 {
                     "responsabiliteCivile": trailer_prime_by_id.get(trailer.get("id"), 0),
-                    "dateEffet": trailer.get("effectDate") or vehicle.get("effectDate") or "",
+                    "dateEffet": (
+                        fleet.get("effectDate")
+                        or trailer.get("effectDate")
+                        or vehicle.get("effectDate")
+                        or ""
+                    ),
                     "dateExpiration": calculate_expiration_date(
-                        trailer.get("effectDate") or vehicle.get("effectDate"),
+                        fleet.get("effectDate")
+                        or trailer.get("effectDate")
+                        or vehicle.get("effectDate"),
                         duration,
                         periodicity,
                     ),
@@ -655,8 +779,11 @@ def build_fleet_trailer_issue_payloads(
                         f"{reference}-REM-{vehicle_index}-{trailer_index}"
                     ),
                     "typePersonne": vehicle_person_type(
-                        trailer,
-                        default=vehicle_person_type(vehicle, default="MORALE"),
+                        fleet,
+                        default=vehicle_person_type(
+                            trailer,
+                            default=vehicle_person_type(vehicle, default="MORALE"),
+                        ),
                     ),
                     "immatriculation": trailer.get("registration") or "",
                     "marque": trailer.get("brand") or "",
@@ -749,9 +876,12 @@ def build_garage_issue_payload(contract, reference):
 def extract_prime_rc(ass_response):
     """
     Extrait la Prime RC depuis la reponse ASS.
-    Supporte deux formats :
-    - data: int  (ancien format / mock simplifie)
-    - data: dict (format reel ASS avec breakdown complet)
+    Formats supportes :
+    - data: chaine ou entier (API reelle : data = PrimeRC + Cedeao, ex. "4769") ;
+    - data: dict camelCase (mock interne).
+
+    La valeur alimente contract.prime_rc_ass : assiette de la commission
+    apporteur (RC + CEDEAO incluse — decision metier actee le 2026-06-11).
     """
     if not is_success_response(ass_response):
         raise QuoteCalculationError(response_message(ass_response, "Calcul ASS echoue."))
@@ -773,20 +903,45 @@ def extract_rc_breakdown(ass_response):
     """
     Extrait le detail complet du tarif RC depuis la reponse ASS.
     Retourne un dict avec tous les champs de ventilation (taxe, cedeao, etc.).
-    Retourne None si la reponse ne contient pas de breakdown (ancien format).
+    Retourne None si la reponse ne contient pas de breakdown.
+
+    Deux formats supportes :
+    - mock interne : data est un dict camelCase ({"responsabiliteCivile": ..., "taxe": ...}) ;
+    - API reelle (valide en sandbox 2026-06-11) : ventilation a la racine en
+      PascalCase avec des montants en chaines ({"PrimeRC": "4469", "Taxe": "1046",
+      "Fga": "112", "PrimeTotale": "8927", ...}), et data est une chaine
+      (PrimeRC + Cedeao).
     """
-    data = ass_response.get("data") if isinstance(ass_response, dict) else None
-    if not isinstance(data, dict):
+    if not isinstance(ass_response, dict):
         return None
-    return {
-        "taxe": _safe_int(data.get("taxe")),
-        "cedeao": _safe_int(data.get("cedeao")),
-        "reduction": _safe_int(data.get("reduction")),
-        "prime_ag": _safe_int(data.get("primeAG")),
-        "fonds_garantie": _safe_int(data.get("fondsGarantie")),
-        "cout_police": _safe_int(data.get("coutPolice")),
-        "prime_totale": _safe_int(data.get("primeTotale")),
-    }
+
+    data = ass_response.get("data")
+    if isinstance(data, dict):
+        return {
+            "taxe": _safe_int(data.get("taxe")),
+            "cedeao": _safe_int(data.get("cedeao")),
+            "reduction": _safe_int(data.get("reduction")),
+            "prime_ag": _safe_int(data.get("primeAG")),
+            "fonds_garantie": _safe_int(data.get("fondsGarantie")),
+            "cout_police": _safe_int(data.get("coutPolice")),
+            "prime_totale": _safe_int(data.get("primeTotale")),
+        }
+
+    if "PrimeTotale" in ass_response or "PrimeRC" in ass_response:
+        return {
+            # PrimeRC est la RC pure (sans CEDEAO) : c'est elle qui rend la
+            # ventilation affichee coherente (somme des lignes = PrimeTotale).
+            "prime_rc_ass": _safe_int(ass_response.get("PrimeRC")),
+            "taxe": _safe_int(ass_response.get("Taxe")),
+            "cedeao": _safe_int(ass_response.get("Cedeao")),
+            "reduction": _safe_int(ass_response.get("Reduction")),
+            "prime_ag": _safe_int(ass_response.get("PrimeAG")),
+            "fonds_garantie": _safe_int(ass_response.get("Fga")),
+            "cout_police": _safe_int(ass_response.get("CoutPolice")),
+            "prime_totale": _safe_int(ass_response.get("PrimeTotale")),
+        }
+
+    return None
 
 
 def _safe_int(value, default=0):
@@ -824,10 +979,6 @@ def extract_issue_data(ass_response):
     if not isinstance(data, dict):
         raise ContractIssueError("Reponse ASS emission invalide.")
     return data
-
-
-def extract_fleet_issue_data(ass_response):
-    return extract_fleet_issue_items(ass_response)[0]
 
 
 def extract_fleet_issue_items(ass_response):
@@ -921,11 +1072,12 @@ def add_months(value, months):
 
 
 def normalize_moto_usage(value):
+    # Valide en sandbox (2026-06-11) : l'API n'accepte que COMMERCIAL /
+    # NON_COMMERCIAL (sans E final), contrairement au PDF qui documente
+    # commerciale / non_commerciale.
     upper = str(value or "").upper().removesuffix("E")
-    if upper == "COMMERCIAL":
-        return "COMMERCIALE"
-    if upper == "NON_COMMERCIAL":
-        return "NON_COMMERCIALE"
+    if upper in {"COMMERCIAL", "NON_COMMERCIAL"}:
+        return upper
     return value
 
 

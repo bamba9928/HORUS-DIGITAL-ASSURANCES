@@ -12,6 +12,78 @@ PHONE_PATTERN = re.compile(r"^7\d{0,8}$")
 REGISTRATION_PATTERN = re.compile(r"^[A-Z0-9-]+$")
 PHONE_FIELDS = {"phone", "cellulaire", "telephone"}
 REGISTRATION_FIELDS = {"registration", "immatriculation"}
+FLEET_COVERAGE_FIELDS = {"effectDate", "duration", "periodicity", "personType"}
+
+
+class FleetCoverageSerializer(serializers.Serializer):
+    effectDate = serializers.DateField(
+        error_messages={
+            "invalid": "La date d'effet de la flotte est invalide.",
+            "required": "La date d'effet de la flotte est obligatoire.",
+        }
+    )
+    duration = serializers.IntegerField(
+        min_value=1,
+        error_messages={
+            "invalid": "La durée de la flotte doit être un nombre entier.",
+            "min_value": "La durée de la flotte doit être supérieure à zéro.",
+            "required": "La durée de la flotte est obligatoire.",
+        },
+    )
+    periodicity = serializers.ChoiceField(
+        choices=["JOUR", "MOIS"],
+        error_messages={
+            "invalid_choice": "La périodicité de la flotte doit être JOUR ou MOIS.",
+            "required": "La périodicité de la flotte est obligatoire.",
+        },
+    )
+    personType = serializers.ChoiceField(
+        choices=["PHYSIQUE", "MORALE"],
+        error_messages={
+            "invalid_choice": "Le type de personne doit être PHYSIQUE ou MORALE.",
+            "required": "Le type de personne de la flotte est obligatoire.",
+        },
+    )
+
+    def validate(self, attrs):
+        duration = attrs.get("duration")
+        periodicity = attrs.get("periodicity")
+        if duration is None or periodicity is None:
+            return attrs
+        if periodicity == "MOIS" and duration > 12:
+            raise serializers.ValidationError(
+                {"duration": "La durée mensuelle de la flotte ne peut pas dépasser 12 mois."}
+            )
+        if periodicity == "JOUR" and duration > 366:
+            raise serializers.ValidationError(
+                {"duration": "La durée journalière de la flotte ne peut pas dépasser 366 jours."}
+            )
+        return attrs
+
+
+def validate_fleet_coverage_for_quote(draft_payload):
+    fleet = draft_payload.get("fleet") if isinstance(draft_payload, dict) else None
+    coverage_data = _fleet_coverage_data(fleet)
+    serializer = FleetCoverageSerializer(data=coverage_data)
+    if serializer.is_valid():
+        return serializer.validated_data
+
+    messages = [
+        str(message)
+        for field_messages in serializer.errors.values()
+        for message in field_messages
+    ]
+    raise DjangoValidationError("Couverture flotte invalide : " + " ".join(messages))
+
+
+def _fleet_coverage_data(fleet):
+    if not isinstance(fleet, dict):
+        return {}
+    return {
+        field: fleet[field]
+        for field in FLEET_COVERAGE_FIELDS
+        if fleet.get(field) not in (None, "")
+    }
 
 
 class ContractDraftSerializer(serializers.ModelSerializer):
@@ -142,6 +214,20 @@ class ContractDraftSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError(
                         {"draft_payload": "Une remorque doit rester dans la carte de son tracteur."}
                     )
+
+        coverage = FleetCoverageSerializer(
+            data=_fleet_coverage_data(fleet),
+            partial=True,
+        )
+        if not coverage.is_valid():
+            messages = [
+                str(message)
+                for field_messages in coverage.errors.values()
+                for message in field_messages
+            ]
+            raise serializers.ValidationError(
+                {"draft_payload": "Couverture flotte invalide : " + " ".join(messages)}
+            )
 
     def create(self, validated_data):
         request = self.context.get("request")
@@ -383,7 +469,6 @@ class ContractDetailSerializer(ContractListSerializer):
                 data={
                     "referenceExterne": contract.reference_externe,
                     "attestationNumber": contract.attestation_number,
-                    "secureKey": contract.secure_key,
                     "dateExpiration": contract.date_expiration.isoformat()
                     if contract.date_expiration
                     else None,
@@ -458,13 +543,13 @@ class ContractDetailSerializer(ContractListSerializer):
         }
 
     def _build_attestation_item(self, *, kind, label, immatriculation, data):
+        # secureKey n'est jamais exposee ("a ignorer" selon la doc ASS).
         return {
             "kind": kind,
             "label": label,
             "immatriculation": immatriculation or "",
             "reference_externe": data.get("referenceExterne", "") or "",
             "attestation_number": data.get("attestationNumber", "") or "",
-            "secure_key": data.get("secureKey", "") or "",
             "date_expiration": data.get("dateExpiration"),
             "link_attestation_digitale": data.get("linkAttestation", "") or "",
             "link_attestation_cedeao": data.get("linkCarteBrune", "") or "",

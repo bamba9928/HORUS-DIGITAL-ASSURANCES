@@ -21,6 +21,7 @@ import {
   updateUserCommission,
   type ManagedUser,
   type OrganizationOption,
+  type UpdateUserPayload,
 } from "@/lib/api";
 import { canManageUsers as userCanManageUsers } from "@/lib/permissions";
 
@@ -30,6 +31,10 @@ const roles = [
   { value: "ADMIN_GROUP", label: "Admin groupe" },
   { value: "ADMIN_GENERAL", label: "Admin général" },
 ] as const;
+
+function sanitizeSenegalPhone(value: string) {
+  return value.replace(/\D/g, "").slice(0, 9);
+}
 
 export default function UsersPage() {
   const { auth, isLoading: authLoading } = useAuth();
@@ -165,6 +170,12 @@ export default function UsersPage() {
                 <tbody>
                   {users.map((user) => (
                     <UserRow
+                      canEdit={
+                        auth?.user?.role === "ADMIN_GENERAL" ||
+                        (auth?.user?.role === "ADMIN_GROUP" &&
+                          auth.user.organization === user.organization &&
+                          user.role !== "ADMIN_GENERAL")
+                      }
                       key={user.id}
                       onEdit={setEditTarget}
                       onSaved={refresh}
@@ -205,10 +216,12 @@ export default function UsersPage() {
 /* ── UserRow ──────────────────────────────────────────────────────── */
 
 function UserRow({
+  canEdit,
   user,
   onSaved,
   onEdit,
 }: {
+  canEdit: boolean;
   user: ManagedUser;
   onSaved: () => Promise<void>;
   onEdit: (user: ManagedUser) => void;
@@ -254,6 +267,9 @@ function UserRow({
           <p className="mt-1 text-xs font-semibold text-black/45">
             {[user.first_name, user.last_name].filter(Boolean).join(" ") || user.email || "Sans nom"}
           </p>
+          <p className="mt-0.5 font-mono text-[11px] font-bold text-black/35">
+            {user.matricule}
+          </p>
           {error ? <p className="mt-2 text-xs font-bold text-red-700">{error}</p> : null}
         </div>
       </td>
@@ -292,6 +308,7 @@ function UserRow({
         <div className="flex gap-2">
           <button
             className="flex h-10 items-center gap-1.5 rounded-md border border-border bg-white px-3 text-xs font-extrabold hover:bg-muted"
+            disabled={!canEdit}
             onClick={() => onEdit(user)}
             type="button"
           >
@@ -329,11 +346,16 @@ function EditUserModal({
 }) {
   const { auth } = useAuth();
   const isAdminGroup = auth?.user?.role === "ADMIN_GROUP";
+  const canEditAccess =
+    auth?.user?.role === "ADMIN_GENERAL" ||
+    !["ADMIN_GENERAL", "ADMIN_GROUP"].includes(user.role);
 
   const [form, setForm] = useState({
     first_name: user.first_name,
     last_name: user.last_name,
     email: user.email,
+    phone: user.phone,
+    address: user.address,
     role: user.role as string,
     organization: user.organization?.toString() ?? "",
     is_active: user.is_active,
@@ -342,8 +364,14 @@ function EditUserModal({
   const [isSaving, setIsSaving] = useState(false);
 
   const visibleRoles = useMemo(
-    () => roles.filter((r) => canCreateAdminRoles || !r.value.startsWith("ADMIN")),
-    [canCreateAdminRoles],
+    () =>
+      roles.filter(
+        (r) =>
+          canCreateAdminRoles ||
+          !r.value.startsWith("ADMIN") ||
+          r.value === user.role,
+      ),
+    [canCreateAdminRoles, user.role],
   );
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -351,14 +379,19 @@ function EditUserModal({
     setError("");
     setIsSaving(true);
     try {
-      await updateUser(user.id, {
+      const payload: UpdateUserPayload = {
         first_name: form.first_name,
         last_name: form.last_name,
         email: form.email,
-        role: form.role as ManagedUser["role"],
-        organization: form.organization ? Number(form.organization) : null,
-        is_active: form.is_active,
-      });
+        phone: form.phone,
+        address: form.address,
+      };
+      if (canEditAccess) {
+        payload.role = form.role as ManagedUser["role"];
+        payload.organization = form.organization ? Number(form.organization) : null;
+        payload.is_active = form.is_active;
+      }
+      await updateUser(user.id, payload);
       await onSaved();
       onClose();
     } catch (err) {
@@ -408,10 +441,34 @@ function EditUserModal({
             type="email"
             value={form.email}
           />
+          <Field
+            hint="9 chiffres commençant par 7."
+            inputMode="numeric"
+            label="Téléphone"
+            maxLength={9}
+            onChange={(v) =>
+              setForm({ ...form, phone: sanitizeSenegalPhone(v) })
+            }
+            pattern="7[0-9]{8}"
+            type="tel"
+            value={form.phone}
+          />
+          <Field
+            label="Adresse"
+            onChange={(v) => setForm({ ...form, address: v })}
+            value={form.address}
+          />
+          <Field
+            disabled
+            label="Matricule"
+            onChange={() => {}}
+            value={user.matricule}
+          />
           <label className="block">
             <span className="text-xs font-extrabold uppercase text-black/52">Rôle</span>
             <select
               className="app-field mt-1.5"
+              disabled={!canEditAccess}
               onChange={(e) => setForm({ ...form, role: e.target.value })}
               value={form.role}
             >
@@ -426,7 +483,7 @@ function EditUserModal({
             <span className="text-xs font-extrabold uppercase text-black/52">Groupe</span>
             <select
               className="app-field mt-1.5"
-              disabled={isAdminGroup}
+              disabled={!canEditAccess || isAdminGroup}
               onChange={(e) => setForm({ ...form, organization: e.target.value })}
               required={form.role !== "ADMIN_GENERAL"}
               value={form.organization}
@@ -443,6 +500,7 @@ function EditUserModal({
             <input
               checked={form.is_active}
               className="size-4 accent-primary"
+              disabled={!canEditAccess}
               onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
               type="checkbox"
             />
@@ -471,15 +529,23 @@ function EditUserModal({
 
 function Field({
   disabled,
+  hint,
+  inputMode,
   label,
+  maxLength,
   onChange,
+  pattern,
   required,
   type = "text",
   value,
 }: {
   disabled?: boolean;
+  hint?: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
   label: string;
+  maxLength?: number;
   onChange: (value: string) => void;
+  pattern?: string;
   required?: boolean;
   type?: string;
   value: string;
@@ -490,11 +556,15 @@ function Field({
       <input
         className="app-field mt-1.5"
         disabled={disabled}
+        inputMode={inputMode}
+        maxLength={maxLength}
         onChange={(e) => onChange(e.target.value)}
+        pattern={pattern}
         required={required}
         type={type}
         value={value}
       />
+      {hint ? <p className="mt-1 text-[11px] font-medium text-black/40">{hint}</p> : null}
     </label>
   );
 }

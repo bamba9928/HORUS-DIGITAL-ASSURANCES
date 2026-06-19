@@ -1,6 +1,7 @@
 from django.urls import path
 
 from accounts.views import (
+    AcceptInvitationView,
     AuthLoginView,
     AuthLogoutView,
     AuthMeView,
@@ -12,6 +13,11 @@ from accounts.views import (
 )
 
 urlpatterns = [
+    path(
+        "auth/invitations/accept/",
+        AcceptInvitationView.as_view(),
+        name="accept-invitation",
+    ),
     path("auth/me/", AuthMeView.as_view(), name="auth-me"),
     path("auth/login/", AuthLoginView.as_view(), name="auth-login"),
     path("auth/logout/", AuthLogoutView.as_view(), name="auth-logout"),

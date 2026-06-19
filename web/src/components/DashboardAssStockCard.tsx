@@ -55,8 +55,11 @@ export function DashboardAssStockCard() {
   }, [authLoading, auth?.authenticated]);
 
   const qrCount = stock?.available_qr;
-  const isLow = typeof qrCount === "number" && qrCount < 20;
-  const isCritical = typeof qrCount === "number" && qrCount < 5;
+  // -1 = aucun stock alloué au compte (convention sandbox ASS).
+  const noAllocation = typeof qrCount === "number" && qrCount < 0;
+  const threshold = stock?.alert_threshold ?? 20;
+  const isLow = typeof qrCount === "number" && (stock?.low_stock ?? qrCount <= threshold);
+  const isCritical = noAllocation || (typeof qrCount === "number" && qrCount <= Math.ceil(threshold / 2));
 
   return (
     <section className="app-surface flex flex-col overflow-hidden p-5">
@@ -97,6 +100,8 @@ export function DashboardAssStockCard() {
               <span className="inline-block h-12 w-16 animate-pulse rounded-lg bg-muted" />
             ) : qrCount == null ? (
               "—"
+            ) : noAllocation ? (
+              0
             ) : (
               qrCount
             )}
@@ -106,7 +111,12 @@ export function DashboardAssStockCard() {
       </div>
 
       {/* Alert low stock */}
-      {isCritical ? (
+      {noAllocation ? (
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs font-bold text-red-700">
+          <AlertTriangle size={14} />
+          Aucun stock QR alloué — demander un crédit à ASS
+        </div>
+      ) : isCritical ? (
         <div className="mt-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs font-bold text-red-700">
           <AlertTriangle size={14} />
           Stock critique — rechargement urgent requis
@@ -133,7 +143,7 @@ export function DashboardAssStockCard() {
             <p className="text-[10px] font-black uppercase tracking-wide">Statut</p>
           </div>
           <p className="mt-1.5 text-sm font-extrabold">
-            {isLoading ? "—" : qrCount ? "Disponible" : "Vide"}
+            {isLoading ? "—" : qrCount != null && qrCount > 0 ? "Disponible" : "Vide"}
           </p>
         </div>
       </div>

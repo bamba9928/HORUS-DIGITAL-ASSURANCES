@@ -8,10 +8,11 @@ import {
   Search,
   Users,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { AppShell } from "@/components/AppShell";
+import { OrganizationForm } from "@/components/OrganizationForm";
 import {
   AlertMessage,
   EmptyState,
@@ -23,6 +24,7 @@ import {
   createOrganization,
   fetchOrganizations,
   updateOrganization,
+  type CreateOrganizationPayload,
   type Organization,
 } from "@/lib/api";
 import { canManageOrganizations } from "@/lib/permissions";
@@ -34,6 +36,7 @@ export default function OrganizationsPage() {
   const [search, setSearch] = useState("");
   const [showInactive, setShowInactive] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [isDataLoading, setIsDataLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Organization | null>(null);
@@ -79,12 +82,15 @@ export default function OrganizationsPage() {
   }, [authLoading, auth?.authenticated]);
 
   const filtered = useMemo(() => {
-    let list = showInactive ? orgs : orgs.filter((o) => o.is_active);
+    let list = showInactive ? orgs : orgs.filter((o) => o.status === "ACTIVE");
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter(
         (o) =>
-          o.name.toLowerCase().includes(q) || o.code.toLowerCase().includes(q),
+          o.name.toLowerCase().includes(q) ||
+          o.code.toLowerCase().includes(q) ||
+          o.city.toLowerCase().includes(q) ||
+          o.professional_email.toLowerCase().includes(q),
       );
     }
     return list;
@@ -93,8 +99,8 @@ export default function OrganizationsPage() {
   const totals = useMemo(
     () => ({
       total: orgs.length,
-      active: orgs.filter((o) => o.is_active).length,
-      inactive: orgs.filter((o) => !o.is_active).length,
+      active: orgs.filter((o) => o.status === "ACTIVE").length,
+      inactive: orgs.filter((o) => o.status !== "ACTIVE").length,
       users: orgs.reduce((t, o) => t + o.user_count, 0),
     }),
     [orgs],
@@ -111,7 +117,7 @@ export default function OrganizationsPage() {
           </PageAction>
         ) : null
       }
-      description="Gestion des groupes d'apporteurs"
+      description="Agences, courtiers, apporteurs et partenaires"
       title="Organisations"
     >
       <div className="space-y-5">
@@ -130,7 +136,7 @@ export default function OrganizationsPage() {
           />
           <MetricCard
             icon={Building2}
-            label="Inactives"
+            label="Non actives"
             tone="warning"
             value={isLoading ? "—" : totals.inactive}
           />
@@ -144,6 +150,7 @@ export default function OrganizationsPage() {
         </div>
 
         {error ? <AlertMessage>{error}</AlertMessage> : null}
+        {notice ? <AlertMessage tone="success">{notice}</AlertMessage> : null}
 
         <section className="app-surface overflow-hidden">
           {/* ── Filter bar ───────────────────────────────────── */}
@@ -157,7 +164,7 @@ export default function OrganizationsPage() {
                 aria-label="Rechercher"
                 className="app-field app-field-with-icon w-full text-sm"
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Nom ou code…"
+                placeholder="Nom, code, ville ou email…"
                 type="search"
                 value={search}
               />
@@ -170,7 +177,7 @@ export default function OrganizationsPage() {
                 onChange={(e) => setShowInactive(e.target.checked)}
                 type="checkbox"
               />
-              Inclure inactives
+              Inclure inactives et suspendues
             </label>
 
             {hasFilters ? (
@@ -205,6 +212,7 @@ export default function OrganizationsPage() {
                   <tr>
                     <th>Organisation</th>
                     <th>Code</th>
+                    <th>Type</th>
                     <th>Utilisateurs</th>
                     <th>Statut</th>
                     <th>Créée le</th>
@@ -253,6 +261,11 @@ export default function OrganizationsPage() {
           onClose={() => setCreateOpen(false)}
           onCreated={(org) => {
             setOrgs((prev) => [...prev, org]);
+            setNotice(
+              org.contact_username
+                ? `Organisation créée. Identifiant du contact : ${org.contact_username}.`
+                : "Organisation créée.",
+            );
             setCreateOpen(false);
           }}
         />
@@ -263,6 +276,7 @@ export default function OrganizationsPage() {
           onClose={() => setEditTarget(null)}
           onUpdated={(updated) => {
             setOrgs((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+            setNotice("Organisation mise à jour.");
             setEditTarget(null);
           }}
           org={editTarget}
@@ -283,7 +297,7 @@ function OrgRow({
   onEdit: () => void;
 }) {
   return (
-    <tr className={org.is_active ? "" : "opacity-55"}>
+    <tr className={org.status === "ACTIVE" ? "" : "opacity-55"}>
       <td>
         <div className="flex items-center gap-3">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-[11px] font-black text-primary">
@@ -295,11 +309,14 @@ function OrgRow({
       <td>
         <span className="font-mono text-sm font-bold text-black/55">{org.code}</span>
       </td>
+      <td className="whitespace-nowrap text-sm font-semibold text-black/55">
+        {organizationTypeLabel(org.organization_type)}
+      </td>
       <td>
         <span className="font-semibold tabular-nums">{org.user_count}</span>
       </td>
       <td>
-        <StatusBadge status={org.is_active ? "ACTIVE" : "INACTIVE"} />
+        <StatusBadge status={org.status} />
       </td>
       <td className="whitespace-nowrap text-sm text-black/45">
         {formatDate(org.created_at)}
@@ -328,76 +345,30 @@ function CreateOrgModal({
   onClose: () => void;
   onCreated: (org: Organization) => void;
 }) {
-  const [name, setName] = useState("");
-  const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  async function handleSubmit(payload: CreateOrganizationPayload) {
     setError("");
     setIsSaving(true);
     try {
-      const org = await createOrganization({ name: name.trim(), code: code.trim().toUpperCase() });
+      const org = await createOrganization(payload);
       onCreated(org);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Création impossible.");
-    } finally {
       setIsSaving(false);
     }
   }
 
   return (
     <Modal onClose={onClose} title="Nouvelle organisation">
-      <form className="space-y-4" onSubmit={handleSubmit}>
-        {error ? <AlertMessage>{error}</AlertMessage> : null}
-
-        <Field label="Nom de l'organisation" required>
-          <input
-            autoFocus
-            className="app-field w-full text-sm"
-            maxLength={150}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Groupe Diallo & Associés"
-            required
-            type="text"
-            value={name}
-          />
-        </Field>
-
-        <Field label="Code" required>
-          <input
-            className="app-field w-full font-mono text-sm uppercase"
-            maxLength={50}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-            placeholder="GDA"
-            required
-            type="text"
-            value={code}
-          />
-          <p className="mt-1 text-xs font-semibold text-black/38">
-            Identifiant unique, lettres et chiffres uniquement.
-          </p>
-        </Field>
-
-        <div className="flex justify-end gap-2 pt-2">
-          <button
-            className="rounded-md px-4 py-2 text-sm font-bold text-black/55 hover:bg-muted"
-            disabled={isSaving}
-            onClick={onClose}
-            type="button"
-          >
-            Annuler
-          </button>
-          <button
-            className="rounded-md bg-primary px-5 py-2 text-sm font-extrabold text-white hover:bg-[var(--primary-strong)] disabled:bg-black/25"
-            disabled={isSaving || !name.trim() || !code.trim()}
-            type="submit"
-          >
-            {isSaving ? "Création…" : "Créer"}
-          </button>
-        </div>
-      </form>
+      <OrganizationForm
+        error={error}
+        isSaving={isSaving}
+        onCancel={onClose}
+        onSubmit={handleSubmit}
+        submitLabel="Créer l'organisation"
+      />
     </Modal>
   );
 }
@@ -412,99 +383,31 @@ function EditOrgModal({
   onClose: () => void;
   onUpdated: (org: Organization) => void;
 }) {
-  const [name, setName] = useState(org.name);
-  const [code, setCode] = useState(org.code);
-  const [isActive, setIsActive] = useState(org.is_active);
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  async function handleSubmit(payload: CreateOrganizationPayload) {
     setError("");
     setIsSaving(true);
     try {
-      const updated = await updateOrganization(org.id, {
-        name: name.trim(),
-        code: code.trim().toUpperCase(),
-        is_active: isActive,
-      });
+      const updated = await updateOrganization(org.id, payload);
       onUpdated(updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Mise à jour impossible.");
-    } finally {
       setIsSaving(false);
     }
   }
 
   return (
     <Modal onClose={onClose} title={`Modifier — ${org.name}`}>
-      <form className="space-y-4" onSubmit={handleSubmit}>
-        {error ? <AlertMessage>{error}</AlertMessage> : null}
-
-        <Field label="Nom de l'organisation" required>
-          <input
-            autoFocus
-            className="app-field w-full text-sm"
-            maxLength={150}
-            onChange={(e) => setName(e.target.value)}
-            required
-            type="text"
-            value={name}
-          />
-        </Field>
-
-        <Field label="Code" required>
-          <input
-            className="app-field w-full font-mono text-sm uppercase"
-            maxLength={50}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-            required
-            type="text"
-            value={code}
-          />
-        </Field>
-
-        <Field label="Statut">
-          <label className="flex cursor-pointer select-none items-center gap-2 text-sm font-semibold">
-            <input
-              checked={isActive}
-              className="accent-primary"
-              onChange={(e) => setIsActive(e.target.checked)}
-              type="checkbox"
-            />
-            Organisation active
-          </label>
-          {!isActive ? (
-            <p className="mt-1 text-xs font-semibold text-amber-600">
-              Désactiver une organisation masque ses apporteurs dans les nouveaux contrats.
-            </p>
-          ) : null}
-        </Field>
-
-        <div className="flex items-center justify-between gap-2 border-t border-border pt-4">
-          <p className="text-xs font-semibold text-black/38">
-            {org.user_count} utilisateur{org.user_count !== 1 ? "s" : ""} rattaché
-            {org.user_count !== 1 ? "s" : ""}
-          </p>
-          <div className="flex gap-2">
-            <button
-              className="rounded-md px-4 py-2 text-sm font-bold text-black/55 hover:bg-muted"
-              disabled={isSaving}
-              onClick={onClose}
-              type="button"
-            >
-              Annuler
-            </button>
-            <button
-              className="rounded-md bg-primary px-5 py-2 text-sm font-extrabold text-white hover:bg-[var(--primary-strong)] disabled:bg-black/25"
-              disabled={isSaving || !name.trim() || !code.trim()}
-              type="submit"
-            >
-              {isSaving ? "Enregistrement…" : "Enregistrer"}
-            </button>
-          </div>
-        </div>
-      </form>
+      <OrganizationForm
+        error={error}
+        initial={org}
+        isSaving={isSaving}
+        onCancel={onClose}
+        onSubmit={handleSubmit}
+        submitLabel="Enregistrer"
+      />
     </Modal>
   );
 }
@@ -526,36 +429,25 @@ function Modal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+      <div className="flex max-h-[94vh] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-2xl">
         <div className="border-b border-border px-6 py-4">
           <h2 className="font-extrabold">{title}</h2>
         </div>
-        <div className="p-6">{children}</div>
+        <div className="overflow-y-auto p-6">{children}</div>
       </div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label className="mb-1.5 block text-[13px] font-extrabold">
-        {label}
-        {required ? <span className="ml-0.5 text-red-500">*</span> : null}
-      </label>
-      {children}
     </div>
   );
 }
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium" }).format(new Date(value));
+}
+
+function organizationTypeLabel(value: Organization["organization_type"]) {
+  return {
+    AGENCY: "Agence",
+    BROKER: "Courtier",
+    CONTRIBUTOR: "Apporteur",
+    PARTNER: "Partenaire",
+  }[value];
 }

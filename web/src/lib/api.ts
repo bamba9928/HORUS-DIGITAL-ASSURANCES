@@ -125,6 +125,9 @@ export type AuthUser = {
   first_name: string;
   last_name: string;
   email: string;
+  phone: string;
+  address: string;
+  matricule: string;
   role: "ADMIN_GENERAL" | "ADMIN_GROUP" | "CONTRIBUTOR" | "FINANCE";
   organization: number | null;
   organization_name: string | null;
@@ -142,17 +145,29 @@ export async function fetchCurrentUser() {
   return fetchApi<AuthState>("/accounts/auth/me/");
 }
 
-export async function login(username: string, password: string) {
+export async function login(identifier: string, password: string) {
   await fetchCurrentUser();
   return fetchApi<AuthState>("/accounts/auth/login/", {
     method: "POST",
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ identifier, password }),
   });
 }
 
 export async function logout() {
   return fetchApi<{ authenticated: false }>("/accounts/auth/logout/", {
     method: "POST",
+  });
+}
+
+export async function acceptInvitation(payload: {
+  uid: string;
+  token: string;
+  password: string;
+}) {
+  await fetchCurrentUser();
+  return fetchApi<{ detail: string }>("/accounts/auth/invitations/accept/", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 
@@ -167,6 +182,8 @@ export type CreateUserPayload = {
   first_name?: string;
   last_name?: string;
   email?: string;
+  phone?: string;
+  address?: string;
   role: AuthUser["role"];
   organization?: number | null;
 };
@@ -213,6 +230,8 @@ export type UpdateUserPayload = {
   first_name?: string;
   last_name?: string;
   email?: string;
+  phone?: string;
+  address?: string;
   role?: AuthUser["role"];
   organization?: number | null;
   is_active?: boolean;
@@ -229,10 +248,40 @@ export type OrganizationOption = {
   id: number;
   name: string;
   code: string;
+  status: OrganizationStatus;
   is_active: boolean;
 };
 
+export type OrganizationLegalPersonType = "MORALE" | "PHYSIQUE";
+export type OrganizationType = "AGENCY" | "BROKER" | "CONTRIBUTOR" | "PARTNER";
+export type OrganizationStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED";
+export type OrganizationContactAccessMode =
+  | "NONE"
+  | "TEMPORARY_PASSWORD"
+  | "EMAIL_INVITATION";
+
 export type Organization = OrganizationOption & {
+  legal_person_type: OrganizationLegalPersonType;
+  organization_type: OrganizationType;
+  description: string;
+  legal_form: string;
+  ninea_rccm: string;
+  insurance_license_number: string;
+  country: string;
+  currency: "FCFA";
+  address: string;
+  city: string;
+  region: string;
+  phone: string;
+  professional_email: string;
+  website: string;
+  contact_first_name: string;
+  contact_last_name: string;
+  contact_email: string;
+  contact_phone: string;
+  contact_role: "" | "ADMIN_GROUP" | "CONTRIBUTOR" | "FINANCE";
+  contact_username: string;
+  contact_access_mode: OrganizationContactAccessMode;
   user_count: number;
   created_at: string;
   updated_at: string;
@@ -241,13 +290,31 @@ export type Organization = OrganizationOption & {
 export type CreateOrganizationPayload = {
   name: string;
   code: string;
+  legal_person_type: OrganizationLegalPersonType;
+  organization_type: OrganizationType;
+  status: OrganizationStatus;
+  description?: string;
+  legal_form?: string;
+  ninea_rccm?: string;
+  insurance_license_number?: string;
+  country: string;
+  currency: "FCFA";
+  address: string;
+  city: string;
+  region?: string;
+  phone: string;
+  professional_email: string;
+  website?: string;
+  contact_first_name?: string;
+  contact_last_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  contact_role?: "" | "ADMIN_GROUP" | "CONTRIBUTOR" | "FINANCE";
+  contact_access_mode?: OrganizationContactAccessMode;
+  contact_temporary_password?: string;
 };
 
-export type UpdateOrganizationPayload = {
-  name?: string;
-  code?: string;
-  is_active?: boolean;
-};
+export type UpdateOrganizationPayload = Partial<CreateOrganizationPayload>;
 
 export async function listOrganizations() {
   return fetchApi<ApiListResponse<OrganizationOption>>("/organizations/");
@@ -336,6 +403,9 @@ export type CommissionSnapshot = {
   commission_policy_fee_amount: number;
   commission_total: number;
   net_to_horus: number;
+  paid_at: string | null;
+  paid_by: number | null;
+  paid_by_username: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -359,6 +429,8 @@ export type AssStockQr = {
   operation_status: string;
   operation_message: string;
   available_qr: number | null;
+  alert_threshold: number;
+  low_stock: boolean;
   raw_response: Record<string, unknown>;
 };
 
@@ -543,7 +615,6 @@ export type ContractAssAttestation = {
   immatriculation: string;
   reference_externe: string;
   attestation_number: string;
-  secure_key: string;
   date_expiration: string | null;
   link_attestation_digitale: string;
   link_attestation_cedeao: string;
@@ -728,7 +799,6 @@ export type IssueResult = {
   reference_trx_partner: string;
   reference_externe: string;
   attestation_number: string;
-  secure_key: string;
   date_expiration: string | null;
   link_attestation_digitale: string;
   link_attestation_cedeao: string;

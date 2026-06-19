@@ -89,33 +89,29 @@ def test_can_verify_registration_with_ass_mock_in_debug_mode():
     client = APIClient()
     client.force_authenticate(contributor)
 
-    response = client.post(
+    already_insured = client.post(
         "/api/integrations/ass/verify-registration/",
         {"immatriculation": "ass-001"},
         format="json",
     )
+    free = client.post(
+        "/api/integrations/ass/verify-registration/",
+        {"immatriculation": "DK-0042-ZZ"},
+        format="json",
+    )
 
-    assert response.status_code == 200
-    assert response.data["mode"] == "mock"
-    assert response.data["operation_status"] == "SUCCESS"
-    assert response.data["immatriculation"] == "ASS-001"
-    assert response.data["is_registered"] is True
-    assert response.data["vehicle"] == {
-        "brand": "TOYOTA",
-        "model": "YARIS",
-        "category": "C1",
-        "subcategory": "VP",
-        "registration": "ASS-001",
-        "chassis": "ASS-MOCK-CHASSIS",
-        "energy": "ESSENCE",
-        "fiscalPower": "8",
-        "seats": "5",
-        "firstCirculationDate": "2020-01-15",
-        "newValue": "8000000",
-        "currentValue": "5000000",
-        "cylindree": "",
-        "motoUsage": "",
-    }
+    # Format reel valide en sandbox : l'API ne renvoie jamais les donnees du
+    # vehicule, uniquement un statut deja assure (5006) / libre (4000).
+    assert already_insured.status_code == 200
+    assert already_insured.data["mode"] == "mock"
+    assert already_insured.data["immatriculation"] == "ASS-001"
+    assert already_insured.data["is_registered"] is True
+    assert already_insured.data["vehicle"] is None
+    assert "MOCK ASSURANCES" in already_insured.data["operation_message"]
+
+    assert free.status_code == 200
+    assert free.data["is_registered"] is False
+    assert free.data["vehicle"] is None
 
 
 @pytest.mark.django_db

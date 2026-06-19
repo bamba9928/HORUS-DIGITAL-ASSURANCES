@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   ShieldPlus,
   Sparkles,
+  TriangleAlert,
   UserRound,
   Users,
   Warehouse,
@@ -403,6 +404,9 @@ function NewContractPageContent() {
         lastRegistrationLookupRef.current = registration;
 
         if (response.is_registered) {
+          // L'API réelle ne renvoie jamais les données du véhicule : on garde le
+          // pré-remplissage par compatibilité si elle évolue, mais le cas normal
+          // est un simple avertissement « déjà assuré » avec le nom de l'assureur.
           const assVehicle = response.vehicle;
           if (assVehicle) {
             setVehicle((current) => mergeAssVehicleData(current, assVehicle));
@@ -417,15 +421,16 @@ function NewContractPageContent() {
           }
           setRegistrationLookupState("found");
           setRegistrationLookupMessage(
-            assVehicle
-              ? "Véhicule trouvé dans ASS. Les informations ont été préremplies."
-              : "Cette immatriculation existe déjà dans ASS.",
+            response.operation_message ||
+              "Ce véhicule dispose déjà d'une assurance digitale active.",
           );
           return;
         }
 
         setRegistrationLookupState("not_found");
-        setRegistrationLookupMessage("Immatriculation non trouvée dans ASS.");
+        setRegistrationLookupMessage(
+          "Immatriculation libre : aucune assurance digitale active.",
+        );
       } catch {
         if (registrationLookupRequestRef.current !== requestId) {
           return;
@@ -1734,19 +1739,23 @@ function VehicleFields({
               required
               value={vehicle.registration}
             />
-            {registrationLookupState !== "idle" && registrationLookupState !== "not_found" ? (
+            {registrationLookupState !== "idle" ? (
               <p
                 className={`mt-2 flex items-center gap-1.5 text-xs font-bold ${
                   registrationLookupState === "found"
-                    ? "text-emerald-700"
-                    : registrationLookupState === "error"
-                      ? "text-red-700"
-                      : "text-black/48"
+                    ? "text-amber-700"
+                    : registrationLookupState === "not_found"
+                      ? "text-emerald-700"
+                      : registrationLookupState === "error"
+                        ? "text-red-700"
+                        : "text-black/48"
                 }`}
               >
                 {registrationLookupState === "checking" ? (
                   <LoaderCircle className="animate-spin" size={13} />
                 ) : registrationLookupState === "found" ? (
+                  <TriangleAlert size={13} />
+                ) : registrationLookupState === "not_found" ? (
                   <Check size={13} />
                 ) : null}
                 {registrationLookupMessage}
@@ -2375,7 +2384,6 @@ function IssuePanel({ issueResult }: { issueResult: IssueResult }) {
           <SummaryItem label="N° attestation" value={issueResult.attestation_number || "—"} />
           <SummaryItem label="Référence externe" value={issueResult.reference_externe || "—"} />
           <SummaryItem label="Référence Horus" value={issueResult.reference_trx_partner || "—"} />
-          <SummaryItem label="Clé de sécurité" value={issueResult.secure_key || "—"} />
           <SummaryItem label="Date expiration" value={issueResult.date_expiration || "—"} />
         </dl>
         <div className="mt-5 flex flex-wrap gap-2.5">
@@ -2969,7 +2977,11 @@ function guaranteeOptionSummary(options: GuaranteeOptionsForm) {
 }
 
 function quotePayableAmount(quote: ContractQuote) {
-  return quote.prime_totale ?? quote.prime_rc_ass + quote.policy_fee_ass;
+  // Même règle que le backend : prime totale ASS si présente et > 0,
+  // sinon prime RC + coût de police.
+  return quote.prime_totale && quote.prime_totale > 0
+    ? quote.prime_totale
+    : quote.prime_rc_ass + quote.policy_fee_ass;
 }
 
 function cleanGuaranteeOptions(options: GuaranteeOptionsForm) {

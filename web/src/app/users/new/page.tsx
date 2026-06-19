@@ -3,9 +3,12 @@
 import {
   ArrowLeft,
   Building2,
+  Copy,
   Eye,
   EyeOff,
+  Hash,
   Lock,
+  RefreshCw,
   ShieldCheck,
   UserPlus,
 } from "lucide-react";
@@ -73,6 +76,39 @@ function passwordStrength(pw: string): StrengthResult | null {
   return              { bars: 4, label: "Fort",     barColor: "bg-emerald-500",textColor: "text-emerald-700" };
 }
 
+function generateStrongPassword(length = 18) {
+  const groups = [
+    "ABCDEFGHJKLMNPQRSTUVWXYZ",
+    "abcdefghijkmnopqrstuvwxyz",
+    "23456789",
+    "!@#$%&*+-=?",
+  ];
+  const allCharacters = groups.join("");
+  const characters = groups.map((group) => group[secureRandomIndex(group.length)]);
+
+  while (characters.length < length) {
+    characters.push(allCharacters[secureRandomIndex(allCharacters.length)]);
+  }
+  for (let index = characters.length - 1; index > 0; index--) {
+    const swapIndex = secureRandomIndex(index + 1);
+    [characters[index], characters[swapIndex]] = [characters[swapIndex], characters[index]];
+  }
+  return characters.join("");
+}
+
+function secureRandomIndex(max: number) {
+  const values = new Uint32Array(1);
+  const limit = Math.floor(0x100000000 / max) * max;
+  do {
+    crypto.getRandomValues(values);
+  } while (values[0] >= limit);
+  return values[0] % max;
+}
+
+function sanitizeSenegalPhone(value: string) {
+  return value.replace(/\D/g, "").slice(0, 9);
+}
+
 /* ── Page ────────────────────────────────────────────────────────── */
 
 export default function NewUserPage() {
@@ -84,11 +120,14 @@ export default function NewUserPage() {
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [passwordCopied, setPasswordCopied] = useState(false);
 
   const [form, setForm] = useState({
     first_name: "",
     last_name: "",
     email: "",
+    phone: "",
+    address: "",
     username: "",
     password: "",
     confirm: "",
@@ -121,11 +160,39 @@ export default function NewUserPage() {
     (value: string) => setForm((prev) => ({ ...prev, [key]: value }));
 
   useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      const password = generateStrongPassword();
+      setForm((current) => ({
+        ...current,
+        password,
+        confirm: password,
+      }));
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, []);
+
+  useEffect(() => {
     if (authLoading || !auth?.authenticated) return;
     listOrganizations()
       .then((res) => setOrganizations(res.results))
       .catch(() => {});
   }, [authLoading, auth?.authenticated]);
+
+  function regeneratePassword() {
+    const password = generateStrongPassword();
+    setForm((current) => ({ ...current, password, confirm: password }));
+    setPasswordCopied(false);
+  }
+
+  async function copyPassword() {
+    try {
+      await navigator.clipboard.writeText(form.password);
+      setPasswordCopied(true);
+      window.setTimeout(() => setPasswordCopied(false), 2000);
+    } catch {
+      setError("Copie impossible. Affichez le mot de passe pour le copier manuellement.");
+    }
+  }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -141,6 +208,8 @@ export default function NewUserPage() {
       first_name: form.first_name.trim() || undefined,
       last_name: form.last_name.trim() || undefined,
       email: form.email.trim() || undefined,
+      phone: form.phone.trim() || undefined,
+      address: form.address.trim() || undefined,
       role: form.role as CreateUserPayload["role"],
       organization: effectiveOrg ? Number(effectiveOrg) : undefined,
     };
@@ -191,6 +260,31 @@ export default function NewUserPage() {
             type="email"
             value={form.email}
           />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField
+              hint="9 chiffres commençant par 7."
+              inputMode="numeric"
+              label="Téléphone"
+              maxLength={9}
+              onChange={(value) => set("phone")(sanitizeSenegalPhone(value))}
+              pattern="7[0-9]{8}"
+              type="tel"
+              value={form.phone}
+            />
+            <FormField
+              disabled
+              hint="Attribué automatiquement après la création."
+              label="Matricule"
+              onChange={() => {}}
+              suffix={<Hash size={15} className="text-black/30" />}
+              value="Généré automatiquement"
+            />
+          </div>
+          <FormField
+            label="Adresse"
+            onChange={set("address")}
+            value={form.address}
+          />
         </FormSection>
 
         {/* ── Section 2 : Identifiants ─────────────────────────────── */}
@@ -205,6 +299,30 @@ export default function NewUserPage() {
 
           {/* Mot de passe + jauge */}
           <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-extrabold uppercase tracking-wide text-black/45">
+                Mot de passe suggéré
+              </p>
+              <div className="flex gap-2">
+                <button
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-bold transition hover:bg-muted"
+                  onClick={regeneratePassword}
+                  type="button"
+                >
+                  <RefreshCw size={13} />
+                  Régénérer
+                </button>
+                <button
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-bold transition hover:bg-muted"
+                  disabled={!form.password}
+                  onClick={() => void copyPassword()}
+                  type="button"
+                >
+                  <Copy size={13} />
+                  {passwordCopied ? "Copié" : "Copier"}
+                </button>
+              </div>
+            </div>
             <FormField
               label="Mot de passe"
               onChange={set("password")}
@@ -421,8 +539,11 @@ function FormSection({
 function FormField({
   disabled,
   hint,
+  inputMode,
   label,
+  maxLength,
   onChange,
+  pattern,
   required,
   suffix,
   type = "text",
@@ -430,8 +551,11 @@ function FormField({
 }: {
   disabled?: boolean;
   hint?: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
   label: string;
+  maxLength?: number;
   onChange: (value: string) => void;
+  pattern?: string;
   required?: boolean;
   suffix?: React.ReactNode;
   type?: string;
@@ -447,7 +571,10 @@ function FormField({
         <input
           className={`app-field ${suffix ? "pr-10" : ""}`}
           disabled={disabled}
+          inputMode={inputMode}
+          maxLength={maxLength}
           onChange={(e) => onChange(e.target.value)}
+          pattern={pattern}
           required={required}
           type={type}
           value={value}

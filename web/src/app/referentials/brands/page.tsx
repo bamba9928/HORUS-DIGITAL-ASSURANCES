@@ -98,6 +98,10 @@ export default function CustomVehicleBrandsPage() {
   }
 
   const canManage = canManageReferentials(auth);
+  // Renommage/suppression réservés à l'admin général (référentiel global,
+  // partagé entre tous les groupes) ; les admins de groupe consultent.
+  const canEditBrands =
+    auth?.authenticated === true && auth.user?.role === "ADMIN_GENERAL";
 
   return (
     <AppShell description="Marques ajoutées par les administrateurs" title="Référentiels">
@@ -175,6 +179,7 @@ export default function CustomVehicleBrandsPage() {
                   {brands.map((brand) => (
                     <BrandRow
                       brand={brand}
+                      canEdit={canEditBrands}
                       key={`${brand.id}-${brand.updated_at}`}
                       onChanged={() => refresh(search)}
                     />
@@ -193,9 +198,11 @@ export default function CustomVehicleBrandsPage() {
 
 function BrandRow({
   brand,
+  canEdit,
   onChanged,
 }: {
   brand: CustomVehicleBrand;
+  canEdit: boolean;
   onChanged: () => Promise<void>;
 }) {
   const [name, setName] = useState(brand.name);
@@ -235,11 +242,15 @@ function BrandRow({
   return (
     <tr>
       <td data-label="Marque">
-        <input
-          className="app-field h-10 min-h-10 min-w-44"
-          onChange={(event) => setName(event.target.value)}
-          value={name}
-        />
+        {canEdit ? (
+          <input
+            className="app-field h-10 min-h-10 min-w-44"
+            onChange={(event) => setName(event.target.value)}
+            value={name}
+          />
+        ) : (
+          <p className="font-extrabold">{brand.name}</p>
+        )}
         <p className="mt-1 text-xs font-bold text-black/45">{brand.value}</p>
         {error ? <p className="mt-2 text-xs font-bold text-primary">{error}</p> : null}
       </td>
@@ -253,24 +264,28 @@ function BrandRow({
         <StatusBadge status={brand.duplicate_of_base ? "DUPLICATE" : "CUSTOM"} />
       </td>
       <td data-label="Action">
-        <div className="flex flex-wrap gap-2">
-          <button
-            className="h-10 rounded-md bg-black px-3 text-xs font-extrabold text-white disabled:bg-black/25"
-            disabled={isSaving || !name.trim()}
-            onClick={save}
-            type="button"
-          >
-            {isSaving ? "..." : "Enregistrer"}
-          </button>
-          <button
-            className="h-10 rounded-md border border-border px-3 text-xs font-extrabold hover:bg-muted disabled:text-black/35"
-            disabled={isDeleting}
-            onClick={remove}
-            type="button"
-          >
-            {isDeleting ? "..." : "Retirer"}
-          </button>
-        </div>
+        {canEdit ? (
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="h-10 rounded-md bg-black px-3 text-xs font-extrabold text-white disabled:bg-black/25"
+              disabled={isSaving || !name.trim()}
+              onClick={save}
+              type="button"
+            >
+              {isSaving ? "..." : "Enregistrer"}
+            </button>
+            <button
+              className="h-10 rounded-md border border-border px-3 text-xs font-extrabold hover:bg-muted disabled:text-black/35"
+              disabled={isDeleting}
+              onClick={remove}
+              type="button"
+            >
+              {isDeleting ? "..." : "Retirer"}
+            </button>
+          </div>
+        ) : (
+          <span className="text-xs font-bold text-black/40">Lecture seule</span>
+        )}
       </td>
     </tr>
   );

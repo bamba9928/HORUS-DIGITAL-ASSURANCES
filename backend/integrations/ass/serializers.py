@@ -10,7 +10,10 @@ class AssStockQrSerializer(serializers.Serializer):
     mode = serializers.ChoiceField(choices=["mock", "real"])
     operation_status = serializers.CharField(allow_blank=True)
     operation_message = serializers.CharField(allow_blank=True)
-    available_qr = serializers.IntegerField(min_value=0, allow_null=True)
+    # La sandbox peut renvoyer -1 (aucun stock alloue) : pas de min_value.
+    available_qr = serializers.IntegerField(allow_null=True)
+    alert_threshold = serializers.IntegerField()
+    low_stock = serializers.BooleanField()
     raw_response = serializers.DictField()
 
 

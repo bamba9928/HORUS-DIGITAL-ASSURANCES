@@ -3,6 +3,7 @@ from rest_framework import generics, permissions
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
+from accounts.permissions import IsAdminGeneral
 from organizations.models import Organization
 from organizations.serializers import OrganizationSerializer
 
@@ -16,7 +17,7 @@ class OrganizationListCreateView(generics.ListCreateAPIView):
 
     def get_permissions(self):
         if self.request.method == "POST":
-            return [permissions.IsAuthenticated()]
+            return [IsAdminGeneral()]
         return [permissions.IsAuthenticated()]
 
     def get_queryset(self):
@@ -40,8 +41,12 @@ class OrganizationListCreateView(generics.ListCreateAPIView):
 
 class OrganizationDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = OrganizationSerializer
-    permission_classes = [permissions.IsAuthenticated]
     http_method_names = ["get", "patch", "head", "options"]
+
+    def get_permissions(self):
+        if self.request.method == "PATCH":
+            return [IsAdminGeneral()]
+        return [permissions.IsAuthenticated()]
 
     def get_queryset(self):
         user = self.request.user

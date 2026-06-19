@@ -2,9 +2,10 @@ from django.conf import settings
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from integrations.ass.client import AssClient
+from integrations.ass.client import AssClient, extract_available_qr
 from integrations.ass.exceptions import AssConfigurationError, AssIntegrationError
 from integrations.ass.referentials import VEHICLE_SUBCATEGORIES
 from integrations.ass.serializers import (
@@ -28,11 +29,15 @@ class AssStockQrView(APIView):
         except AssIntegrationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
+        available_qr = extract_available_qr(ass_response)
+        threshold = settings.ASS_QR_STOCK_ALERT_THRESHOLD
         payload = {
             "mode": "mock" if settings.ASS_MOCK_ENABLED else "real",
             "operation_status": ass_response.get("operationStatus") or ass_response.get("status") or "",
             "operation_message": ass_response.get("operationMessage") or ass_response.get("message") or "",
-            "available_qr": self._extract_available_qr(ass_response),
+            "available_qr": available_qr,
+            "alert_threshold": threshold,
+            "low_stock": available_qr is not None and available_qr <= threshold,
             "raw_response": ass_response,
         }
         serializer = AssStockQrSerializer(payload)
@@ -41,20 +46,12 @@ class AssStockQrView(APIView):
     def _can_view_stock(self, user):
         return user.is_admin_general or user.is_admin_group or user.is_finance
 
-    def _extract_available_qr(self, ass_response):
-        data = ass_response.get("data")
-        if isinstance(data, int):
-            return data
-        if isinstance(data, dict):
-            for key in ["stock", "available", "availableQr", "qrDisponible", "nombreQr"]:
-                value = data.get(key)
-                if isinstance(value, int):
-                    return value
-        return None
-
 
 class AssVerifyRegistrationView(APIView):
     permission_classes = [IsAuthenticated]
+    # Chaque appel part vers l'API ASS reelle : borne par utilisateur (CGU ASS).
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "ass_verify"
 
     def post(self, request):
         serializer = AssVerifyRegistrationRequestSerializer(data=request.data)
@@ -91,6 +88,16 @@ class AssVerifyRegistrationView(APIView):
         return fallback
 
     def _extract_is_registered(self, ass_response):
+        # Format API reelle (valide en sandbox 2026-06-11) : pas de donnees
+        # vehicule, uniquement un code statut :
+        #   5006 -> vehicule deja assure ("... dispose deja d'une police chez: X")
+        #   4000 -> aucune assurance digitale valide pour cette immatriculation
+        code = str(ass_response.get("code") or "")
+        if code == "5006":
+            return True
+        if code == "4000":
+            return False
+
         data = ass_response.get("data")
         if isinstance(data, bool):
             return data

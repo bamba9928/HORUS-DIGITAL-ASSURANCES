@@ -4,7 +4,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.permissions import IsAdminGeneralOrGroupAdmin
+from accounts.permissions import IsAdminGeneral, IsAdminGeneralOrGroupAdmin
 from integrations.ass.referentials import (
     CONTRACT_TYPES,
     ENERGIES,
@@ -55,10 +55,9 @@ class VehicleSubcategoriesView(APIView):
 
 
 class VehicleBrandsView(APIView):
-    def get_permissions(self):
-        if self.request.method == "POST":
-            return [IsAuthenticated()]
-        return [AllowAny()]
+    # Contrairement aux referentiels statiques (AllowAny), les marques touchent
+    # la base (marques personnalisees des groupes) : authentification requise.
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         limit = parse_limit(request.query_params.get("limit"), default=2000, maximum=2000)
@@ -103,7 +102,10 @@ class CustomVehicleBrandListView(APIView):
 
 
 class CustomVehicleBrandDetailView(APIView):
-    permission_classes = [IsAdminGeneralOrGroupAdmin]
+    # Referentiel global partage entre tous les groupes : seul l'admin general
+    # peut renommer/supprimer (decision actee 2026-06-12). Les admins de groupe
+    # conservent la consultation (CustomVehicleBrandListView).
+    permission_classes = [IsAdminGeneral]
 
     def patch(self, request, pk):
         brand = self.get_object(pk)

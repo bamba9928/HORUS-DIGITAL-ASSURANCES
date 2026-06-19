@@ -12,15 +12,26 @@ class PaymentConfirmationError(ValueError):
 def expected_payment_amount(contract):
     response_payload = contract.ass_response_payload
     if isinstance(response_payload, dict):
+        # Format API reelle (valide en sandbox 2026-06-11) : PrimeTotale a la
+        # racine, montant en chaine ("8927").
+        prime_totale = _parse_amount(response_payload.get("PrimeTotale"))
+        if prime_totale > 0:
+            return prime_totale
+
+        # Format mock interne : data.primeTotale.
         response_data = response_payload.get("data")
         if isinstance(response_data, dict):
-            try:
-                prime_totale = int(response_data.get("primeTotale") or 0)
-            except (TypeError, ValueError):
-                prime_totale = 0
+            prime_totale = _parse_amount(response_data.get("primeTotale"))
             if prime_totale > 0:
                 return prime_totale
     return contract.prime_rc_ass + contract.cout_police_ass
+
+
+def _parse_amount(value):
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 @transaction.atomic

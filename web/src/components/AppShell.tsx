@@ -37,7 +37,6 @@ import {
   canViewConfig,
   canViewOrganizations,
   canViewPayments,
-  roleLabel,
 } from "@/lib/permissions";
 
 const navigation = [
@@ -90,14 +89,19 @@ export function AppShell({
       router.replace(`/login?redirect=${redirect}`);
     }
   }, [isAuthLoading, auth?.authenticated, pathname, router]);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem("horus-sidebar") === "collapsed";
-  });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [productionOpen, setProductionOpen] = useState(false);
   const [financeOpen, setFinanceOpen] = useState(false);
   const [compteOpen, setCompteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Préférence de sidebar lue après le montage uniquement : le serveur rend
+  // toujours la sidebar dépliée, donc lire localStorage pendant le rendu initial
+  // provoquerait un mismatch d'hydratation.
+  useEffect(() => {
+    setSidebarCollapsed(localStorage.getItem("horus-sidebar") === "collapsed");
+  }, []);
+
   const user = auth?.user;
   const visibleNavigation = navigation.filter((item) => {
     if (item.href === "/contracts/new") return canCreateContract(user);
@@ -293,7 +297,7 @@ export function AppShell({
             {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
 
             {/* Session widget */}
-            <TopbarSession auth={auth} isLoading={isAuthLoading} onLogout={handleLogout} />
+            <TopbarSession auth={auth} isLoading={isAuthLoading} />
           </div>
         </header>
 
@@ -815,11 +819,9 @@ function SessionControl({
 function TopbarSession({
   auth,
   isLoading,
-  onLogout,
 }: {
   auth: ReturnType<typeof useAuth>["auth"];
   isLoading: boolean;
-  onLogout: () => Promise<void>;
 }) {
   if (isLoading) {
     return (

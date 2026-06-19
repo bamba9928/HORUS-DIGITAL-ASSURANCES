@@ -10,6 +10,7 @@ import {
   FileText,
   Mail,
   Percent,
+  Phone,
   Send,
   ShieldCheck,
   User,
@@ -56,7 +57,13 @@ export default function UserDetailPage() {
   const [error, setError] = useState("");
 
   const isSelf = auth?.user?.id === userId;
-  const canEdit = canManageUsers(auth?.user) || isSelf;
+  const canEdit = Boolean(
+    user &&
+      (auth?.user?.role === "ADMIN_GENERAL" ||
+        (auth?.user?.role === "ADMIN_GROUP" &&
+          auth.user.organization === user.organization &&
+          user.role !== "ADMIN_GENERAL")),
+  );
 
   useEffect(() => {
     if (!hasValidId) return;
@@ -188,6 +195,17 @@ export default function UserDetailPage() {
                         <p className="mt-0.5 flex items-center gap-1 text-sm font-bold">
                           <Mail size={12} className="text-black/35" />
                           {user.email}
+                        </p>
+                      </div>
+                    ) : null}
+                    {user.phone ? (
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-wide text-black/38">
+                          Téléphone
+                        </p>
+                        <p className="mt-0.5 flex items-center gap-1 text-sm font-bold">
+                          <Phone size={12} className="text-black/35" />
+                          {user.phone}
                         </p>
                       </div>
                     ) : null}
@@ -364,12 +382,19 @@ export default function UserDetailPage() {
                   </div>
                   <div className="divide-y divide-border">
                     <InfoRow label="Identifiant" value={`@${user.username}`} mono />
+                    <InfoRow label="Matricule" value={user.matricule} mono />
                     <InfoRow label="Rôle" value={ROLE_LABELS[user.role] ?? user.role} />
                     {user.organization_name ? (
                       <InfoRow label="Groupe" value={user.organization_name} />
                     ) : null}
                     {user.email ? (
                       <InfoRow label="Email" value={user.email} />
+                    ) : null}
+                    {user.phone ? (
+                      <InfoRow label="Téléphone" value={user.phone} />
+                    ) : null}
+                    {user.address ? (
+                      <InfoRow label="Adresse" value={user.address} />
                     ) : null}
                     <InfoRow
                       label="Inscrit le"

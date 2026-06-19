@@ -94,6 +94,58 @@ def _as_dict(value):
     return value if isinstance(value, dict) else {}
 
 
+POLICYHOLDER_IDENTITY_FIELDS = (
+    "policyholder_last_name",
+    "policyholder_first_name",
+    "policyholder_phone",
+    "policyholder_email",
+    "policyholder_person_type",
+)
+
+_PERSON_TYPE_VALUES = {"PHYSIQUE", "MORALE"}
+
+
+def build_policyholder_identity(contract):
+    """Identite denormalisee du souscripteur, extraite de draft_payload.
+
+    Permet a la page clients d'agreger sans charger ni parser les payloads JSON.
+    """
+    draft_payload = contract.draft_payload if isinstance(contract.draft_payload, dict) else {}
+    policyholder = _as_dict(
+        draft_payload.get("policyholder") or draft_payload.get("souscripteur")
+    )
+
+    person_type = ""
+    for source_key in ("vehicle", "fleet", "garage"):
+        source = _as_dict(draft_payload.get(source_key))
+        raw = _first_text(source, ["personType", "typePersonne"]).upper()
+        if raw in _PERSON_TYPE_VALUES:
+            person_type = raw
+            break
+
+    return {
+        "policyholder_last_name": _first_text(
+            policyholder, ["lastName", "last_name", "nom", "raisonSociale"]
+        )[:150],
+        "policyholder_first_name": _first_text(
+            policyholder, ["firstName", "first_name", "prenom"]
+        )[:150],
+        "policyholder_phone": _first_text(
+            policyholder, ["phone", "cellulaire", "telephone"]
+        )[:20],
+        "policyholder_email": _first_text(policyholder, ["email"])[:254],
+        "policyholder_person_type": person_type,
+    }
+
+
+def _first_text(payload, keys):
+    for key in keys:
+        value = payload.get(key)
+        if value not in (None, ""):
+            return str(value).strip()
+    return ""
+
+
 class Contract(models.Model):
     class ContractType(models.TextChoices):
         AUTO_MONO = "AUTO_MONO", "Auto mono"
@@ -155,6 +207,11 @@ class Contract(models.Model):
     ass_issue_request_payload = models.JSONField(default=dict, blank=True)
     ass_issue_response_payload = models.JSONField(default=dict, blank=True)
     search_text = models.TextField(blank=True, editable=False)
+    policyholder_last_name = models.CharField(max_length=150, blank=True, editable=False)
+    policyholder_first_name = models.CharField(max_length=150, blank=True, editable=False)
+    policyholder_phone = models.CharField(max_length=20, blank=True, editable=False, db_index=True)
+    policyholder_email = models.CharField(max_length=254, blank=True, editable=False)
+    policyholder_person_type = models.CharField(max_length=10, blank=True, editable=False)
     issuance_started_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -185,6 +242,12 @@ class Contract(models.Model):
         )
         if should_refresh_search:
             self.search_text = build_contract_search_text(self)
+            for field, value in build_policyholder_identity(self).items():
+                setattr(self, field, value)
             if update_fields is not None:
-                kwargs["update_fields"] = [*set(update_fields), "search_text"]
+                kwargs["update_fields"] = [
+                    *set(update_fields),
+                    "search_text",
+                    *POLICYHOLDER_IDENTITY_FIELDS,
+                ]
         return super().save(*args, **kwargs)

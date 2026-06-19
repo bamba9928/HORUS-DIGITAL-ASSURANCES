@@ -122,8 +122,17 @@ def test_ass_guarantee_options_are_exposed():
 
 
 @pytest.mark.django_db
-def test_vehicle_brand_search_returns_select_options():
+def test_vehicle_brand_list_requires_authentication():
     client = APIClient()
+
+    response = client.get("/api/referentials/vehicle-brands/")
+
+    assert response.status_code in {401, 403}
+
+
+@pytest.mark.django_db
+def test_vehicle_brand_search_returns_select_options():
+    client, _ = make_authenticated_contract_client(username="brand-search-user")
 
     response = client.get("/api/referentials/vehicle-brands/", {"search": "toy"})
 
@@ -133,7 +142,7 @@ def test_vehicle_brand_search_returns_select_options():
 
 @pytest.mark.django_db
 def test_vehicle_brand_default_list_returns_imported_referential():
-    client = APIClient()
+    client, _ = make_authenticated_contract_client(username="brand-list-user")
 
     response = client.get("/api/referentials/vehicle-brands/")
 
@@ -145,7 +154,7 @@ def test_vehicle_brand_default_list_returns_imported_referential():
 
 @pytest.mark.django_db
 def test_vehicle_brand_search_uses_imported_referential():
-    client = APIClient()
+    client, _ = make_authenticated_contract_client(username="brand-zong-user")
 
     response = client.get("/api/referentials/vehicle-brands/", {"search": "zong"})
 
@@ -1252,6 +1261,10 @@ def test_can_create_fleet_draft_with_trailer_attached_to_vehicle():
             "contract_type": "FLEET",
             "draft_payload": {
                 "fleet": {
+                    "effectDate": "",
+                    "duration": "",
+                    "periodicity": "MOIS",
+                    "personType": "MORALE",
                     "vehicles": [
                         {
                             "id": "veh-1",
@@ -1278,6 +1291,38 @@ def test_can_create_fleet_draft_with_trailer_attached_to_vehicle():
     draft = Contract.objects.get(id=response.data["id"])
     trailer = draft.draft_payload["fleet"]["vehicles"][0]["trailers"][0]
     assert trailer["tractorVehicleId"] == "veh-1"
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=True)
+def test_rejects_invalid_fleet_coverage_values_in_draft():
+    client, _ = make_authenticated_contract_client()
+
+    response = client.post(
+        "/api/contracts/drafts/",
+        {
+            "contract_type": "FLEET",
+            "draft_payload": {
+                "fleet": {
+                    "effectDate": "",
+                    "duration": "13",
+                    "periodicity": "MOIS",
+                    "personType": "MORALE",
+                    "vehicles": [
+                        {
+                            "id": "veh-1",
+                            "brand": "TOYOTA",
+                            "subcategory": "VP",
+                        }
+                    ],
+                }
+            },
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert "ne peut pas dépasser 12 mois" in response.data["draft_payload"][0]
 
 
 @pytest.mark.django_db
@@ -1340,10 +1385,13 @@ def test_can_calculate_auto_quote_from_ass_mock():
 
     assert response.status_code == 200
     assert response.data["internal_status"] == Contract.InternalStatus.QUOTE_READY
+    # Le devis affiche la PrimeRC pure (ventilation coherente)...
     assert response.data["quote"]["prime_rc_ass"] == 24_000
     assert response.data["quote"]["policy_fee_ass"] == 3_000
     draft = Contract.objects.get(id=draft_response.data["id"])
-    assert draft.prime_rc_ass == 24_000
+    # ... mais l'assiette du contrat (commission/emission) est `data` ASS
+    # = PrimeRC + CEDEAO (decision actee le 2026-06-11).
+    assert draft.prime_rc_ass == 24_300
     assert draft.ttc_ass is None
     assert draft.ass_request_payload["puissanceFiscale"] == 8
 
@@ -1428,6 +1476,10 @@ def test_can_calculate_fleet_quote_with_trailer_from_ass_mock():
             "contract_type": "FLEET",
             "draft_payload": {
                 "fleet": {
+                    "effectDate": "2026-07-01",
+                    "duration": "3",
+                    "periodicity": "MOIS",
+                    "personType": "MORALE",
                     "vehicles": [
                         {
                             "id": "veh-1",
@@ -1456,11 +1508,49 @@ def test_can_calculate_fleet_quote_with_trailer_from_ass_mock():
     response = client.post(f"/api/contracts/drafts/{draft_response.data['id']}/quote/")
 
     assert response.status_code == 200
-    assert response.data["quote"]["prime_rc_ass"] == 24_000
+    # Par vehicule, l'assiette est `data` ASS = PrimeRC (24 000) + CEDEAO (300).
+    assert response.data["quote"]["prime_rc_ass"] == 24_300
     assert response.data["quote"]["items"][0]["kind"] == "VEHICLE"
     assert response.data["quote"]["items"][1]["kind"] == "TRAILER"
     assert response.data["quote"]["items"][1]["prime_rc_ass"] == 0
     assert response.data["quote"]["warnings"] == []
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=True, ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
+def test_rejects_fleet_quote_when_coverage_is_incomplete():
+    client, _ = make_authenticated_contract_client()
+    draft_response = client.post(
+        "/api/contracts/drafts/",
+        {
+            "contract_type": "FLEET",
+            "draft_payload": {
+                "fleet": {
+                    "vehicles": [
+                        {
+                            "id": "veh-1",
+                            "brand": "TOYOTA",
+                            "subcategory": "VP",
+                            "registration": "AA-917-XQ",
+                            "energy": "ESSENCE",
+                            "fiscalPower": "8",
+                        }
+                    ]
+                }
+            },
+        },
+        format="json",
+    )
+
+    assert draft_response.status_code == 201
+
+    response = client.post(f"/api/contracts/drafts/{draft_response.data['id']}/quote/")
+
+    assert response.status_code == 400
+    assert "date d'effet de la flotte est obligatoire" in response.data["detail"]
+    assert "durée de la flotte est obligatoire" in response.data["detail"]
+    assert "périodicité de la flotte est obligatoire" in response.data["detail"]
+    assert "type de personne de la flotte est obligatoire" in response.data["detail"]
 
 
 @pytest.mark.django_db
@@ -1694,3 +1784,35 @@ def test_group_admin_can_cancel_issued_contract_in_own_group():
     assert response.status_code == 200
     contract.refresh_from_db()
     assert contract.internal_status == Contract.InternalStatus.CANCELLED
+
+
+@pytest.mark.django_db
+def test_group_admin_cannot_rename_or_delete_custom_brands():
+    # Decision actee 2026-06-12 : referentiel global, seul l'admin general
+    # peut renommer/supprimer ; l'admin groupe garde la consultation.
+    group_admin = User.objects.create_user(
+        username="brand-group-admin-readonly",
+        password="test",
+        role=User.Role.ADMIN_GROUP,
+    )
+    brand = VehicleBrand.objects.create(
+        value="SCOPING HORUS TEST", name="SCOPING HORUS TEST"
+    )
+    client = APIClient()
+    client.force_authenticate(group_admin)
+
+    list_response = client.get("/api/referentials/custom-vehicle-brands/")
+    rename_response = client.patch(
+        f"/api/referentials/custom-vehicle-brands/{brand.id}/",
+        {"name": "Scoping Renomme"},
+        format="json",
+    )
+    delete_response = client.delete(
+        f"/api/referentials/custom-vehicle-brands/{brand.id}/"
+    )
+
+    assert list_response.status_code == 200
+    assert rename_response.status_code == 403
+    assert delete_response.status_code == 403
+    brand.refresh_from_db()
+    assert brand.name == "SCOPING HORUS TEST"

@@ -8,7 +8,6 @@ import {
   Search,
   ShieldCheck,
 } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 

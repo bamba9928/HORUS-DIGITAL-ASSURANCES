@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 
 from commissions.models import CommissionSnapshot
 from commissions.serializers import CommissionSnapshotSerializer, CommissionSnapshotStatusSerializer
+from common.pagination import PaginationError, paginate_queryset
 
 
 class CommissionSnapshotListView(generics.ListAPIView):
@@ -28,8 +29,16 @@ class CommissionSnapshotListView(generics.ListAPIView):
         return queryset.none()
 
     def list(self, request, *args, **kwargs):
-        serializer = self.get_serializer(self.get_queryset(), many=True)
-        return Response({"results": serializer.data})
+        queryset = self.get_queryset()
+        try:
+            items, meta = paginate_queryset(request, queryset)
+        except PaginationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = self.get_serializer(items, many=True)
+        response_data = {"results": serializer.data}
+        if meta:
+            response_data.update(meta)
+        return Response(response_data)
 
 
 class CommissionSnapshotStatusView(APIView):
@@ -43,7 +52,12 @@ class CommissionSnapshotStatusView(APIView):
         if not self._can_update_snapshot(request.user, snapshot):
             return Response({"detail": "Permission refusee."}, status=status.HTTP_403_FORBIDDEN)
 
-        serializer = CommissionSnapshotStatusSerializer(snapshot, data=request.data, partial=True)
+        serializer = CommissionSnapshotStatusSerializer(
+            snapshot,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
         serializer.is_valid(raise_exception=True)
         snapshot = serializer.save()
         return Response(CommissionSnapshotSerializer(snapshot).data)
