@@ -402,7 +402,9 @@ export type CommissionSnapshot = {
   commission_prime_rc_amount: number;
   commission_policy_fee_amount: number;
   commission_total: number;
-  net_to_horus: number;
+  ass_partner_commission: number;
+  montant_reverse_ass: number;
+  marge_horus: number;
   paid_at: string | null;
   paid_by: number | null;
   paid_by_username: string | null;
@@ -476,6 +478,9 @@ export type ContractSummary = {
   payment_pending: number;
   issued: number;
   total: number;
+  expired: number;
+  expiring_30: number;
+  expiring_60: number;
 };
 
 export async function fetchContractSummary(params?: {
@@ -488,6 +493,22 @@ export async function fetchContractSummary(params?: {
   const qs = q.toString();
   return fetchApi<ContractSummary>(`/contracts/summary/${qs ? `?${qs}` : ""}`);
 }
+
+export type FinancialPeriod = "month" | "year" | "all";
+
+export type FinancialSummary = {
+  period: FinancialPeriod;
+  ca_encaisse: number;
+  commissions_total: number;
+  marge_horus_total: number;
+  contrats_emis: number;
+};
+
+export async function fetchFinancialSummary(period: FinancialPeriod = "month") {
+  return fetchApi<FinancialSummary>(`/contracts/financial-summary/?period=${period}`);
+}
+
+export type ExpirationWindow = "expired" | "30" | "60" | "90";
 
 export type ContractInternalStatus =
   | "DRAFT"
@@ -605,7 +626,9 @@ export type ContractCommissionSnapshot = {
   commission_prime_rc_amount: number;
   commission_policy_fee_amount: number;
   commission_total: number;
-  net_to_horus: number;
+  ass_partner_commission: number;
+  montant_reverse_ass: number;
+  marge_horus: number;
   created_at: string;
 };
 
@@ -661,10 +684,14 @@ export async function listContracts(filters?: {
   page_size?: number;
   contributor?: number;
   organization?: number;
+  expiration?: ExpirationWindow | "";
 }) {
   const params = new URLSearchParams();
   if (filters?.status) {
     params.set("status", filters.status);
+  }
+  if (filters?.expiration) {
+    params.set("expiration", filters.expiration);
   }
   if (filters?.contract_type) {
     params.set("contract_type", filters.contract_type);

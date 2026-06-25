@@ -114,10 +114,23 @@ class AssClient:
     def cancel_attestation(self, payload):
         if settings.ASS_MOCK_ENABLED:
             return self._mock_cancel_response(payload)
-        # Endpoint configurable : ambiguite PDF (qrcode.mono.cancel) vs
-        # Postman (qrcode.cancel), non tranchee tant que la sandbox n'a pas
-        # de stock QR pour tester l'emission + annulation.
-        return self._post(settings.ASS_CANCEL_ENDPOINT, payload)
+        # Endpoint primaire = qrcode.mono.cancel (PDF officiel ASS). La collection
+        # Postman expose qrcode.cancel : on bascule sur ce repli UNIQUEMENT si le
+        # primaire repond 404 (route inexistante) — jamais sur une erreur metier,
+        # pour ecarter tout risque de double annulation.
+        primary = settings.ASS_CANCEL_ENDPOINT
+        fallback = settings.ASS_CANCEL_ENDPOINT_FALLBACK
+        try:
+            return self._post(primary, payload)
+        except AssApiError as exc:
+            if exc.status_code == 404 and fallback and fallback != primary:
+                logger.warning(
+                    "Annulation ASS : %s introuvable (404), repli sur %s.",
+                    primary,
+                    fallback,
+                )
+                return self._post(fallback, payload)
+            raise
 
     def stock_qr(self, payload=None):
         if settings.ASS_MOCK_ENABLED:

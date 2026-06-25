@@ -15,6 +15,8 @@ import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
 import { DashboardAssStockCard } from "@/components/DashboardAssStockCard";
 import { DashboardContractMetrics } from "@/components/DashboardContractMetrics";
+import { DashboardExpirations } from "@/components/DashboardExpirations";
+import { DashboardFinancialMetrics } from "@/components/DashboardFinancialMetrics";
 import { DashboardRecentContracts } from "@/components/DashboardRecentContracts";
 import { PageAction, SectionHeader } from "@/components/ui";
 import { canCreateContract, canViewAssIntegration } from "@/lib/permissions";
@@ -92,6 +94,10 @@ export default function Home() {
       <div className="space-y-6">
         {/* ── Metrics row ──────────────────────────────────────── */}
         <DashboardContractMetrics />
+
+        <DashboardFinancialMetrics />
+
+        <DashboardExpirations />
 
         <DashboardRecentContracts />
 

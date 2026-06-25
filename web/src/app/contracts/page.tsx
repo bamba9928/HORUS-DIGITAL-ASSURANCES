@@ -25,6 +25,7 @@ import {
   listContracts,
   type ContractInternalStatus,
   type ContractListItem,
+  type ExpirationWindow,
 } from "@/lib/api";
 import { canCreateContract } from "@/lib/permissions";
 
@@ -48,23 +49,39 @@ const typeFilters = [
   { label: "Garage", value: "GARAGE" },
 ];
 
+const expirationFilters: { label: string; value: ExpirationWindow | "" }[] = [
+  { label: "Toutes échéances", value: "" },
+  { label: "Expirés", value: "expired" },
+  { label: "≤ 30 jours", value: "30" },
+  { label: "≤ 60 jours", value: "60" },
+  { label: "≤ 90 jours", value: "90" },
+];
+
 export default function ContractsPage() {
   const router = useRouter();
   const { auth } = useAuth();
   const [contracts, setContracts] = useState<ContractListItem[]>([]);
   const [status, setStatus] = useState<ContractInternalStatus | "">("");
   const [contractType, setContractType] = useState("");
+  const [expiration, setExpiration] = useState<ExpirationWindow | "">("");
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  // Instant de reference capture une fois (calcul des jours restants pur).
+  const [now] = useState(() => Date.now());
 
-  async function refresh(nextStatus = status, nextContractType = contractType) {
+  async function refresh(
+    nextStatus = status,
+    nextContractType = contractType,
+    nextExpiration = expiration,
+  ) {
     setError("");
     setIsLoading(true);
     try {
       const response = await listContracts({
         status: nextStatus,
         contract_type: nextContractType,
+        expiration: nextExpiration,
       });
       setContracts(response.results);
     } catch (err) {
@@ -125,12 +142,17 @@ export default function ContractsPage() {
 
   function updateStatus(next: ContractInternalStatus | "") {
     setStatus(next);
-    void refresh(next, contractType);
+    void refresh(next, contractType, expiration);
   }
 
   function updateType(next: string) {
     setContractType(next);
-    void refresh(status, next);
+    void refresh(status, next, expiration);
+  }
+
+  function updateExpiration(next: ExpirationWindow | "") {
+    setExpiration(next);
+    void refresh(status, contractType, next);
   }
 
   return (
@@ -151,24 +173,28 @@ export default function ContractsPage() {
           <MetricCard
             icon={Files}
             label="Dossiers"
-            value={isLoading ? "—" : totals.count}
+            loading={isLoading}
+            value={totals.count}
           />
           <MetricCard
             icon={ShieldCheck}
             label="Émis"
+            loading={isLoading}
             tone="success"
-            value={isLoading ? "—" : totals.issued}
+            value={totals.issued}
           />
           <MetricCard
             icon={Banknote}
             label="Prime RC totale"
-            value={isLoading ? "—" : formatMoney(totals.primeRc)}
+            loading={isLoading}
+            value={formatMoney(totals.primeRc)}
           />
           <MetricCard
             icon={Banknote}
             label="TTC encaissé"
+            loading={isLoading}
             tone="primary"
-            value={isLoading ? "—" : formatMoney(totals.ttc)}
+            value={formatMoney(totals.ttc)}
           />
         </div>
 
@@ -178,7 +204,7 @@ export default function ContractsPage() {
           {/* ── Filter bar ─────────────────────────────────── */}
           <div className="space-y-3 border-b border-border px-4 pb-3 pt-4">
             {/* Row 1: search + type + refresh */}
-            <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
+            <div className="grid gap-2 md:grid-cols-[1fr_auto_auto_auto]">
               <div className="relative">
                 <Search
                   className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/30"
@@ -202,6 +228,18 @@ export default function ContractsPage() {
                 {typeFilters.map((t) => (
                   <option key={t.value} value={t.value}>
                     {t.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Échéance"
+                className="app-field text-sm"
+                onChange={(e) => updateExpiration(e.target.value as ExpirationWindow | "")}
+                value={expiration}
+              >
+                {expirationFilters.map((f) => (
+                  <option key={f.value} value={f.value}>
+                    {f.label}
                   </option>
                 ))}
               </select>
@@ -261,6 +299,7 @@ export default function ContractsPage() {
                     <th>Apporteur</th>
                     <th>Montants</th>
                     <th>Attestation</th>
+                    <th>Échéance</th>
                     <th>Mis à jour</th>
                   </tr>
                 </thead>
@@ -338,6 +377,15 @@ export default function ContractsPage() {
                         </p>
                       </td>
 
+                      {/* Échéance */}
+                      <td className="whitespace-nowrap text-[13px]" data-label="Échéance">
+                        {contract.date_expiration ? (
+                          <ExpiryInline now={now} value={contract.date_expiration} />
+                        ) : (
+                          <span className="text-black/25">—</span>
+                        )}
+                      </td>
+
                       {/* Date */}
                       <td
                         className="whitespace-nowrap text-[13px] text-black/45"
@@ -389,4 +437,15 @@ function formatDate(value: string) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function ExpiryInline({ value, now }: { value: string; now: number }) {
+  const days = Math.ceil((new Date(value).getTime() - now) / 86_400_000);
+  const tone =
+    days < 0 ? "text-red-600" : days <= 30 ? "text-amber-600" : "text-black/55";
+  return (
+    <span className={`font-semibold ${tone}`}>
+      {days < 0 ? `Expiré (${Math.abs(days)} j)` : `${days} j`}
+    </span>
+  );
 }

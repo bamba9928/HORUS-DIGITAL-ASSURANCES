@@ -11,12 +11,14 @@ from contracts.views import (
     ContractIssueView,
     ContractListView,
     ContractSummaryView,
+    FinancialSummaryView,
 )
 
 urlpatterns = [
     path("", ContractListView.as_view(), name="contract-list"),
     path("clients/", ClientListView.as_view(), name="client-list"),
     path("summary/", ContractSummaryView.as_view(), name="contract-summary"),
+    path("financial-summary/", FinancialSummaryView.as_view(), name="contract-financial-summary"),
     path("drafts/", ContractDraftListCreateView.as_view(), name="contract-draft-list"),
     path("drafts/<int:pk>/", ContractDraftDetailView.as_view(), name="contract-draft-detail"),
     path("drafts/<int:pk>/quote/", ContractDraftQuoteView.as_view(), name="contract-draft-quote"),

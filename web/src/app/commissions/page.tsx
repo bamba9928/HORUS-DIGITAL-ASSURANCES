@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { AppShell } from "@/components/AppShell";
+import { useToast } from "@/components/ToastProvider";
 import {
   AlertMessage,
   EmptyState,
@@ -52,6 +53,7 @@ const ALLOWED_TRANSITIONS: Record<CommissionSnapshot["status"], CommissionSnapsh
 
 export default function CommissionsPage() {
   const { auth, isLoading: authLoading } = useAuth();
+  const toast = useToast();
   const [snapshots, setSnapshots] = useState<CommissionSnapshot[]>([]);
   const [error, setError] = useState("");
   const [isDataLoading, setIsDataLoading] = useState(false);
@@ -107,8 +109,12 @@ export default function CommissionsPage() {
     try {
       const updated = await updateCommissionSnapshotStatus(id, status);
       setSnapshots((prev) => prev.map((s) => (s.id === id ? updated : s)));
+      toast.success("Statut mis à jour", `Commission ${STATUS_LABELS[status].toLowerCase()}.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Mise à jour impossible.");
+      toast.error(
+        "Mise à jour impossible",
+        err instanceof Error ? err.message : undefined,
+      );
     } finally {
       setUpdatingId(null);
     }
@@ -245,7 +251,7 @@ export default function CommissionsPage() {
                     <th>Apporteur</th>
                     <th>Montants ASS</th>
                     <th>Commission</th>
-                    <th>Net Horus</th>
+                    <th>Marge Horus</th>
                     <th>Date</th>
                     <th>Statut</th>
                   </tr>
@@ -296,8 +302,10 @@ export default function CommissionsPage() {
                         </p>
                       </td>
 
-                      <td className="font-extrabold tabular-nums" data-label="Net Horus">
-                        {formatMoney(snapshot.net_to_horus)}
+                      <td className="font-extrabold tabular-nums" data-label="Marge Horus">
+                        <span className={snapshot.marge_horus < 0 ? "text-red-600" : undefined}>
+                          {formatMoney(snapshot.marge_horus)}
+                        </span>
                       </td>
 
                       <td data-label="Date">

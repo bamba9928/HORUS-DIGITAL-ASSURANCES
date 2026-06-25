@@ -684,7 +684,8 @@ def create_commission_snapshot(organization, contributor):
         commission_prime_rc_amount=9_000,
         commission_policy_fee_amount=2_000,
         commission_total=11_000,
-        net_to_horus=54_000,
+        montant_reverse_ass=62_000,
+        marge_horus=-8_000,
     )
 
 

@@ -52,7 +52,12 @@ export function canViewConfig(user: User) {
 }
 
 export function canViewPayments(user: User) {
-  return Boolean(user && ["ADMIN_GENERAL", "ADMIN_GROUP", "FINANCE"].includes(user.role));
+  // L'apporteur voit les paiements de ses propres contrats (donnees scopees
+  // cote backend par get_queryset de PaymentListView).
+  return Boolean(
+    user &&
+      ["ADMIN_GENERAL", "ADMIN_GROUP", "FINANCE", "CONTRIBUTOR"].includes(user.role),
+  );
 }
 
 export function canManageOrganizations(user: User) {

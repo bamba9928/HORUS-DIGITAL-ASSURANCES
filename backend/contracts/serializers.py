@@ -450,7 +450,9 @@ class ContractDetailSerializer(ContractListSerializer):
             "commission_prime_rc_amount": snapshot.commission_prime_rc_amount,
             "commission_policy_fee_amount": snapshot.commission_policy_fee_amount,
             "commission_total": snapshot.commission_total,
-            "net_to_horus": snapshot.net_to_horus,
+            "ass_partner_commission": snapshot.ass_partner_commission,
+            "montant_reverse_ass": snapshot.montant_reverse_ass,
+            "marge_horus": snapshot.marge_horus,
             "created_at": snapshot.created_at,
         }
 

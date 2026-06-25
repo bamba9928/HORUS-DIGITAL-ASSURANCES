@@ -39,7 +39,13 @@ class CommissionSnapshot(models.Model):
     commission_prime_rc_amount = models.PositiveIntegerField()
     commission_policy_fee_amount = models.PositiveIntegerField()
     commission_total = models.PositiveIntegerField()
-    net_to_horus = models.PositiveIntegerField()
+    # Commission d'apport reversee par ASS a Horus sur la PrimeRC (revenu Horus).
+    ass_partner_commission = models.PositiveIntegerField(default=0)
+    # Part du TTC encaisse reversee a ASS (prime assureur + taxes/fonds).
+    montant_reverse_ass = models.PositiveIntegerField(default=0)
+    # Marge nette de Horus = revenu Horus (frais de police + apport ASS) - commission
+    # apporteur. Peut etre negative (commission apporteur > revenu Horus).
+    marge_horus = models.IntegerField(default=0)
     paid_at = models.DateTimeField(null=True, blank=True)
     paid_by = models.ForeignKey(
         "accounts.User",

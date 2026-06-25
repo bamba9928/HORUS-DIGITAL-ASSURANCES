@@ -18,6 +18,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
+import { useToast } from "@/components/ToastProvider";
 import { AlertMessage, ContractTypeBadge, MetricCard, StatusBadge, humanize } from "@/components/ui";
 import {
   calculateContractQuote,
@@ -74,6 +75,7 @@ const STEP_LABELS: Record<string, string> = {
 export default function ContractDetailPage() {
   const params = useParams<{ id: string }>();
   const { auth } = useAuth();
+  const toast = useToast();
   const contractId = Number(params.id);
   const hasValidId = Number.isFinite(contractId);
 
@@ -139,8 +141,12 @@ export default function ContractDetailPage() {
       const res = await calculateContractQuote(contract.id);
       setQuote(res.quote);
       await refresh();
+      toast.success("Devis calculé", "La prime RC a été mise à jour.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Calcul devis impossible.");
+      toast.error(
+        "Calcul du devis impossible",
+        err instanceof Error ? err.message : undefined,
+      );
     } finally {
       setIsActionLoading(false);
     }
@@ -153,8 +159,15 @@ export default function ContractDetailPage() {
     try {
       await confirmContractPayment(contract.id, payableAmount);
       await refresh();
+      toast.success(
+        "Paiement confirmé",
+        `${new Intl.NumberFormat("fr-FR").format(payableAmount)} FCFA encaissés.`,
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Paiement impossible.");
+      toast.error(
+        "Paiement impossible",
+        err instanceof Error ? err.message : undefined,
+      );
     } finally {
       setIsActionLoading(false);
     }
@@ -168,8 +181,15 @@ export default function ContractDetailPage() {
       const res = await issueContract(contract.id);
       setIssueResult(res);
       await refresh();
+      toast.success(
+        "Contrat émis",
+        res.attestation_number ? `Attestation ${res.attestation_number}` : undefined,
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Émission impossible.");
+      toast.error(
+        "Émission impossible",
+        err instanceof Error ? err.message : undefined,
+      );
     } finally {
       setIsActionLoading(false);
     }
@@ -184,8 +204,12 @@ export default function ContractDetailPage() {
       await cancelContract(contract.id, cancelMethod, cancelMotif);
       setCancelMotif("");
       await refresh();
+      toast.success("Contrat annulé", "L'attestation a été annulée auprès d'ASS.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Annulation impossible.");
+      toast.error(
+        "Annulation impossible",
+        err instanceof Error ? err.message : undefined,
+      );
     } finally {
       setIsActionLoading(false);
     }
@@ -407,8 +431,12 @@ export default function ContractDetailPage() {
                         highlight
                       />
                       <InfoField
-                        label="Net Horus"
-                        value={formatMoney(contract.commission_snapshot.net_to_horus)}
+                        label="Marge Horus"
+                        value={formatMoney(contract.commission_snapshot.marge_horus)}
+                      />
+                      <InfoField
+                        label="Reversé ASS"
+                        value={formatMoney(contract.commission_snapshot.montant_reverse_ass)}
                       />
                       <InfoField
                         label="Part Prime RC"

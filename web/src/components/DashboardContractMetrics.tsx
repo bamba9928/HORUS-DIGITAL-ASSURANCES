@@ -12,6 +12,9 @@ const defaultSummary: ContractSummary = {
   payment_pending: 0,
   issued: 0,
   total: 0,
+  expired: 0,
+  expiring_30: 0,
+  expiring_60: 0,
 };
 
 export function DashboardContractMetrics() {
@@ -85,8 +88,9 @@ export function DashboardContractMetrics() {
             icon={metric.icon}
             key={metric.label}
             label={metric.label}
+            loading={isLoading}
             tone={metric.tone}
-            value={isLoading ? "-" : metric.value}
+            value={metric.value}
           />
         ))}
       </div>

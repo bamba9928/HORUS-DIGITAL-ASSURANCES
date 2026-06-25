@@ -16,10 +16,20 @@ class PaymentListView(generics.ListAPIView):
         qs = Payment.objects.select_related(
             "contract", "contract__organization", "created_by"
         )
+        # Isolation alignee sur celle des contrats (get_contract_queryset_for_user) :
+        # admin general = tout ; admin groupe / finance = leur organisation ;
+        # apporteur = uniquement les paiements de ses propres contrats.
         if user.is_admin_general:
             pass
-        elif user.organization_id and (user.is_admin_group or user.is_finance):
+        elif not user.organization_id:
+            return qs.none()
+        elif user.is_admin_group or user.is_finance:
             qs = qs.filter(contract__organization_id=user.organization_id)
+        elif user.is_contributor:
+            qs = qs.filter(
+                contract__organization_id=user.organization_id,
+                contract__contributor_id=user.id,
+            )
         else:
             return qs.none()
 

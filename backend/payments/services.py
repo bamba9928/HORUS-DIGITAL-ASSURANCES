@@ -24,6 +24,11 @@ def expected_payment_amount(contract):
             prime_totale = _parse_amount(response_data.get("primeTotale"))
             if prime_totale > 0:
                 return prime_totale
+    # Repli — notamment FLOTTE : la reponse rc.flotte n'expose pas de PrimeTotale
+    # (elle est imbriquee sous "flotte"/"remorques"). ATTENTION : ce repli ne couvre
+    # que RC + cout de police, SANS taxes/FGA/CEDEAO. A revoir des que le format reel
+    # de tarification flotte sera connu (rc.flotte.request bloque cote ASS au
+    # 2026-06-11 : bug serveur ga_def_recours).
     return contract.prime_rc_ass + contract.cout_police_ass
 
 

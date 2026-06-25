@@ -142,17 +142,21 @@ Formule :
 commission_prime_rc_amount = prime_rc_ass * commission_percent_on_prime_rc / 100
 commission_policy_fee_amount = commission_fixed_on_policy_fee
 commission_total = commission_prime_rc_amount + commission_policy_fee_amount
-net_to_horus = ttc_ass - commission_total
+
+# Revenu Horus = frais de police + commission d'apport ASS sur la PrimeRC
+# (ASS_PARTNER_COMMISSION_RATE ; 0 par defaut tant que le contrat ASS ne l'a pas confirme)
+ass_partner_commission = prime_rc_ass * ASS_PARTNER_COMMISSION_RATE / 100
+horus_gross_revenue    = cout_police_ass + ass_partner_commission
+montant_reverse_ass    = ttc_ass - horus_gross_revenue   # reverse a ASS (prime assureur + taxes/FGA/CEDEAO)
+marge_horus            = horus_gross_revenue - commission_total   # peut etre negative
 ```
 
-Point comptable a confirmer :
+Point comptable — resolu le 2026-06-25 :
 
-Le nom `net_to_horus` doit etre valide avec le flux financier reel. Si Horus encaisse le client puis reverse ASS et l'apporteur, il faudra peut-etre distinguer :
-
-- montant encaisse client
-- montant du a ASS
-- commission apporteur
-- marge Horus
+`net_to_horus` (= ttc - commission) surevaluait la marge car le TTC inclut la prime
+reversee a ASS et les taxes/FGA/CEDEAO. Remplace dans le snapshot par une decomposition
+explicite : `montant_reverse_ass`, `ass_partner_commission` (apport ASS -> Horus, taux
+configurable) et `marge_horus` (marge nette ; negative possible = parametrage commission a revoir).
 
 Snapshot a l'emission :
 
@@ -164,7 +168,9 @@ Snapshot a l'emission :
 - `commission_prime_rc_amount`
 - `commission_policy_fee_amount`
 - `commission_total`
-- `net_to_horus`
+- `ass_partner_commission`
+- `montant_reverse_ass`
+- `marge_horus`
 
 Statuts commission :
 
@@ -730,7 +736,9 @@ flutter test
 - Tant que le paiement externe n'est pas choisi, utiliser paiement manuel confirme par finance.
 - Tant que les appels reels ASS sont risqués, utiliser le mock.
 - Tant que Bus ecole/Garage ne sont pas prioritaires, les afficher en "A venir" ou les livrer apres Auto/Moto/Flotte.
-- Tant que `net_to_horus` est comptablement ambigu, stocker les champs separes et garder le nom final a valider.
+- Marge Horus (ex-`net_to_horus`) : resolu le 2026-06-25 — decomposition `montant_reverse_ass` /
+  `ass_partner_commission` / `marge_horus`, taux d'apport ASS configurable (defaut 0). Reste a
+  renseigner le vrai taux `ASS_PARTNER_COMMISSION_RATE` une fois confirme par le contrat ASS.
 
 ## Definition de termine pour une phase
 

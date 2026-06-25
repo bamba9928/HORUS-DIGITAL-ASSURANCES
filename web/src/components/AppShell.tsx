@@ -5,6 +5,7 @@ import {
   Banknote,
   Boxes,
   Building2,
+  CalendarClock,
   ChevronDown,
   CircleUser,
   FilePlus2,
@@ -46,6 +47,7 @@ const navigation = [
 
 const productionNavigation = [
   { href: "/contracts", label: "Contrats", icon: FileText },
+  { href: "/echeances", label: "Échéances", icon: CalendarClock },
   { href: "/clients", label: "Clients", icon: UserRound },
 ];
 

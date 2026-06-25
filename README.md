@@ -106,7 +106,8 @@ DRAFT → QUOTE_READY → PAYMENT_PENDING → PAID → ISSUING → ISSUED
 
 ## Types de contrats
 
-- `AUTO_MONO` — Automobile / Moto individuel
+- `AUTO_MONO` — Automobile individuel
+- `MOTO` — Deux-roues / moto
 - `FLEET` — Flotte de véhicules (avec remorques)
 - `BUS_SCHOOL` — Bus scolaire
 - `GARAGE` — Responsabilité civile garage

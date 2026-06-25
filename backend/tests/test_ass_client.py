@@ -295,3 +295,113 @@ def test_cancel_endpoint_is_configurable():
     client.cancel_attestation({"referenceTrxPartner": "REF-1", "methode": "ANNULER", "motif": ""})
 
     assert session.calls[0]["url"].endswith("/api/v1/partner/qrcode.cancel")
+
+
+class RoutingFakeAssSession:
+    """Renvoie une reponse differente selon l'URL appelee (test du repli annulation)."""
+
+    def __init__(self, responses_by_suffix):
+        self.calls = []
+        self.responses_by_suffix = responses_by_suffix
+
+    def post(self, url, *, json, auth, timeout):
+        self.calls.append({"url": url, "json": json})
+        for suffix, response in self.responses_by_suffix.items():
+            if url.endswith(suffix):
+                return response
+        raise AssertionError(f"URL d'annulation inattendue: {url}")
+
+
+CANCEL_PAYLOAD = {"referenceTrxPartner": "REF-1", "methode": "ANNULER", "motif": ""}
+
+
+@override_settings(
+    ASS_BASE_URL="https://kiiraytest.lasecu-assurances.sn",
+    ASS_API_PARTNER_SEGMENT="partner",
+    ASS_USERNAME="ass",
+    ASS_PASSWORD="secret-test",
+    ASS_MOCK_ENABLED=False,
+    ASS_REAL_CALLS_ALLOWED=True,
+    ASS_CANCEL_ENDPOINT="/qrcode.mono.cancel",
+    ASS_CANCEL_ENDPOINT_FALLBACK="/qrcode.cancel",
+)
+def test_cancel_uses_pdf_mono_endpoint_as_primary():
+    session = FakeAssSession()
+    client = AssClient(session=session)
+
+    client.cancel_attestation(CANCEL_PAYLOAD)
+
+    # Aucun 404 : un seul appel, sur l'endpoint PDF officiel.
+    assert len(session.calls) == 1
+    assert session.calls[0]["url"].endswith("/api/v1/partner/qrcode.mono.cancel")
+
+
+@override_settings(
+    ASS_BASE_URL="https://kiiraytest.lasecu-assurances.sn",
+    ASS_API_PARTNER_SEGMENT="partner",
+    ASS_USERNAME="ass",
+    ASS_PASSWORD="secret-test",
+    ASS_MOCK_ENABLED=False,
+    ASS_REAL_CALLS_ALLOWED=True,
+    ASS_CANCEL_ENDPOINT="/qrcode.mono.cancel",
+    ASS_CANCEL_ENDPOINT_FALLBACK="/qrcode.cancel",
+)
+def test_cancel_falls_back_to_postman_endpoint_on_404():
+    session = RoutingFakeAssSession(
+        {
+            "/qrcode.mono.cancel": FakeAssResponse(
+                payload={"operationStatus": "ERROR", "operationMessage": "Not Found"},
+                status_code=404,
+            ),
+            "/qrcode.cancel": FakeAssResponse(
+                payload={"operationStatus": "SUCCESS", "operationMessage": "Annulee"},
+                status_code=200,
+            ),
+        }
+    )
+    client = AssClient(session=session)
+
+    response = client.cancel_attestation(CANCEL_PAYLOAD)
+
+    assert response["operationStatus"] == "SUCCESS"
+    # Le primaire (PDF) est tente, puis repli sur le Postman apres le 404.
+    assert [call["url"].rsplit("/partner", 1)[1] for call in session.calls] == [
+        "/qrcode.mono.cancel",
+        "/qrcode.cancel",
+    ]
+
+
+@override_settings(
+    ASS_BASE_URL="https://kiiraytest.lasecu-assurances.sn",
+    ASS_API_PARTNER_SEGMENT="partner",
+    ASS_USERNAME="ass",
+    ASS_PASSWORD="secret-test",
+    ASS_MOCK_ENABLED=False,
+    ASS_REAL_CALLS_ALLOWED=True,
+    ASS_CANCEL_ENDPOINT="/qrcode.mono.cancel",
+    ASS_CANCEL_ENDPOINT_FALLBACK="/qrcode.cancel",
+)
+def test_cancel_does_not_fall_back_on_business_error():
+    session = RoutingFakeAssSession(
+        {
+            "/qrcode.mono.cancel": FakeAssResponse(
+                payload={
+                    "operationStatus": "ERROR",
+                    "operationMessage": "Reference inconnue",
+                    "code": 5006,
+                },
+                status_code=400,
+            ),
+            "/qrcode.cancel": FakeAssResponse(
+                payload={"operationStatus": "SUCCESS"}, status_code=200
+            ),
+        }
+    )
+    client = AssClient(session=session)
+
+    with pytest.raises(AssApiError, match="Reference inconnue"):
+        client.cancel_attestation(CANCEL_PAYLOAD)
+
+    # Une erreur metier (400) ne declenche jamais le repli : un seul appel.
+    assert len(session.calls) == 1
+    assert session.calls[0]["url"].endswith("/qrcode.mono.cancel")

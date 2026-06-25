@@ -80,6 +80,7 @@ export function MetricCard({
   icon: Icon,
   tone = "neutral",
   trend,
+  loading = false,
 }: {
   label: string;
   value: string | number;
@@ -87,6 +88,7 @@ export function MetricCard({
   icon?: typeof ArrowRight;
   tone?: "neutral" | "primary" | "success" | "warning";
   trend?: { value: string; up: boolean };
+  loading?: boolean;
 }) {
   const cfg = toneConfig[tone];
   return (
@@ -104,11 +106,15 @@ export function MetricCard({
             </span>
           ) : null}
         </div>
-        <p
-          className={`mt-3 truncate text-[26px] font-black leading-none tracking-tight sm:text-[28px] ${cfg.value}`}
-        >
-          {value}
-        </p>
+        {loading ? (
+          <span className="skeleton mt-3 block h-[26px] w-24 rounded-md sm:h-[28px]" />
+        ) : (
+          <p
+            className={`mt-3 truncate text-[26px] font-black leading-none tracking-tight sm:text-[28px] ${cfg.value}`}
+          >
+            {value}
+          </p>
+        )}
         <div className="mt-2 flex items-center gap-2">
           {detail ? (
             <p className="truncate text-xs font-medium text-black/38">{detail}</p>
@@ -287,6 +293,94 @@ export function AlertMessage({
     >
       {icons[tone]}
       <span>{children}</span>
+    </div>
+  );
+}
+
+/* ── Skeleton ────────────────────────────────────────────────────── */
+export function Skeleton({ className = "" }: { className?: string }) {
+  return <span aria-hidden="true" className={`skeleton block ${className}`} />;
+}
+
+/* ── TableSkeleton ───────────────────────────────────────────────── */
+export function TableSkeleton({ columns, rows = 5 }: { columns: number; rows?: number }) {
+  return (
+    <tbody>
+      {Array.from({ length: rows }).map((_, rowIndex) => (
+        <tr key={rowIndex}>
+          {Array.from({ length: columns }).map((__, colIndex) => (
+            <td key={colIndex}>
+              <Skeleton className="h-4 w-full max-w-32 rounded" />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </tbody>
+  );
+}
+
+/* ── ConfirmDialog ───────────────────────────────────────────────── */
+export function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmLabel = "Confirmer",
+  cancelLabel = "Annuler",
+  tone = "danger",
+  loading = false,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  description?: React.ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  tone?: "danger" | "primary";
+  loading?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+      <button
+        aria-label="Fermer"
+        className="absolute inset-0 cursor-default bg-black/40 backdrop-blur-[1px]"
+        onClick={onCancel}
+        tabIndex={-1}
+        type="button"
+      />
+      <div
+        aria-modal="true"
+        className="app-surface-raised animate-scale-in relative z-10 w-full max-w-md p-5 shadow-xl"
+        role="dialog"
+      >
+        <h2 className="text-[15px] font-extrabold tracking-tight">{title}</h2>
+        {description ? (
+          <div className="mt-2 text-sm font-medium leading-relaxed text-black/55">
+            {description}
+          </div>
+        ) : null}
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            className="btn btn-secondary"
+            disabled={loading}
+            onClick={onCancel}
+            type="button"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            className={`btn ${tone === "danger" ? "btn-danger" : "btn-primary"}`}
+            disabled={loading}
+            onClick={onConfirm}
+            type="button"
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

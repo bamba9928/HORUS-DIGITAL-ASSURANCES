@@ -1,5 +1,7 @@
+from datetime import timedelta
+
 from django.core.exceptions import ValidationError
-from django.db.models import Q
+from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, status
@@ -8,6 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from common.pagination import PaginationError, paginate_queryset
+from commissions.models import CommissionSnapshot
 from contracts.models import Contract
 from contracts.serializers import (
     ContractDetailSerializer,
@@ -17,6 +20,7 @@ from contracts.serializers import (
 )
 from commissions.services import CommissionNotConfiguredError
 from integrations.ass.exceptions import AssIntegrationError
+from payments.models import Payment
 from contracts.services import (
     ContractCancelError,
     ContractIssueError,
@@ -77,6 +81,56 @@ def can_confirm_contract_payment(user, contract):
     )
 
 
+# Fenetres d'echeance (contrats emis a renouveler).
+EXPIRATION_WINDOWS = {"30": 30, "60": 60, "90": 90}
+
+
+def apply_expiration_window(queryset, window, *, now=None):
+    """Restreint aux contrats EMIS selon la fenetre d'expiration demandee.
+
+    window : "expired" (deja expires) ou "30"/"60"/"90" (expire sous N jours).
+    Retourne (queryset, ok) ; ok=False si la fenetre est inconnue.
+    """
+    now = now or timezone.now()
+    issued = queryset.filter(
+        internal_status=Contract.InternalStatus.ISSUED,
+        date_expiration__isnull=False,
+    )
+    if window == "expired":
+        return issued.filter(date_expiration__lt=now), True
+    if window in EXPIRATION_WINDOWS:
+        horizon = now + timedelta(days=EXPIRATION_WINDOWS[window])
+        return issued.filter(date_expiration__gte=now, date_expiration__lte=horizon), True
+    return queryset, False
+
+
+def _scoped_by_role(queryset, user, *, org_field, contributor_filter):
+    """Applique l'isolation par role a un queryset (commissions / paiements).
+
+    org_field : champ de filtrage sur l'organisation (ex. "contract__organization_id").
+    contributor_filter : dict de filtre pour un apporteur (ses propres lignes).
+    """
+    if user.is_admin_general:
+        return queryset
+    if not user.organization_id:
+        return queryset.none()
+    if user.is_admin_group or user.is_finance:
+        return queryset.filter(**{org_field: user.organization_id})
+    if user.is_contributor:
+        return queryset.filter(**contributor_filter)
+    return queryset.none()
+
+
+def _financial_period_start(period):
+    """Debut de periode (aware) pour les stats financieres ; None = depuis le debut."""
+    now = timezone.now()
+    if period == "all":
+        return None
+    if period == "year":
+        return now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
 class AuthenticatedContractMixin:
     permission_classes = [IsAuthenticated]
 
@@ -134,7 +188,19 @@ class ContractListView(AuthenticatedContractMixin, APIView):
                 search_query |= Q(pk=int(normalized_search))
             queryset = queryset.filter(search_query)
 
-        queryset = queryset.order_by("-updated_at")
+        order_field = "-updated_at"
+        expiration = request.query_params.get("expiration")
+        if expiration:
+            queryset, ok = apply_expiration_window(queryset, expiration)
+            if not ok:
+                return Response(
+                    {"detail": "Filtre d'echeance invalide."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            # Echeances : du plus urgent (deja expire / proche) au plus lointain.
+            order_field = "date_expiration"
+
+        queryset = queryset.order_by(order_field)
         try:
             items, meta = paginate_queryset(request, queryset)
         except PaginationError as exc:
@@ -174,6 +240,11 @@ class ContractSummaryView(AuthenticatedContractMixin, APIView):
         if organization_param and str(organization_param).isdigit():
             queryset = queryset.filter(organization_id=int(organization_param))
 
+        now = timezone.now()
+        issued_with_expiry = queryset.filter(
+            internal_status=Contract.InternalStatus.ISSUED,
+            date_expiration__isnull=False,
+        )
         return Response(
             {
                 "drafts": queryset.filter(internal_status=Contract.InternalStatus.DRAFT).count(),
@@ -185,6 +256,14 @@ class ContractSummaryView(AuthenticatedContractMixin, APIView):
                 ).count(),
                 "issued": queryset.filter(internal_status=Contract.InternalStatus.ISSUED).count(),
                 "total": queryset.count(),
+                # Echeances : contrats emis dont l'attestation expire bientot (cumulatif).
+                "expired": issued_with_expiry.filter(date_expiration__lt=now).count(),
+                "expiring_30": issued_with_expiry.filter(
+                    date_expiration__gte=now, date_expiration__lte=now + timedelta(days=30)
+                ).count(),
+                "expiring_60": issued_with_expiry.filter(
+                    date_expiration__gte=now, date_expiration__lte=now + timedelta(days=60)
+                ).count(),
             }
         )
 
@@ -378,3 +457,52 @@ class ClientListView(AuthenticatedContractMixin, APIView):
         )
 
         return Response({"results": result, "count": len(result)})
+
+
+class FinancialSummaryView(AuthenticatedContractMixin, APIView):
+    """Stats financieres agregees, isolees par role.
+
+    Periode (param `period`) : "month" (defaut), "year" ou "all".
+    - CA encaisse : somme des paiements confirmes (date de confirmation dans la periode).
+    - Commissions / marge / nb emis : agreges sur les snapshots de commission crees
+      dans la periode (le snapshot est cree exactement a l'emission, hors annulations).
+    """
+
+    def get(self, request):
+        user = request.user
+        period = request.query_params.get("period", "month")
+        if period not in {"month", "year", "all"}:
+            return Response({"detail": "Periode invalide."}, status=status.HTTP_400_BAD_REQUEST)
+        start = _financial_period_start(period)
+
+        snapshots = _scoped_by_role(
+            CommissionSnapshot.objects.all(),
+            user,
+            org_field="contract__organization_id",
+            contributor_filter={"contributor": user},
+        ).exclude(status=CommissionSnapshot.Status.CANCELLED)
+        payments = _scoped_by_role(
+            Payment.objects.filter(status=Payment.Status.CONFIRMED),
+            user,
+            org_field="contract__organization_id",
+            contributor_filter={"contract__contributor_id": user.id},
+        )
+        if start is not None:
+            snapshots = snapshots.filter(created_at__gte=start)
+            payments = payments.filter(confirmed_at__gte=start)
+
+        commission_agg = snapshots.aggregate(
+            commissions_total=Sum("commission_total"),
+            marge_horus_total=Sum("marge_horus"),
+            contrats_emis=Count("id"),
+        )
+        ca = payments.aggregate(total=Sum("amount"))
+        return Response(
+            {
+                "period": period,
+                "ca_encaisse": ca["total"] or 0,
+                "commissions_total": commission_agg["commissions_total"] or 0,
+                "marge_horus_total": commission_agg["marge_horus_total"] or 0,
+                "contrats_emis": commission_agg["contrats_emis"] or 0,
+            }
+        )

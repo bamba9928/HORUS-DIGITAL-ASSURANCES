@@ -1,6 +1,9 @@
+from datetime import timedelta
+
 import pytest
 from django.db import IntegrityError, transaction
 from django.test import override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import User
@@ -377,6 +380,10 @@ def test_contract_summary_counts_statuses_for_authenticated_user_in_debug_mode()
         "payment_pending": 1,
         "issued": 1,
         "total": 4,
+        # L'unique contrat emis n'a pas de date d'expiration -> compteurs a 0.
+        "expired": 0,
+        "expiring_30": 0,
+        "expiring_60": 0,
     }
 
 
@@ -693,6 +700,179 @@ def test_database_rejects_two_confirmed_payments_for_same_contract():
 
 
 @pytest.mark.django_db
+def test_contributor_sees_only_own_contracts_payments():
+    # L'apporteur doit voir les paiements de SES contrats — et uniquement ceux-la,
+    # meme face a un autre apporteur de la meme organisation.
+    client, contributor = make_authenticated_contract_client(username="apporteur-paie-a")
+    other = User.objects.create_user(
+        username="apporteur-paie-b",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=contributor.organization,
+        commission_percent_on_prime_rc=0,
+        commission_fixed_on_policy_fee=0,
+    )
+    own_contract = create_quote_ready_contract(contributor)
+    other_contract = create_quote_ready_contract(other)
+    Payment.objects.create(
+        contract=own_contract,
+        amount=27_000,
+        status=Payment.Status.CONFIRMED,
+        external_reference="PAY-OWN",
+    )
+    Payment.objects.create(
+        contract=other_contract,
+        amount=27_000,
+        status=Payment.Status.CONFIRMED,
+        external_reference="PAY-OTHER",
+    )
+
+    response = client.get("/api/payments/")
+
+    assert response.status_code == 200
+    returned_contracts = {row["contract"] for row in response.data["results"]}
+    returned_references = {row["external_reference"] for row in response.data["results"]}
+    assert returned_contracts == {own_contract.id}
+    assert returned_references == {"PAY-OWN"}
+
+
+# ── Echeances & stats financieres ───────────────────────────────────────────
+def _issued_contract(contributor, *, date_expiration, organization=None):
+    return Contract.objects.create(
+        organization=organization or contributor.organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.ISSUED,
+        prime_rc_ass=24_000,
+        cout_police_ass=3_000,
+        ttc_ass=27_000,
+        date_expiration=date_expiration,
+    )
+
+
+def _issued_with_snapshot(
+    contributor,
+    *,
+    commission_total,
+    marge_horus,
+    status=CommissionSnapshot.Status.PENDING,
+    organization=None,
+):
+    organization = organization or contributor.organization
+    contract = Contract.objects.create(
+        organization=organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.ISSUED,
+        prime_rc_ass=24_000,
+        cout_police_ass=3_000,
+        ttc_ass=27_000,
+    )
+    CommissionSnapshot.objects.create(
+        contract=contract,
+        contributor=contributor,
+        prime_rc_ass=24_000,
+        cout_police_ass=3_000,
+        ttc_ass=27_000,
+        commission_percent_used="10.00",
+        commission_fixed_policy_fee_used=0,
+        commission_prime_rc_amount=commission_total,
+        commission_policy_fee_amount=0,
+        commission_total=commission_total,
+        montant_reverse_ass=24_000,
+        marge_horus=marge_horus,
+        status=status,
+    )
+    return contract
+
+
+@pytest.mark.django_db
+def test_contract_summary_counts_expirations():
+    client, contributor = make_authenticated_contract_client(username="echeance-summary")
+    now = timezone.now()
+    _issued_contract(contributor, date_expiration=now - timedelta(days=2))    # expiré
+    _issued_contract(contributor, date_expiration=now + timedelta(days=10))   # <=30 et <=60
+    _issued_contract(contributor, date_expiration=now + timedelta(days=45))   # <=60 seulement
+    _issued_contract(contributor, date_expiration=now + timedelta(days=200))  # hors fenetres
+
+    response = client.get("/api/contracts/summary/")
+
+    assert response.status_code == 200
+    assert response.data["expired"] == 1
+    assert response.data["expiring_30"] == 1
+    assert response.data["expiring_60"] == 2
+
+
+@pytest.mark.django_db
+def test_contract_list_expiration_filter_sorts_by_urgency():
+    client, contributor = make_authenticated_contract_client(username="echeance-list")
+    now = timezone.now()
+    far = _issued_contract(contributor, date_expiration=now + timedelta(days=50))
+    near = _issued_contract(contributor, date_expiration=now + timedelta(days=5))
+    _issued_contract(contributor, date_expiration=now + timedelta(days=200))  # hors 60j
+    # Un brouillon (sans expiration) ne doit jamais apparaitre dans les echeances.
+    Contract.objects.create(
+        organization=contributor.organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.DRAFT,
+    )
+
+    response = client.get("/api/contracts/?expiration=60")
+
+    assert response.status_code == 200
+    ids = [row["id"] for row in response.data["results"]]
+    assert ids == [near.id, far.id]  # tri ascendant : le plus urgent d'abord
+
+
+@pytest.mark.django_db
+def test_contract_list_rejects_invalid_expiration_filter():
+    client, _ = make_authenticated_contract_client(username="echeance-bad")
+
+    response = client.get("/api/contracts/?expiration=tomorrow")
+
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_financial_summary_aggregates_scoped_and_excludes_cancelled():
+    client, contributor = make_authenticated_contract_client(username="fin-summary")
+    organization = contributor.organization
+    other = User.objects.create_user(
+        username="fin-other-contributor",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=organization,
+        commission_percent_on_prime_rc=0,
+        commission_fixed_on_policy_fee=0,
+    )
+    own = _issued_with_snapshot(contributor, commission_total=2_400, marge_horus=600)
+    Payment.objects.create(
+        contract=own,
+        amount=27_000,
+        status=Payment.Status.CONFIRMED,
+        confirmed_at=timezone.now(),
+    )
+    # Autre apporteur de la meme organisation : ne doit pas compter pour `contributor`.
+    _issued_with_snapshot(other, commission_total=5_000, marge_horus=1_000)
+    # Snapshot annule : doit etre exclu des agregats.
+    _issued_with_snapshot(
+        contributor,
+        commission_total=9_999,
+        marge_horus=-9_999,
+        status=CommissionSnapshot.Status.CANCELLED,
+    )
+
+    response = client.get("/api/contracts/financial-summary/?period=all")
+
+    assert response.status_code == 200
+    assert response.data["ca_encaisse"] == 27_000
+    assert response.data["commissions_total"] == 2_400
+    assert response.data["marge_horus_total"] == 600
+    assert response.data["contrats_emis"] == 1
+
+
+@pytest.mark.django_db
 @override_settings(DEBUG=False)
 def test_contract_list_is_filtered_by_authenticated_user_group():
     own_group = Organization.objects.create(name="Groupe Own List", code="OWN-LIST")
@@ -882,7 +1062,8 @@ def test_contract_detail_returns_payments_and_commission_snapshot():
         commission_prime_rc_amount=9_000,
         commission_policy_fee_amount=2_000,
         commission_total=11_000,
-        net_to_horus=54_000,
+        montant_reverse_ass=62_000,
+        marge_horus=-8_000,
     )
     client = APIClient()
     client.force_authenticate(contributor)

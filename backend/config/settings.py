@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pathlib import Path
 
 import dj_database_url
@@ -7,6 +8,7 @@ from django.core.exceptions import ImproperlyConfigured
 from integrations.ass.constants import (
     ASS_API_PARTNER_SEGMENT as DEFAULT_ASS_API_PARTNER_SEGMENT,
     ASS_ENDPOINT_CANCEL_ATTESTATION,
+    ASS_ENDPOINT_CANCEL_ATTESTATION_FALLBACK,
     ASS_SANDBOX_BASE_URL,
 )
 
@@ -241,10 +243,19 @@ ASS_API_PARTNER_SEGMENT = config(
 ASS_USERNAME = config("ASS_USERNAME", default="")
 ASS_PASSWORD = config("ASS_PASSWORD", default="")
 ASS_POLICY_FEE = config("ASS_POLICY_FEE", default=3000, cast=int)
+# Commission d'apport reversee par ASS a Horus sur la PrimeRC (en %). Constitue,
+# avec les frais de police, le revenu de Horus servant a payer la commission
+# apporteur. Defaut 0 tant que le taux du contrat ASS n'est pas confirme :
+# la marge Horus se reduit alors aux frais de police moins la commission apporteur.
+ASS_PARTNER_COMMISSION_RATE = config("ASS_PARTNER_COMMISSION_RATE", default="0", cast=Decimal)
 ASS_MOCK_ENABLED = config("ASS_MOCK_ENABLED", default=True, cast=bool)
 ASS_REAL_CALLS_ALLOWED = config("ASS_REAL_CALLS_ALLOWED", default=False, cast=bool)
-# PDF: /qrcode.mono.cancel — Postman: /qrcode.cancel. Configurable pour basculer
-# sans redeploiement des que ASS confirme l'endpoint.
+# Annulation : endpoint primaire = /qrcode.mono.cancel (PDF officiel). La collection
+# Postman expose /qrcode.cancel : le client bascule dessus UNIQUEMENT si le primaire
+# repond 404. Les deux restent configurables pour trancher sans redeploiement.
 ASS_CANCEL_ENDPOINT = config("ASS_CANCEL_ENDPOINT", default=ASS_ENDPOINT_CANCEL_ATTESTATION)
+ASS_CANCEL_ENDPOINT_FALLBACK = config(
+    "ASS_CANCEL_ENDPOINT_FALLBACK", default=ASS_ENDPOINT_CANCEL_ATTESTATION_FALLBACK
+)
 # Seuil d'alerte stock QR sur le dashboard (et statut low_stock de l'API).
 ASS_QR_STOCK_ALERT_THRESHOLD = config("ASS_QR_STOCK_ALERT_THRESHOLD", default=10, cast=int)

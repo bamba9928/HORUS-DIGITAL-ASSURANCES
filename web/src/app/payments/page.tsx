@@ -135,26 +135,30 @@ export default function PaymentsPage() {
           <MetricCard
             icon={Banknote}
             label="Total"
-            value={isLoading ? "—" : totals.total}
+            loading={isLoading}
+            value={totals.total}
           />
           <MetricCard
             icon={CheckCircle2}
             label="Confirmés"
+            loading={isLoading}
             tone="success"
-            value={isLoading ? "—" : totals.confirmed}
+            value={totals.confirmed}
           />
           <MetricCard
             detail="Somme des confirmés"
             icon={Banknote}
             label="Montant total"
+            loading={isLoading}
             tone="primary"
-            value={isLoading ? "—" : formatMoney(totals.totalAmount)}
+            value={formatMoney(totals.totalAmount)}
           />
           <MetricCard
             detail="Par paiement confirmé"
             icon={Banknote}
             label="Montant moyen"
-            value={isLoading ? "—" : formatMoney(totals.avgAmount)}
+            loading={isLoading}
+            value={formatMoney(totals.avgAmount)}
           />
         </div>
 

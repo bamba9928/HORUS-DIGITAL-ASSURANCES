@@ -4,7 +4,15 @@ import { Plus, Search } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
-import { AlertMessage, EmptyState, LoadingState, PageAction, StatusBadge } from "@/components/ui";
+import { useToast } from "@/components/ToastProvider";
+import {
+  AlertMessage,
+  ConfirmDialog,
+  EmptyState,
+  LoadingState,
+  PageAction,
+  StatusBadge,
+} from "@/components/ui";
 import {
   createVehicleBrand,
   deleteCustomVehicleBrand,
@@ -16,6 +24,7 @@ import {
 } from "@/lib/api";
 
 export default function CustomVehicleBrandsPage() {
+  const toast = useToast();
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [brands, setBrands] = useState<CustomVehicleBrand[]>([]);
   const [search, setSearch] = useState("");
@@ -87,11 +96,13 @@ export default function CustomVehicleBrandsPage() {
     setError("");
     setIsCreating(true);
     try {
+      const created = newBrand.trim();
       await createVehicleBrand(newBrand);
       setNewBrand("");
       await refresh(search);
+      toast.success("Marque ajoutée", created);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Creation impossible.");
+      setError(err instanceof Error ? err.message : "Création impossible.");
     } finally {
       setIsCreating(false);
     }
@@ -205,32 +216,34 @@ function BrandRow({
   canEdit: boolean;
   onChanged: () => Promise<void>;
 }) {
+  const toast = useToast();
   const [name, setName] = useState(brand.name);
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   async function save() {
     setError("");
     setIsSaving(true);
     try {
       await updateCustomVehicleBrand(brand.id, name);
+      toast.success("Marque renommée", name.trim());
       await onChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Mise a jour impossible.");
+      setError(err instanceof Error ? err.message : "Mise à jour impossible.");
     } finally {
       setIsSaving(false);
     }
   }
 
-  async function remove() {
-    if (!window.confirm(`Retirer ${brand.name} de la liste personnalisee ?`)) {
-      return;
-    }
+  async function confirmRemove() {
+    setShowConfirm(false);
     setError("");
     setIsDeleting(true);
     try {
       await deleteCustomVehicleBrand(brand.id);
+      toast.success("Marque retirée", brand.name);
       await onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Suppression impossible.");
@@ -277,7 +290,7 @@ function BrandRow({
             <button
               className="h-10 rounded-md border border-border px-3 text-xs font-extrabold hover:bg-muted disabled:text-black/35"
               disabled={isDeleting}
-              onClick={remove}
+              onClick={() => setShowConfirm(true)}
               type="button"
             >
               {isDeleting ? "..." : "Retirer"}
@@ -286,6 +299,21 @@ function BrandRow({
         ) : (
           <span className="text-xs font-bold text-black/40">Lecture seule</span>
         )}
+        <ConfirmDialog
+          confirmLabel="Retirer"
+          description={
+            <>
+              La marque <strong className="font-bold text-black/75">{brand.name}</strong>{" "}
+              sera retirée de la liste personnalisée. Les contrats déjà émis ne sont pas
+              affectés.
+            </>
+          }
+          loading={isDeleting}
+          onCancel={() => setShowConfirm(false)}
+          onConfirm={confirmRemove}
+          open={showConfirm}
+          title="Retirer la marque ?"
+        />
       </td>
     </tr>
   );
