@@ -24,6 +24,7 @@ import {
   Wallet,
   X,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -228,8 +229,13 @@ export function AppShell({
             }`}
             title={sidebarCollapsed ? "Horus Assurances — Mode test" : undefined}
           >
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-[var(--primary-strong)] text-xs font-black text-white shadow-lg shadow-primary/30">
-              HA
+            <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white shadow-lg shadow-black/25">
+              <Image
+                alt="Horus Assur"
+                height={256}
+                src="/brand/horus-assur-icon.png"
+                width={256}
+              />
             </span>
             {sidebarCollapsed ? null : (
               <div className="min-w-0">
@@ -421,21 +427,31 @@ function Brand({ collapsed = false }: { collapsed?: boolean }) {
   return (
     <Link
       className={`flex h-[60px] items-center ${
-        collapsed ? "justify-center px-0" : "gap-3 px-4"
+        collapsed ? "justify-center px-0" : "px-4"
       }`}
       href="/"
       title={collapsed ? "Horus Assurances Digital" : undefined}
     >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-[var(--primary-strong)] text-sm font-black text-white shadow-lg shadow-primary/40">
-        H
-      </span>
-      {collapsed ? null : (
-        <div>
-          <span className="block text-sm font-black tracking-tight text-white">HORUS</span>
-          <span className="block text-[11px] font-semibold text-white/35">
-            Assurances Digital
-          </span>
-        </div>
+      {collapsed ? (
+        <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-lg shadow-black/30">
+          <Image
+            alt="Horus Assur"
+            height={256}
+            src="/brand/horus-assur-icon.png"
+            width={256}
+          />
+        </span>
+      ) : (
+        <span className="flex items-center rounded-lg bg-white px-2.5 py-1.5 shadow-lg shadow-black/20">
+          <Image
+            alt="Horus Assur"
+            className="h-6 w-auto"
+            height={512}
+            priority
+            src="/brand/horus-assur-logo.png"
+            width={960}
+          />
+        </span>
       )}
     </Link>
   );

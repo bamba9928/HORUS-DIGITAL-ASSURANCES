@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useState } from "react";
 
@@ -71,16 +72,15 @@ function LoginPageContent() {
       {/* ── Form side ──────────────────────────────────────────── */}
       <section className="relative flex min-h-screen flex-col bg-white px-6 py-8 sm:px-12">
         {/* Top bar */}
-        <div className="flex items-center gap-2.5">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-[var(--primary-strong)] text-sm font-black text-white shadow-lg shadow-primary/35">
-            H
-          </span>
-          <div>
-            <span className="block text-sm font-black tracking-tight">HORUS</span>
-            <span className="block text-[10.5px] font-semibold text-black/38">
-              Assurances Digital
-            </span>
-          </div>
+        <div className="flex items-center">
+          <Image
+            alt="Horus Assur"
+            className="h-10 w-auto"
+            height={512}
+            priority
+            src="/brand/horus-assur-logo.png"
+            width={960}
+          />
         </div>
 
         {/* Form centred */}
