@@ -155,7 +155,7 @@ export default function OrganizationsPage() {
         <section className="app-surface overflow-hidden">
           {/* ── Filter bar ───────────────────────────────────── */}
           <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
-            <div className="relative min-w-48 flex-1">
+            <div className="relative min-w-0 flex-1 basis-full sm:min-w-48 sm:basis-auto">
               <Search
                 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/30"
                 size={14}
@@ -207,7 +207,7 @@ export default function OrganizationsPage() {
           {/* ── Table ────────────────────────────────────────── */}
           {filtered.length > 0 ? (
             <div className="overflow-x-auto">
-              <table className="app-table">
+              <table className="app-table app-table-responsive">
                 <thead>
                   <tr>
                     <th>Organisation</th>
@@ -298,7 +298,7 @@ function OrgRow({
 }) {
   return (
     <tr className={org.status === "ACTIVE" ? "" : "opacity-55"}>
-      <td>
+      <td data-label="Organisation">
         <div className="flex items-center gap-3">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-[11px] font-black text-primary">
             {org.name.slice(0, 2).toUpperCase()}
@@ -306,23 +306,26 @@ function OrgRow({
           <span className="font-extrabold">{org.name}</span>
         </div>
       </td>
-      <td>
+      <td data-label="Code">
         <span className="font-mono text-sm font-bold text-black/55">{org.code}</span>
       </td>
-      <td className="whitespace-nowrap text-sm font-semibold text-black/55">
+      <td
+        className="whitespace-nowrap text-sm font-semibold text-black/55"
+        data-label="Type"
+      >
         {organizationTypeLabel(org.organization_type)}
       </td>
-      <td>
+      <td data-label="Utilisateurs">
         <span className="font-semibold tabular-nums">{org.user_count}</span>
       </td>
-      <td>
+      <td data-label="Statut">
         <StatusBadge status={org.status} />
       </td>
-      <td className="whitespace-nowrap text-sm text-black/45">
+      <td className="whitespace-nowrap text-sm text-black/45" data-label="Créée le">
         {formatDate(org.created_at)}
       </td>
       {canManage ? (
-        <td className="text-right">
+        <td className="text-right" data-label="Action">
           <button
             className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-bold text-black/45 transition hover:bg-muted hover:text-black"
             onClick={onEdit}

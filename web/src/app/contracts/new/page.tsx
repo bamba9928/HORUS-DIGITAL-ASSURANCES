@@ -901,11 +901,13 @@ function NewContractPageContent() {
   }
 
   return (
-    <AppShell
+      <AppShell
       actions={(
         <div className="flex items-center gap-3">
           <AutoSaveIndicator draftId={savedDraftId} state={autoSaveState} />
-          <StatusBadge status="MODE TEST" />
+          <span className="hidden sm:inline-flex">
+            <StatusBadge status="MODE TEST" />
+          </span>
         </div>
       )}
       description={isEditingDraft ? `Reprise du brouillon #${savedDraftId}` : "Souscription et émission ASS"}
@@ -915,7 +917,7 @@ function NewContractPageContent() {
         {/* ── Sticky stepper ───────────────────────────────────── */}
         <div className="sticky top-[58px] z-20 -mx-4 sm:-mx-6 lg:-mx-8 bg-background/95 px-4 pb-2 pt-1 backdrop-blur-sm sm:px-6 lg:px-8">
           <section className="app-surface overflow-hidden shadow-md">
-            <div className="grid grid-cols-4 divide-x divide-border">
+            <div className="grid grid-cols-2 gap-px bg-border sm:grid-cols-4">
               {(
                 [
                   { label: "Informations", icon: FileText },
@@ -937,7 +939,7 @@ function NewContractPageContent() {
                         ? "bg-gradient-to-br from-primary to-[var(--primary-strong)] text-white"
                         : completed
                           ? "bg-emerald-50/70 text-emerald-700 hover:bg-emerald-50"
-                          : "text-black/35 hover:bg-muted hover:text-black/60 disabled:hover:bg-transparent"
+                          : "bg-white text-black/35 hover:bg-muted hover:text-black/60 disabled:hover:bg-white"
                     }`}
                     disabled={disabled}
                     key={item.label}
@@ -1931,7 +1933,8 @@ function FleetSection({
           </h3>
         </div>
         {fleetVehicles.length ? (
-          <table className="app-table">
+          <div className="overflow-x-auto">
+            <table className="app-table app-table-responsive">
             <thead>
               <tr>
                 <th>Immatriculation</th>
@@ -1946,18 +1949,18 @@ function FleetSection({
             <tbody>
               {fleetVehicles.map((v) => (
                 <tr key={v.id}>
-                  <td className="font-black">{v.registration || "—"}</td>
-                  <td>{v.brand || "—"} {v.model || ""}</td>
-                  <td className="text-xs font-bold text-black/60">{v.subcategory || "—"}</td>
-                  <td className="text-xs">{v.energy || "—"}</td>
-                  <td className="text-xs">{v.fiscalPower || "—"}</td>
-                  <td>
+                  <td className="font-black" data-label="Immatriculation">{v.registration || "—"}</td>
+                  <td data-label="Marque / Modèle">{v.brand || "—"} {v.model || ""}</td>
+                  <td className="text-xs font-bold text-black/60" data-label="Genre ASS">{v.subcategory || "—"}</td>
+                  <td className="text-xs" data-label="Énergie">{v.energy || "—"}</td>
+                  <td className="text-xs" data-label="Puiss. fisc.">{v.fiscalPower || "—"}</td>
+                  <td data-label="Remorques">
                     <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-extrabold text-primary">
                       {v.trailers.length}
                     </span>
                   </td>
-                  <td>
-                    <div className="flex items-center gap-2">
+                  <td data-label="Actions">
+                    <div className="flex flex-wrap justify-end gap-2 sm:justify-start">
                       <button
                         className="rounded-lg border border-border px-2.5 py-1 text-xs font-bold transition hover:bg-muted"
                         onClick={() => editFleetVehicle(v.id)}
@@ -1984,7 +1987,8 @@ function FleetSection({
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
         ) : (
           <p className="px-5 py-4 text-sm font-semibold text-black/45">
             Aucun véhicule ajouté — remplissez le formulaire ci-dessus puis cliquez sur « Ajouter le véhicule ».
@@ -2001,7 +2005,8 @@ function FleetSection({
         </div>
 
         {allTrailers.length ? (
-          <table className="app-table">
+          <div className="overflow-x-auto">
+            <table className="app-table app-table-responsive">
             <thead>
               <tr>
                 <th>Immatriculation</th>
@@ -2013,12 +2018,12 @@ function FleetSection({
             <tbody>
               {allTrailers.map((t) => (
                 <tr key={t.id}>
-                  <td className="font-black">{t.registration || "—"}</td>
-                  <td>{t.brand || "—"} {t.model || ""}</td>
-                  <td className="text-xs font-bold text-black/60">
+                  <td className="font-black" data-label="Immatriculation">{t.registration || "—"}</td>
+                  <td data-label="Marque / Modèle">{t.brand || "—"} {t.model || ""}</td>
+                  <td className="text-xs font-bold text-black/60" data-label="Tête tracteur">
                     {t.tractorVehicle.registration || vehicleLabel(t.tractorVehicle)}
                   </td>
-                  <td>
+                  <td data-label="Action">
                     <button
                       className="rounded-lg border border-red-200 px-2.5 py-1 text-xs font-bold text-red-600 transition hover:bg-red-50"
                       onClick={() => removeTrailer(t.tractorVehicleId, t.id)}
@@ -2030,7 +2035,8 @@ function FleetSection({
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
         ) : (
           <p className="px-5 py-4 text-sm font-semibold text-black/45">
             Aucune remorque — cliquez sur « + Remorque » sur un véhicule pour en ajouter une.
@@ -2579,13 +2585,17 @@ function AutoSaveIndicator({
     return (
       <span className="inline-flex items-center gap-1.5 text-xs font-bold text-black/48">
         <LoaderCircle className="animate-spin" size={14} />
-        Enregistrement automatique...
+        <span className="hidden sm:inline">Enregistrement automatique...</span>
       </span>
     );
   }
 
   if (state === "error") {
-    return <span className="text-xs font-bold text-red-700">Brouillon non enregistré</span>;
+    return (
+      <span className="text-xs font-bold text-red-700">
+        <span className="hidden sm:inline">Brouillon non enregistré</span>
+      </span>
+    );
   }
 
   return (

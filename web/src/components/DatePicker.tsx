@@ -30,6 +30,32 @@ function parseIso(value: string): Date | undefined {
   return isNaN(date.getTime()) ? undefined : date;
 }
 
+function getPopoverPosition(rect: DOMRect, height: number) {
+  const viewportPadding = 8;
+  const width = Math.min(288, window.innerWidth - viewportPadding * 2);
+  const left = Math.min(
+    Math.max(rect.left, viewportPadding),
+    window.innerWidth - width - viewportPadding,
+  );
+  const spaceBelow = window.innerHeight - rect.bottom;
+
+  if (spaceBelow < height) {
+    return {
+      position: "fixed" as const,
+      bottom: window.innerHeight - rect.top + 6,
+      left,
+      width,
+    };
+  }
+
+  return {
+    position: "fixed" as const,
+    top: rect.bottom + 6,
+    left,
+    width,
+  };
+}
+
 export function DatePicker({
   label,
   value,
@@ -70,13 +96,7 @@ export function DatePicker({
   function toggle() {
     if (!open && buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const calendarHeight = 320;
-      if (spaceBelow < calendarHeight) {
-        setPopoverStyle({ position: "fixed", bottom: window.innerHeight - rect.top + 6, left: rect.left, width: 288 });
-      } else {
-        setPopoverStyle({ position: "fixed", top: rect.bottom + 6, left: rect.left, width: 288 });
-      }
+      setPopoverStyle(getPopoverPosition(rect, 320));
     }
     setOpen((v) => !v);
   }

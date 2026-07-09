@@ -199,7 +199,7 @@ export default function CommissionsPage() {
         <section className="app-surface overflow-hidden">
           {/* ── Filtres ──────────────────────────────────────── */}
           <div className="flex flex-wrap gap-3 border-b border-border p-4">
-            <div className="relative flex-1 min-w-48">
+            <div className="relative min-w-0 flex-1 basis-full sm:min-w-48 sm:basis-auto">
               <Search
                 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/35"
                 size={15}
@@ -213,7 +213,7 @@ export default function CommissionsPage() {
               />
             </div>
             <select
-              className="app-field h-9 min-h-0 w-auto text-sm"
+              className="app-field h-9 min-h-0 w-full text-sm sm:w-auto"
               onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
               value={statusFilter}
             >

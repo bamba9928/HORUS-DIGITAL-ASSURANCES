@@ -49,6 +49,7 @@ body {
   letter-spacing: -0.013em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: clip;
 }
 
 button, a, input, select, textarea { font: inherit; }
@@ -282,12 +283,13 @@ select.app-field:disabled {
   .app-table-responsive tr:last-child { border-bottom: 0; }
   .app-table-responsive td {
     display: flex;
-    align-items: baseline;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
     padding: 5px 0;
     border: 0;
     text-align: right;
+    white-space: normal;
   }
   .app-table-responsive td::before {
     content: attr(data-label);
@@ -299,4 +301,5 @@ select.app-field:disabled {
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
+  .app-table-responsive td > * { max-width: min(60vw, 100%); }
 }

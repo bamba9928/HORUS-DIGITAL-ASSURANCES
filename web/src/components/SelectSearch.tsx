@@ -19,6 +19,32 @@ type SelectSearchProps = {
   onChange: (value: string) => void;
 };
 
+function getPopoverPosition(rect: DOMRect, height: number) {
+  const viewportPadding = 8;
+  const width = Math.min(Math.max(rect.width, 220), window.innerWidth - viewportPadding * 2);
+  const left = Math.min(
+    Math.max(rect.left, viewportPadding),
+    window.innerWidth - width - viewportPadding,
+  );
+  const spaceBelow = window.innerHeight - rect.bottom;
+
+  if (spaceBelow < height) {
+    return {
+      position: "fixed" as const,
+      bottom: window.innerHeight - rect.top + 6,
+      left,
+      width,
+    };
+  }
+
+  return {
+    position: "fixed" as const,
+    top: rect.bottom + 6,
+    left,
+    width,
+  };
+}
+
 export function SelectSearch({
   label,
   helper,
@@ -98,11 +124,7 @@ export function SelectSearch({
           if (!open && buttonRef.current) {
             const rect = buttonRef.current.getBoundingClientRect();
             const listHeight = Math.min(options.length * 44 + 52, 228);
-            if (window.innerHeight - rect.bottom < listHeight) {
-              setPopStyle({ position: "fixed", bottom: window.innerHeight - rect.top + 6, left: rect.left, width: rect.width });
-            } else {
-              setPopStyle({ position: "fixed", top: rect.bottom + 6, left: rect.left, width: rect.width });
-            }
+            setPopStyle(getPopoverPosition(rect, listHeight));
           }
           setOpen((current) => !current);
         }}

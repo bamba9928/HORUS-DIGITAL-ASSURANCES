@@ -245,7 +245,7 @@ export default function ContractsPage() {
               </select>
               <button
                 aria-label="Actualiser"
-                className="flex size-11 items-center justify-center rounded-[10px] border border-border bg-white text-black/45 transition hover:bg-muted hover:text-black disabled:opacity-30"
+                className="flex h-11 w-full items-center justify-center rounded-[10px] border border-border bg-white text-black/45 transition hover:bg-muted hover:text-black disabled:opacity-30 md:size-11 md:w-11"
                 disabled={isLoading}
                 onClick={() => void refresh()}
                 type="button"

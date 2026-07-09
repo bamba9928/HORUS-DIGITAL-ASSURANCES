@@ -318,11 +318,13 @@ function ConfigRow({
   }
 
   return (
-    <div className="flex items-center justify-between gap-4 px-5 py-3">
+    <div className="flex flex-col items-start gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <span className="text-sm font-semibold text-black/50">{label}</span>
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 text-left sm:text-right">
         {icon}
-        <span className={`text-sm font-extrabold ${mono ? "font-mono" : ""}`}>{value}</span>
+        <span className={`break-all text-sm font-extrabold ${mono ? "font-mono" : ""}`}>
+          {value}
+        </span>
       </div>
     </div>
   );

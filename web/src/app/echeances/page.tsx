@@ -123,7 +123,7 @@ export default function EcheancesPage() {
     >
       <div className="space-y-5">
         {/* ── KPI row ──────────────────────────────────────────── */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 min-[520px]:grid-cols-3">
           <MetricCard
             detail="Attestation dépassée"
             icon={AlertTriangle}
@@ -154,7 +154,7 @@ export default function EcheancesPage() {
         <section className="app-surface overflow-hidden">
           {/* ── Filter bar ─────────────────────────────────────── */}
           <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
-            <div className="relative min-w-48 flex-1">
+            <div className="relative min-w-0 flex-1 basis-full sm:min-w-48 sm:basis-auto">
               <Search
                 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/30"
                 size={15}

@@ -424,7 +424,7 @@ export default function ContractDetailPage() {
 
                 <Panel title="Commission">
                   {contract.commission_snapshot ? (
-                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                    <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:grid-cols-4">
                       <InfoField
                         label="Commission totale"
                         value={formatMoney(contract.commission_snapshot.commission_total)}
@@ -675,7 +675,7 @@ function DraftDetailsPanel({ contract }: { contract: ContractDetail }) {
           {vehicle && contract.contract_type !== "GARAGE" ? (
             <div>
               <SectionLabel>Véhicule</SectionLabel>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:grid-cols-3">
                 {vehicle.brand ? <InfoField label="Marque" value={vehicle.brand} /> : null}
                 {vehicle.model ? <InfoField label="Modèle" value={vehicle.model} /> : null}
                 {(vehicle.registration || contract.immatriculation) ? (
@@ -703,7 +703,7 @@ function DraftDetailsPanel({ contract }: { contract: ContractDetail }) {
           {garage && contract.contract_type === "GARAGE" ? (
             <div>
               <SectionLabel>Garage</SectionLabel>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:grid-cols-3">
                 {garage.subcategory ? <InfoField label="Genre" value={garage.subcategory} /> : null}
                 {garage.nombreCarte ? <InfoField label="Nb cartes" value={garage.nombreCarte} /> : null}
                 {garage.registration ? <InfoField label="Immatriculation" value={garage.registration} mono /> : null}

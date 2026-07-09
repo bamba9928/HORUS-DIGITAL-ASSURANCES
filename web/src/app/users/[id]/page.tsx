@@ -265,7 +265,7 @@ export default function UserDetailPage() {
                 </div>
                 <div className="overflow-x-auto">
                   {contracts.length ? (
-                    <table className="app-table">
+                    <table className="app-table app-table-responsive">
                       <thead>
                         <tr>
                           <th>Dossier</th>
@@ -279,24 +279,27 @@ export default function UserDetailPage() {
                       <tbody>
                         {contracts.map((c) => (
                           <tr key={c.id}>
-                            <td>
+                            <td data-label="Dossier">
                               <StatusBadge status={c.internal_status} />
                             </td>
-                            <td>
+                            <td data-label="Type">
                               <ContractTypeBadge contractType={c.contract_type} />
                             </td>
-                            <td className="font-bold">
+                            <td className="font-bold" data-label="Véhicule">
                               {c.vehicle_label || c.immatriculation || "—"}
                             </td>
-                            <td className="font-extrabold tabular-nums text-primary">
+                            <td
+                              className="font-extrabold tabular-nums text-primary"
+                              data-label="Prime RC"
+                            >
                               {c.prime_rc_ass !== null
                                 ? formatMoney(c.prime_rc_ass)
                                 : "—"}
                             </td>
-                            <td className="text-[13px] text-black/45">
+                            <td className="text-[13px] text-black/45" data-label="Date">
                               {formatDate(c.updated_at)}
                             </td>
-                            <td>
+                            <td data-label="Action">
                               <Link
                                 className="inline-flex size-7 items-center justify-center rounded-md text-primary hover:bg-primary/10 transition"
                                 href={`/contracts/${c.id}`}

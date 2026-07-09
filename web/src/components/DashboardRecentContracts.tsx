@@ -186,7 +186,7 @@ export function DashboardRecentContracts() {
           </select>
           <button
             aria-label="Actualiser les contrats"
-            className="flex size-10 items-center justify-center rounded-[10px] border border-border bg-white text-black/45 transition hover:bg-muted hover:text-black disabled:opacity-40"
+            className="flex h-10 w-full items-center justify-center rounded-[10px] border border-border bg-white text-black/45 transition hover:bg-muted hover:text-black disabled:opacity-40 lg:size-10 lg:w-10"
             disabled={isLoading}
             onClick={() => setRefreshKey((current) => current + 1)}
             title="Actualiser"

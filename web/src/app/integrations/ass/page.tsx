@@ -131,7 +131,7 @@ export default function AssIntegrationPage() {
         ) : (
           <>
             {/* ── KPI row ──────────────────────────────────────── */}
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 min-[520px]:grid-cols-2 lg:grid-cols-3">
               <MetricCard
                 detail="Attestations disponibles"
                 icon={QrCode}
@@ -230,7 +230,7 @@ export default function AssIntegrationPage() {
                   <div className="divide-y divide-border">
                     {ASS_ENDPOINTS.map((ep) => (
                       <div
-                        className="flex items-center gap-3 px-4 py-2.5"
+                        className="flex flex-wrap items-start gap-2.5 px-4 py-2.5 sm:flex-nowrap sm:items-center sm:gap-3"
                         key={ep.path}
                       >
                         <div className="min-w-0 flex-1">
@@ -289,7 +289,7 @@ function RegistrationVerificationPanel({ isMock }: { isMock: boolean }) {
         </p>
       </div>
       <div className="p-5">
-        <form className="flex gap-2" onSubmit={handleSubmit}>
+        <form className="flex flex-col gap-2 sm:flex-row" onSubmit={handleSubmit}>
           <div className="relative flex-1">
             <Search
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/35"
@@ -355,13 +355,13 @@ function RegistrationResult({ result }: { result: AssRegistrationVerification })
                 : "Statut inconnu"}
           </p>
         </div>
-        <span className="ml-auto shrink-0">
+        <span className="shrink-0 sm:ml-auto">
           <StatusBadge status={result.operation_status || "PENDING"} />
         </span>
       </div>
 
       {result.vehicle ? (
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="mt-4 grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:grid-cols-3">
           {result.vehicle.brand ? <VehicleField label="Marque" value={result.vehicle.brand} /> : null}
           {result.vehicle.model ? <VehicleField label="Modèle" value={result.vehicle.model} /> : null}
           {result.vehicle.registration ? (
@@ -424,7 +424,7 @@ function SecurityRow({
   ok?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-border pb-3 last:border-0 last:pb-0">
+    <div className="flex flex-col items-start gap-1.5 border-b border-border pb-3 last:border-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <span className="text-sm font-semibold text-black/48">{label}</span>
       <div className="flex items-center gap-1.5 text-right">
         <span

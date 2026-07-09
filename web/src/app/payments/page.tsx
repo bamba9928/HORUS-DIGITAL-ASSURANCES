@@ -167,7 +167,7 @@ export default function PaymentsPage() {
         <section className="app-surface overflow-hidden">
           {/* ── Filter bar ───────────────────────────────────── */}
           <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
-            <div className="relative min-w-48 flex-1">
+            <div className="relative min-w-0 flex-1 basis-full sm:min-w-48 sm:basis-auto">
               <Search
                 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/30"
                 size={15}
@@ -184,7 +184,7 @@ export default function PaymentsPage() {
 
             <select
               aria-label="Statut"
-              className="app-field h-9 min-h-0 w-auto text-sm"
+              className="app-field h-9 min-h-0 w-full text-sm sm:w-auto"
               onChange={(e) => handleStatusChange(e.target.value as PaymentStatus | "")}
               value={statusFilter}
             >
@@ -212,7 +212,7 @@ export default function PaymentsPage() {
           {/* ── Table ────────────────────────────────────────── */}
           {filtered.length > 0 ? (
             <div className="overflow-x-auto">
-              <table className="app-table">
+              <table className="app-table app-table-responsive">
                 <thead>
                   <tr>
                     <th>Contrat</th>
@@ -258,7 +258,7 @@ function PaymentRow({ payment }: { payment: PaymentListItem }) {
   return (
     <tr>
       {/* Contrat */}
-      <td>
+      <td data-label="Contrat">
         <Link
           className="inline-flex items-center justify-center size-7 rounded-md text-primary hover:bg-primary/10 transition"
           href={`/contracts/${payment.contract}`}
@@ -273,17 +273,17 @@ function PaymentRow({ payment }: { payment: PaymentListItem }) {
       </td>
 
       {/* Organisation */}
-      <td>
+      <td data-label="Organisation">
         <span className="text-sm font-semibold">{payment.organization_name}</span>
       </td>
 
       {/* Montant */}
-      <td>
+      <td data-label="Montant">
         <span className="font-extrabold tabular-nums">{formatMoney(payment.amount)}</span>
       </td>
 
       {/* Référence */}
-      <td>
+      <td data-label="Référence">
         {payment.external_reference ? (
           <span className="font-mono text-sm text-black/60">{payment.external_reference}</span>
         ) : (
@@ -292,17 +292,17 @@ function PaymentRow({ payment }: { payment: PaymentListItem }) {
       </td>
 
       {/* Statut */}
-      <td>
+      <td data-label="Statut">
         <StatusBadge status={payment.status} />
       </td>
 
       {/* Confirmé le */}
-      <td className="whitespace-nowrap text-sm text-black/45">
+      <td className="whitespace-nowrap text-sm text-black/45" data-label="Confirmé le">
         {payment.confirmed_at ? formatDateTime(payment.confirmed_at) : "—"}
       </td>
 
       {/* Confirmé par */}
-      <td>
+      <td data-label="Confirmé par">
         {payment.created_by_username ? (
           <span className="text-sm font-semibold">{payment.created_by_username}</span>
         ) : (

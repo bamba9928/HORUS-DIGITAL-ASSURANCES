@@ -27,7 +27,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { logout } from "@/lib/api";
@@ -68,6 +68,35 @@ const settingsNavigation = [
   { href: "/integrations/ass", label: "Intégration ASS", icon: ShieldCheck },
 ];
 
+const SIDEBAR_PREFERENCE_EVENT = "horus-sidebar-preference";
+
+function subscribeSidebarPreference(onChange: () => void) {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+
+  window.addEventListener("storage", onChange);
+  window.addEventListener(SIDEBAR_PREFERENCE_EVENT, onChange);
+
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(SIDEBAR_PREFERENCE_EVENT, onChange);
+  };
+}
+
+function getSidebarCollapsedSnapshot() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return localStorage.getItem("horus-sidebar") === "collapsed";
+}
+
+function setSidebarCollapsedPreference(collapsed: boolean) {
+  localStorage.setItem("horus-sidebar", collapsed ? "collapsed" : "expanded");
+  window.dispatchEvent(new Event(SIDEBAR_PREFERENCE_EVENT));
+}
+
 export function AppShell({
   children,
   title,
@@ -83,6 +112,11 @@ export function AppShell({
   const router = useRouter();
   const { auth, isLoading: isAuthLoading, refreshAuth } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const sidebarCollapsed = useSyncExternalStore(
+    subscribeSidebarPreference,
+    getSidebarCollapsedSnapshot,
+    () => false,
+  );
 
   // Redirection automatique vers /login si session expirée ou non authentifié
   useEffect(() => {
@@ -92,18 +126,10 @@ export function AppShell({
       router.replace(`/login?redirect=${redirect}`);
     }
   }, [isAuthLoading, auth?.authenticated, pathname, router]);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [productionOpen, setProductionOpen] = useState(false);
   const [financeOpen, setFinanceOpen] = useState(false);
   const [compteOpen, setCompteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-
-  // Préférence de sidebar lue après le montage uniquement : le serveur rend
-  // toujours la sidebar dépliée, donc lire localStorage pendant le rendu initial
-  // provoquerait un mismatch d'hydratation.
-  useEffect(() => {
-    setSidebarCollapsed(localStorage.getItem("horus-sidebar") === "collapsed");
-  }, []);
 
   const user = auth?.user;
   const visibleNavigation = navigation.filter((item) => {
@@ -274,13 +300,7 @@ export function AppShell({
               aria-expanded={!sidebarCollapsed}
               aria-label={sidebarCollapsed ? "Déplier le menu" : "Replier le menu"}
               className="hidden size-9 items-center justify-center rounded-lg border border-border text-black/50 transition hover:bg-muted hover:text-black lg:flex"
-              onClick={() =>
-                setSidebarCollapsed((c) => {
-                  const next = !c;
-                  localStorage.setItem("horus-sidebar", next ? "collapsed" : "expanded");
-                  return next;
-                })
-              }
+              onClick={() => setSidebarCollapsedPreference(!sidebarCollapsed)}
               title={sidebarCollapsed ? "Déplier le menu" : "Replier le menu"}
               type="button"
             >
@@ -302,7 +322,7 @@ export function AppShell({
             </div>
 
             {/* Actions slot */}
-            {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+            {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
 
             {/* Session widget */}
             <TopbarSession auth={auth} isLoading={isAuthLoading} />
@@ -852,7 +872,7 @@ function TopbarSession({
   if (!auth?.authenticated || !auth.user) {
     return (
       <Link
-        className="inline-flex h-9 items-center gap-1.5 rounded-[9px] border border-border bg-white px-3 text-[13px] font-bold text-black/70 shadow-xs transition hover:bg-muted"
+        className="inline-flex h-9 items-center gap-1.5 rounded-[9px] border border-border bg-white px-2.5 text-[13px] font-bold text-black/70 shadow-xs transition hover:bg-muted sm:px-3"
         href="/login"
       >
         <LogIn size={14} />
@@ -867,11 +887,12 @@ function TopbarSession({
 
   return (
     <Link
-      className="rounded-lg px-2 py-1 text-[13px] font-bold transition hover:bg-muted hover:text-primary"
+      className="inline-flex max-w-[40vw] items-center gap-1.5 rounded-lg px-2 py-1 text-[13px] font-bold transition hover:bg-muted hover:text-primary sm:max-w-none"
       href="/profile"
       title="Mon profil"
     >
-      {name}
+      <CircleUser className="shrink-0 text-black/45 sm:hidden" size={16} />
+      <span className="hidden truncate sm:inline">{name}</span>
     </Link>
   );
 }

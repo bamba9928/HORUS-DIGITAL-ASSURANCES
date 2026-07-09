@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  Eye,
-  EyeOff,
-  LockKeyhole,
-  LogIn,
-  ShieldCheck,
-  UserRound,
-} from "lucide-react";
+import { Eye, EyeOff, LockKeyhole, LogIn, UserRound } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useState } from "react";
@@ -68,30 +61,22 @@ function LoginPageContent() {
   }
 
   return (
-    <main className="grid min-h-screen bg-[#f5f6f9] lg:grid-cols-[minmax(460px,0.85fr)_1.15fr]">
-      {/* ── Form side ──────────────────────────────────────────── */}
-      <section className="relative flex min-h-screen flex-col bg-white px-6 py-8 sm:px-12">
-        {/* Top bar */}
-        <div className="flex items-center">
-          <Image
-            alt="Horus Assur"
-            className="h-10 w-auto"
-            height={512}
-            priority
-            src="/brand/horus-assur-logo.png"
-            width={960}
-          />
-        </div>
+    <main className="flex min-h-screen flex-col items-center bg-[#f5f6f9] px-6">
+      {/* ── Section logo ──────────────────────────────────────────── */}
+      <div className="flex justify-center pb-10 pt-14 sm:pt-20">
+        <Image
+          alt="Horus Assur"
+          className="h-32 w-auto sm:h-40"
+          height={512}
+          priority
+          src="/brand/horus-assur-logo.png"
+          width={960}
+        />
+      </div>
 
-        {/* Form centred */}
-        <div className="mx-auto flex w-full max-w-[380px] flex-1 flex-col justify-center py-12">
-          <div className="mb-9">
-            <h1 className="text-[28px] font-black tracking-tight">Bienvenue 👋</h1>
-            <p className="mt-2 text-sm font-medium text-black/45">
-              Connectez-vous à votre espace de gestion.
-            </p>
-          </div>
-
+      {/* ── Section connexion (carte flottante) ───────────────────── */}
+      <div className="flex w-full flex-1 items-start justify-center pb-14">
+        <div className="w-full max-w-[380px] rounded-2xl border border-border bg-white p-8 shadow-xl shadow-black/[0.06] sm:p-10">
           <form className="space-y-4" onSubmit={handleSubmit}>
             {/* Identifiant */}
             <div>
@@ -160,85 +145,8 @@ function LoginPageContent() {
               {isSubmitting ? "Connexion…" : "Se connecter"}
             </button>
           </form>
-
-          <p className="mt-8 text-center text-xs font-medium text-black/30">
-            Plateforme réservée aux agents agréés
-          </p>
         </div>
-
-        {/* Bottom badge */}
-        <div className="flex justify-center">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3 py-1.5 text-[10.5px] font-bold text-black/45 shadow-xs">
-            <ShieldCheck size={12} className="text-emerald-500" />
-            Connexion sécurisée
-          </span>
-        </div>
-      </section>
-
-      {/* ── Aside ──────────────────────────────────────────────── */}
-      <aside className="relative hidden overflow-hidden bg-[#0f1012] text-white lg:flex lg:flex-col lg:justify-between lg:p-14">
-        {/* Grid overlay */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-[0.035]"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(255,255,255,.6) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.6) 1px, transparent 1px)",
-            backgroundSize: "48px 48px",
-          }}
-        />
-        {/* Glow blobs */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -left-24 -top-24 size-[440px] rounded-full bg-primary opacity-[0.18] blur-[110px]"
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute bottom-0 right-0 size-[300px] translate-x-1/3 translate-y-1/3 rounded-full bg-primary opacity-[0.1] blur-[80px]"
-        />
-
-        {/* Top label */}
-        <div className="relative flex items-center gap-2 text-xs font-bold text-white/40">
-          <ShieldCheck size={15} />
-          Environnement sécurisé · Mode test
-        </div>
-
-        {/* Main copy */}
-        <div className="relative max-w-[460px]">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/35 bg-primary/12 px-3 py-1 text-[11px] font-bold text-primary">
-            Plateforme de gestion
-          </span>
-          <h2 className="mt-5 text-[38px] font-black leading-[1.12] tracking-tight">
-            Contrats, paiements et commissions&nbsp;— dans un seul espace.
-          </h2>
-          <p className="mt-4 text-sm font-medium leading-relaxed text-white/45">
-            Gérez vos souscriptions automobile, confirmez les paiements et suivez vos
-            commissions en temps réel via l&apos;API ASS.
-          </p>
-
-          {/* Metrics row */}
-          <div className="mt-10 grid grid-cols-3 gap-3">
-            <LoginStat label="Parcours" value="5" />
-            <LoginStat label="API" value="ASS" />
-            <LoginStat label="Mode" value="Test" />
-          </div>
-        </div>
-
-        <p className="relative text-xs font-medium text-white/25">
-          © {new Date().getFullYear()} Horus Assurances Digital
-        </p>
-      </aside>
+      </div>
     </main>
-  );
-}
-
-function LoginStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-white/[0.09] bg-white/[0.04] p-4 backdrop-blur-sm">
-      <p className="text-[9.5px] font-extrabold uppercase tracking-widest text-white/30">
-        {label}
-      </p>
-      <p className="mt-2.5 text-2xl font-black tracking-tight">{value}</p>
-    </div>
   );
 }

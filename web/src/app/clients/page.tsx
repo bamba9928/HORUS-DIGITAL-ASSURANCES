@@ -120,8 +120,8 @@ export default function ClientsPage() {
         {/* ── Table section ─────────────────────────────────────── */}
         <section className="app-surface overflow-hidden">
           {/* Filter bar */}
-          <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-            <div className="relative min-w-48 flex-1">
+          <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+            <div className="relative min-w-0 flex-1 basis-full sm:min-w-48 sm:basis-auto">
               <Search
                 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/30"
                 size={15}
@@ -156,7 +156,7 @@ export default function ClientsPage() {
             />
           ) : filtered.length > 0 ? (
             <div className="overflow-x-auto">
-              <table className="app-table">
+              <table className="app-table app-table-responsive">
                 <thead>
                   <tr>
                     <th>Souscripteur</th>
@@ -198,7 +198,7 @@ function ClientRow({ client }: { client: ClientItem }) {
   return (
     <tr>
       {/* Souscripteur */}
-      <td>
+      <td data-label="Souscripteur">
         <div className="flex items-center gap-2.5">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-black text-primary">
             {nameInitials(client.nom, client.prenom)}
@@ -210,12 +210,12 @@ function ClientRow({ client }: { client: ClientItem }) {
       </td>
 
       {/* Téléphone */}
-      <td>
+      <td data-label="Téléphone">
         <span className="font-mono text-sm font-semibold">{client.phone}</span>
       </td>
 
       {/* Types */}
-      <td>
+      <td data-label="Types">
         <div className="flex flex-wrap gap-1">
           {client.contract_types.map((t) => (
             <ContractTypeBadge contractType={t} key={t} />
@@ -224,7 +224,7 @@ function ClientRow({ client }: { client: ClientItem }) {
       </td>
 
       {/* Groupes */}
-      <td>
+      <td data-label="Groupe(s)">
         <div className="flex flex-wrap gap-1">
           {client.organizations.length ? (
             client.organizations.map((org) => (
@@ -242,14 +242,14 @@ function ClientRow({ client }: { client: ClientItem }) {
       </td>
 
       {/* Nb contrats */}
-      <td className="text-center">
+      <td className="text-center" data-label="Contrats">
         <span className="text-sm font-extrabold tabular-nums text-primary">
           {client.contract_count}
         </span>
       </td>
 
       {/* Dernier contrat */}
-      <td className="whitespace-nowrap">
+      <td className="whitespace-nowrap" data-label="Dernier contrat">
         <Link
           className="inline-flex items-center justify-center size-7 rounded-md text-primary hover:bg-primary/10 transition"
           href={`/contracts/${client.last_contract_id}`}
