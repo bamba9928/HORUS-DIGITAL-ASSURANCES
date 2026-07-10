@@ -5,7 +5,6 @@ from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.core.mail import send_mail
 from django.core.validators import URLValidator
 from django.db import transaction
 from django.utils.encoding import force_bytes
@@ -13,6 +12,7 @@ from django.utils.http import urlsafe_base64_encode
 from rest_framework import serializers
 
 from accounts.models import User
+from organizations.emails import send_invitation_email
 from organizations.models import Organization
 
 
@@ -284,18 +284,7 @@ class OrganizationSerializer(serializers.ModelSerializer):
                 f"{settings.FRONTEND_BASE_URL.rstrip('/')}"
                 f"/invite?uid={uid}&token={token}"
             )
-            send_mail(
-                subject="Invitation Horus Assurances Digital",
-                message=(
-                    f"Bonjour {user.first_name or user.last_name},\n\n"
-                    "Votre compte Horus Assurances Digital a été créé. "
-                    f"Votre identifiant est {user.username}. "
-                    f"Définissez votre mot de passe ici : {invitation_url}\n"
-                ),
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=False,
-            )
+            send_invitation_email(user, invitation_url)
 
     def _generate_contact_username(self, organization):
         base = f"contact-{organization.code.lower()}"
