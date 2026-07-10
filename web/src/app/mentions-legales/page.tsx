@@ -30,11 +30,26 @@ export default function MentionsLegalesPage() {
           <LegalSection title="Éditeur du site">
             <p>
               Le site <strong>horus-assur.digital</strong> est édité par{" "}
-              <strong>Horus Assur</strong>, plateforme de gestion de contrats
-              d&apos;assurance automobile réservée aux agents et courtiers agréés.
+              <strong>Horus Global Services</strong>, cabinet d&apos;ingénierie
+              logicielle spécialisé dans la conception d&apos;applications web et
+              mobiles —{" "}
+              <a
+                className="font-semibold text-primary hover:underline"
+                href="https://horuservices.cloud"
+                rel="noreferrer"
+                target="_blank"
+              >
+                horuservices.cloud
+              </a>
+              .
             </p>
             <p className="mt-2">
-              Siège : Dakar, Sénégal
+              Adresse : Touba Darou Khoudoss, Touba, Région de Diourbel, Sénégal
+              <br />
+              Téléphone :{" "}
+              <a className="font-semibold text-primary hover:underline" href="tel:+221773409658">
+                +221 77 340 96 58
+              </a>
               <br />
               Contact :{" "}
               <a className="font-semibold text-primary hover:underline" href="mailto:bigrip2016@gmail.com">
@@ -73,8 +88,9 @@ export default function MentionsLegalesPage() {
           <LegalSection title="Propriété intellectuelle">
             <p>
               L&apos;ensemble des éléments du site (logo, textes, interface, code) est la
-              propriété exclusive de Horus Assur. Toute reproduction ou représentation,
-              totale ou partielle, sans autorisation écrite préalable est interdite.
+              propriété exclusive de Horus Global Services. Toute reproduction ou
+              représentation, totale ou partielle, sans autorisation écrite préalable est
+              interdite.
             </p>
           </LegalSection>
 

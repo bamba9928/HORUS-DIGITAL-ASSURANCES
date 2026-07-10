@@ -1,4 +1,4 @@
-import { Mail, MapPin, ShieldCheck } from "lucide-react";
+import { Mail, MapPin, Phone, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -51,11 +51,35 @@ export default function ContactPage() {
 
           <div className="flex items-start gap-4 rounded-2xl border border-border bg-white p-6 shadow-xs">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Phone size={18} />
+            </span>
+            <div>
+              <h2 className="text-[15px] font-extrabold tracking-tight">Téléphone</h2>
+              <p className="mt-1 text-sm font-medium text-black/55">
+                Du lundi au vendredi, de 9 h à 18 h :
+              </p>
+              <a
+                className="mt-1.5 inline-block text-sm font-bold text-primary hover:underline"
+                href="tel:+221773409658"
+              >
+                +221 77 340 96 58
+              </a>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-4 rounded-2xl border border-border bg-white p-6 shadow-xs">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <MapPin size={18} />
             </span>
             <div>
               <h2 className="text-[15px] font-extrabold tracking-tight">Adresse</h2>
-              <p className="mt-1 text-sm font-medium text-black/55">Dakar, Sénégal</p>
+              <p className="mt-1 text-sm font-medium text-black/55">
+                Horus Global Services
+                <br />
+                Touba Darou Khoudoss, Touba
+                <br />
+                Région de Diourbel, Sénégal
+              </p>
             </div>
           </div>
 
