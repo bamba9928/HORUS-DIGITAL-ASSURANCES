@@ -1,9 +1,31 @@
 import Image from "next/image";
+import Link from "next/link";
+
+function FooterLinks({ className = "" }: { className?: string }) {
+  return (
+    <nav className={`flex items-center gap-4 ${className}`}>
+      <Link
+        className="text-[11px] font-bold text-black/45 transition hover:text-primary"
+        href="/mentions-legales"
+      >
+        Mentions légales
+      </Link>
+      <span className="size-[3px] rounded-full bg-black/20" />
+      <Link
+        className="text-[11px] font-bold text-black/45 transition hover:text-primary"
+        href="/contact"
+      >
+        Contact
+      </Link>
+    </nav>
+  );
+}
 
 export function AppFooter({ variant = "app" }: { variant?: "app" | "minimal" }) {
   if (variant === "minimal") {
     return (
-      <footer className="px-6 py-6 text-center">
+      <footer className="flex flex-col items-center gap-2.5 px-6 py-6 text-center">
+        <FooterLinks />
         <p className="text-[11px] font-medium text-black/35">
           © {new Date().getFullYear()} Horus Assurances Digital — Tous droits réservés
         </p>
@@ -31,9 +53,12 @@ export function AppFooter({ variant = "app" }: { variant?: "app" | "minimal" }) 
             </p>
           </div>
         </div>
-        <p className="text-[11px] font-medium text-black/35">
-          © {new Date().getFullYear()} Horus Assur — Tous droits réservés
-        </p>
+        <div className="flex flex-col items-center gap-1.5 sm:items-end">
+          <FooterLinks />
+          <p className="text-[11px] font-medium text-black/35">
+            © {new Date().getFullYear()} Horus Assur — Tous droits réservés
+          </p>
+        </div>
       </div>
     </footer>
   );
