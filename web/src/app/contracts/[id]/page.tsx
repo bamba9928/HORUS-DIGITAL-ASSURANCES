@@ -10,6 +10,7 @@ import {
   LoaderCircle,
   Send,
   ShieldCheck,
+  Smartphone,
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
@@ -18,6 +19,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
+import { OmPaymentDialog } from "@/components/OmPaymentDialog";
 import { useToast } from "@/components/ToastProvider";
 import { AlertMessage, ContractTypeBadge, MetricCard, StatusBadge, humanize } from "@/components/ui";
 import {
@@ -86,6 +88,7 @@ export default function ContractDetailPage() {
   const [isLoading, setIsLoading] = useState(hasValidId);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [showOmDialog, setShowOmDialog] = useState(false);
   const [cancelMethod, setCancelMethod] = useState<CancelMethod>("ANNULER");
   const [cancelMotif, setCancelMotif] = useState("");
   const canManageWorkflow = canManageContractWorkflow(auth?.user);
@@ -492,6 +495,24 @@ export default function ContractDetailPage() {
                       </ActionButton>
                     ) : null}
 
+                    {canManageWorkflow ? (
+                      <ActionButton
+                        disabled={
+                          isActionLoading ||
+                          payableAmount === null ||
+                          !["QUOTE_READY", "PAYMENT_PENDING"].includes(
+                            contract.internal_status,
+                          )
+                        }
+                        icon={Smartphone}
+                        isLoading={isActionLoading}
+                        onClick={() => setShowOmDialog(true)}
+                        variant="primary"
+                      >
+                        Payer par Orange Money
+                      </ActionButton>
+                    ) : null}
+
                     {canConfirmPayment ? (
                       <ActionButton
                         disabled={
@@ -572,6 +593,27 @@ export default function ContractDetailPage() {
           </>
         ) : null}
       </div>
+
+      {/* ── Paiement Orange Money ────────────────────────────────── */}
+      {contract && showOmDialog ? (
+        <OmPaymentDialog
+          contractId={contract.id}
+          onClose={() => {
+            setShowOmDialog(false);
+            void refresh();
+          }}
+          onConfirmed={() => {
+            setShowOmDialog(false);
+            void refresh();
+            toast.success(
+              "Paiement Orange Money confirmé",
+              payableAmount !== null
+                ? `${new Intl.NumberFormat("fr-FR").format(payableAmount)} FCFA encaissés.`
+                : undefined,
+            );
+          }}
+        />
+      ) : null}
 
       {/* ── Cancel modal ─────────────────────────────────────────── */}
       {showCancelDialog && canCancel ? (

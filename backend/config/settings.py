@@ -251,6 +251,22 @@ if SENTRY_DSN:
     )
 
 
+# ─── Intégration Orange Money (Paiement Marchand) ─────────────────────────────
+# Mock activé par défaut : aucun appel réseau tant que les accès Sonatel
+# ne sont pas fournis. Voir integrations/orange_money/.
+
+OM_BASE_URL = config("OM_BASE_URL", default="https://api.sandbox.orange-sonatel.com")
+OM_CLIENT_ID = config("OM_CLIENT_ID", default="")
+OM_CLIENT_SECRET = config("OM_CLIENT_SECRET", default="")
+OM_MERCHANT_CODE = config("OM_MERCHANT_CODE", default="")
+OM_MERCHANT_NAME = config("OM_MERCHANT_NAME", default="HORUS ASSUR")
+OM_QR_VALIDITY_SECONDS = config("OM_QR_VALIDITY_SECONDS", default=300, cast=int)
+OM_MOCK_ENABLED = config("OM_MOCK_ENABLED", default=True, cast=bool)
+OM_REAL_CALLS_ALLOWED = config("OM_REAL_CALLS_ALLOWED", default=False, cast=bool)
+# Mock uniquement : délai avant que le paiement simulé passe à SUCCESS.
+OM_MOCK_CONFIRM_DELAY_SECONDS = config("OM_MOCK_CONFIRM_DELAY_SECONDS", default=15, cast=int)
+
+
 # ─── Intégration ASS ──────────────────────────────────────────────────────────
 
 ASS_BASE_URL = config("ASS_BASE_URL", default=ASS_SANDBOX_BASE_URL)

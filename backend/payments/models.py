@@ -10,6 +10,10 @@ class Payment(models.Model):
         CANCELLED = "CANCELLED", "Annule"
         REFUNDED = "REFUNDED", "Rembourse"
 
+    class Method(models.TextChoices):
+        MANUAL = "MANUAL", "Manuel"
+        ORANGE_MONEY = "ORANGE_MONEY", "Orange Money"
+
     contract = models.ForeignKey(
         "contracts.Contract",
         on_delete=models.PROTECT,
@@ -17,7 +21,10 @@ class Payment(models.Model):
     )
     amount = models.PositiveIntegerField()
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    method = models.CharField(max_length=20, choices=Method.choices, default=Method.MANUAL)
     external_reference = models.CharField(max_length=120, blank=True)
+    # Identifiant de transaction retourné par Orange Money (source de vérité OM).
+    om_transaction_id = models.CharField(max_length=120, blank=True)
     confirmed_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(
         "accounts.User",

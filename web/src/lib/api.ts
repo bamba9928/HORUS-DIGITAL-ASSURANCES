@@ -819,6 +819,44 @@ export async function confirmContractPayment(
   });
 }
 
+export type OmPayment = {
+  id: number;
+  contract_id: number;
+  amount: number;
+  status: PaymentStatus;
+  method: "ORANGE_MONEY";
+  external_reference: string;
+  om_transaction_id: string;
+  confirmed_at: string | null;
+};
+
+export type OmQrData = {
+  qr_code: string;
+  deep_links: Record<string, string>;
+  validity_seconds: number | null;
+  mock: boolean;
+};
+
+export type OmInitiateResult = {
+  payment: OmPayment;
+  contract_internal_status: string;
+  qr: OmQrData;
+};
+
+export async function initiateOmPayment(contractId: number) {
+  return fetchApi<OmInitiateResult>("/payments/om/initiate/", {
+    method: "POST",
+    body: JSON.stringify({ contract_id: contractId }),
+  });
+}
+
+export async function getOmPaymentStatus(paymentId: number) {
+  return fetchApi<{
+    payment: OmPayment;
+    contract_internal_status: string;
+  }>(`/payments/om/${paymentId}/status/`);
+}
+
 export type IssueResult = {
   contract_id: number;
   internal_status: "ISSUED";
