@@ -235,6 +235,22 @@ LOGGING = {
 }
 
 
+# ─── Sentry (suivi des erreurs) ───────────────────────────────────────────────
+# Activé uniquement si SENTRY_DSN est défini (production).
+
+SENTRY_DSN = config("SENTRY_DSN", default="")
+if SENTRY_DSN:
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        environment=config("SENTRY_ENVIRONMENT", default="production"),
+        # Pas de données personnelles dans les rapports (application financière).
+        send_default_pii=False,
+        traces_sample_rate=config("SENTRY_TRACES_SAMPLE_RATE", default=0.1, cast=float),
+    )
+
+
 # ─── Intégration ASS ──────────────────────────────────────────────────────────
 
 ASS_BASE_URL = config("ASS_BASE_URL", default=ASS_SANDBOX_BASE_URL)
