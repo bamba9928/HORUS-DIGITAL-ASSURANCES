@@ -42,9 +42,9 @@ export default function ContactPage() {
               </p>
               <a
                 className="mt-1.5 inline-block text-sm font-bold text-primary hover:underline"
-                href="mailto:bigrip2016@gmail.com"
+                href="mailto:contact@horus-assur.digital"
               >
-                bigrip2016@gmail.com
+                contact@horus-assur.digital
               </a>
             </div>
           </div>

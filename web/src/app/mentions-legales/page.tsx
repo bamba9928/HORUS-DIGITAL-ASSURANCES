@@ -52,8 +52,8 @@ export default function MentionsLegalesPage() {
               </a>
               <br />
               Contact :{" "}
-              <a className="font-semibold text-primary hover:underline" href="mailto:bigrip2016@gmail.com">
-                bigrip2016@gmail.com
+              <a className="font-semibold text-primary hover:underline" href="mailto:contact@horus-assur.digital">
+                contact@horus-assur.digital
               </a>
             </p>
           </LegalSection>
@@ -103,8 +103,8 @@ export default function MentionsLegalesPage() {
               Conformément à la loi sénégalaise n° 2008-12 sur la protection des données
               à caractère personnel, vous disposez d&apos;un droit d&apos;accès, de
               rectification et de suppression de vos données en écrivant à{" "}
-              <a className="font-semibold text-primary hover:underline" href="mailto:bigrip2016@gmail.com">
-                bigrip2016@gmail.com
+              <a className="font-semibold text-primary hover:underline" href="mailto:contact@horus-assur.digital">
+                contact@horus-assur.digital
               </a>
               .
             </p>
