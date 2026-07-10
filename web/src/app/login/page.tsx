@@ -5,8 +5,9 @@ import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useState } from "react";
 
+import { AppFooter } from "@/components/AppFooter";
 import { useAuth } from "@/components/AuthProvider";
-import { AlertMessage } from "@/components/ui";
+import { AlertMessage, BrandSpinner } from "@/components/ui";
 import { login } from "@/lib/api";
 
 export default function LoginPage() {
@@ -14,7 +15,7 @@ export default function LoginPage() {
     <Suspense
       fallback={
         <main className="flex min-h-screen items-center justify-center bg-[#f5f6f9]">
-          <span className="size-6 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
+          <BrandSpinner size="lg" />
         </main>
       }
     >
@@ -147,6 +148,8 @@ function LoginPageContent() {
           </form>
         </div>
       </div>
+
+      <AppFooter variant="minimal" />
     </main>
   );
 }

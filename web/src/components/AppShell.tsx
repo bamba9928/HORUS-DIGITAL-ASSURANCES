@@ -29,7 +29,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
+import { AppFooter } from "@/components/AppFooter";
 import { useAuth } from "@/components/AuthProvider";
+import { BrandSpinner } from "@/components/ui";
 import { logout } from "@/lib/api";
 import {
   canCreateContract,
@@ -278,7 +280,7 @@ export function AppShell({
 
       {/* ── Main content area ─────────────────────────────────────── */}
       <div
-        className={`min-w-0 transition-[padding] duration-200 ${
+        className={`flex min-h-screen min-w-0 flex-col transition-[padding] duration-200 ${
           sidebarCollapsed ? "lg:pl-[68px]" : "lg:pl-60"
         }`}
       >
@@ -329,9 +331,11 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="min-w-0 px-4 py-6 pb-24 sm:px-6 sm:py-7 lg:px-8 lg:pb-10">
+        <main className="min-w-0 flex-1 px-4 py-6 pb-24 sm:px-6 sm:py-7 lg:px-8 lg:pb-10">
           {children}
         </main>
+
+        <AppFooter />
       </div>
 
       {/* ── Mobile drawer ─────────────────────────────────────────── */}
@@ -864,7 +868,7 @@ function TopbarSession({
   if (isLoading) {
     return (
       <span className="flex size-8 items-center justify-center">
-        <span className="size-4 animate-spin rounded-full border-2 border-black/15 border-t-black/45" />
+        <BrandSpinner size="sm" />
       </span>
     );
   }

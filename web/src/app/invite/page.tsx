@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useState } from "react";
 
-import { AlertMessage } from "@/components/ui";
+import { AlertMessage, BrandSpinner } from "@/components/ui";
 import { acceptInvitation } from "@/lib/api";
 
 export default function InvitationPage() {
@@ -13,7 +13,7 @@ export default function InvitationPage() {
     <Suspense
       fallback={
         <main className="flex min-h-screen items-center justify-center bg-[#f5f6f9]">
-          <span className="size-6 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
+          <BrandSpinner size="lg" />
         </main>
       }
     >

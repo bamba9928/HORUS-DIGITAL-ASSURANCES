@@ -4,10 +4,10 @@ import {
   CheckCircle2,
   CircleDashed,
   Inbox,
-  LoaderCircle,
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 
 /* ── PageAction ──────────────────────────────────────────────────── */
@@ -256,11 +256,47 @@ export function EmptyState({
   );
 }
 
+/* ── BrandSpinner ────────────────────────────────────────────────── */
+const brandSpinnerSizes = {
+  sm: { box: 22, ring: "border-2", logo: 14 },
+  md: { box: 40, ring: "border-[3px]", logo: 25 },
+  lg: { box: 64, ring: "border-4", logo: 40 },
+};
+
+export function BrandSpinner({
+  size = "md",
+  className = "",
+}: {
+  size?: keyof typeof brandSpinnerSizes;
+  className?: string;
+}) {
+  const cfg = brandSpinnerSizes[size];
+  return (
+    <span
+      aria-hidden="true"
+      className={`relative inline-flex shrink-0 items-center justify-center ${className}`}
+      style={{ width: cfg.box, height: cfg.box }}
+    >
+      <span
+        className={`absolute inset-0 animate-spin rounded-full ${cfg.ring} border-primary/15 border-t-primary`}
+      />
+      <Image
+        alt=""
+        className="rounded-full"
+        height={256}
+        src="/brand/horus-assur-icon.png"
+        style={{ width: cfg.logo, height: cfg.logo }}
+        width={256}
+      />
+    </span>
+  );
+}
+
 /* ── LoadingState ────────────────────────────────────────────────── */
 export function LoadingState({ label = "Chargement" }: { label?: string }) {
   return (
     <div className="flex min-h-44 items-center justify-center gap-2.5 text-sm font-semibold text-black/40">
-      <LoaderCircle className="animate-spin text-primary" size={18} />
+      <BrandSpinner size="sm" />
       {label}…
     </div>
   );
