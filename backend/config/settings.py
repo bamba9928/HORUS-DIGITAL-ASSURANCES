@@ -88,10 +88,12 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # ─── Base de données ──────────────────────────────────────────────────────────
 # En développement : SQLite par défaut
 # En production    : définir DATABASE_URL=postgres://user:pass@host:5432/dbname
+# DATABASE_URL est lu via decouple (fichier .env inclus) car dj_database_url.config()
+# ne regarde que os.environ et ignorerait un .env non exporté.
 
 DATABASES = {
-    'default': dj_database_url.config(
-        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+    'default': dj_database_url.parse(
+        config("DATABASE_URL", default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}"),
         conn_max_age=600,
     )
 }
