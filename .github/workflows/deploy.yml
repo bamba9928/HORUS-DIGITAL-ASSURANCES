@@ -26,10 +26,13 @@ jobs:
           SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s' "$SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H 51.178.55.113 >> ~/.ssh/known_hosts 2>/dev/null
+          # Clé d'hôte épinglée : pas de ssh-keyscan (ses connexions pré-auth
+          # déclenchent un ban fail2ban qui gèle ensuite la session de déploiement).
+          echo "51.178.55.113 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGOZ9ULrfl/2nc8Ki3OiWWxTPlQcFoFe0UGlt6nKOLXP" > ~/.ssh/known_hosts
 
       - name: Déployer
         run: |
-          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes mada@51.178.55.113 'bash ~/deploy_horus.sh'
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o ServerAliveInterval=30 \
+            mada@51.178.55.113 'bash ~/deploy_horus.sh'
