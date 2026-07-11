@@ -204,6 +204,15 @@ const durationOptions = Array.from({ length: 12 }, (_, index) => ({
 
 const VALID_CONTRACT_TYPES = ["AUTO_MONO", "FLEET", "BUS_SCHOOL", "GARAGE"] as const;
 
+// Tags ASS (contract_types) autorisés dans le menu Catégorie selon le type de contrat choisi.
+// AUTO_MONO inclut "MOTO" : la souscription moto se fait via un contrat Auto mono + catégorie C5.
+const CATEGORY_CONTRACT_TYPE_TAGS: Record<string, string[]> = {
+  AUTO_MONO: ["AUTO_MONO", "MOTO"],
+  FLEET: ["FLEET"],
+  BUS_SCHOOL: ["BUS_SCHOOL"],
+  GARAGE: ["GARAGE"],
+};
+
 export default function NewContractPage() {
   return (
     <Suspense fallback={null}>
@@ -283,7 +292,7 @@ function NewContractPageContent() {
           guaranteeOptionData,
         ]) => {
           setContractTypes(typeData);
-          setCategories(categoryData.filter((item) => item.value !== "REMORQUE"));
+          setCategories(categoryData);
           setBrands(brandData);
           setEnergies(energyData);
           setGuarantees(guaranteeData);
@@ -373,6 +382,14 @@ function NewContractPageContent() {
     () => displayContractTypes.find((option) => String(option.value) === contractType),
     [contractType, displayContractTypes],
   );
+  // Le menu Catégorie ne montre que les catégories du type de contrat courant
+  // (masque Garage, Bus École, Remorque en Auto/Flotte ; limite Bus École à BUS_ECOLE).
+  const displayCategories = useMemo(() => {
+    const allowedTags = CATEGORY_CONTRACT_TYPE_TAGS[contractType] ?? ["AUTO_MONO", "MOTO"];
+    return categories.filter((category) =>
+      (category.contract_types ?? []).some((tag) => allowedTags.includes(tag)),
+    );
+  }, [categories, contractType]);
   const selectedTrailerTarget = fleetVehicles.find(
     (fleetVehicle) => fleetVehicle.id === trailerTargetVehicleId,
   );
@@ -1019,7 +1036,7 @@ function NewContractPageContent() {
               ) : (
                 <VehicleFields
                   brands={brands}
-                  categories={categories}
+                  categories={displayCategories}
                   energies={energies}
                   isBusSchool={isBusSchool}
                   isFleet={isFleet}

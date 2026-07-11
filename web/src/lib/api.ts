@@ -3,6 +3,7 @@ export type SelectOption = {
   label: string;
   enabled?: boolean;
   category?: string;
+  contract_types?: string[];
   needs_confirmation?: boolean;
   min_duration?: number;
   max_duration?: number;
