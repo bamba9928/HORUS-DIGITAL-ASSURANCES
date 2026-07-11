@@ -2,6 +2,7 @@
 
 import {
   Banknote,
+  Download,
   FilePlus2,
   Files,
   RefreshCw,
@@ -13,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
+import { useToast } from "@/components/ToastProvider";
 import {
   AlertMessage,
   ContractTypeBadge,
@@ -22,6 +24,7 @@ import {
   StatusBadge,
 } from "@/components/ui";
 import {
+  downloadContractsCsv,
   listContracts,
   type ContractInternalStatus,
   type ContractListItem,
@@ -60,7 +63,9 @@ const expirationFilters: { label: string; value: ExpirationWindow | "" }[] = [
 export default function ContractsPage() {
   const router = useRouter();
   const { auth } = useAuth();
+  const toast = useToast();
   const [contracts, setContracts] = useState<ContractListItem[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
   const [status, setStatus] = useState<ContractInternalStatus | "">("");
   const [contractType, setContractType] = useState("");
   const [expiration, setExpiration] = useState<ExpirationWindow | "">("");
@@ -89,6 +94,26 @@ export default function ContractsPage() {
       setContracts([]);
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function exportCsv() {
+    setIsExporting(true);
+    try {
+      await downloadContractsCsv({
+        status,
+        contract_type: contractType,
+        expiration,
+        search,
+      });
+      toast.success("Export CSV téléchargé", "Bordereau des contrats filtrés.");
+    } catch (err) {
+      toast.error(
+        "Export impossible",
+        err instanceof Error ? err.message : undefined,
+      );
+    } finally {
+      setIsExporting(false);
     }
   }
 
@@ -158,11 +183,22 @@ export default function ContractsPage() {
   return (
     <AppShell
       actions={
-        canCreateContract(auth?.user) ? (
-          <PageAction href="/contracts/new" icon={FilePlus2}>
-            Nouveau contrat
+        <>
+          <PageAction
+            icon={Download}
+            onClick={() => {
+              if (!isExporting) void exportCsv();
+            }}
+            variant="secondary"
+          >
+            {isExporting ? "Export…" : "Exporter CSV"}
           </PageAction>
-        ) : null
+          {canCreateContract(auth?.user) ? (
+            <PageAction href="/contracts/new" icon={FilePlus2}>
+              Nouveau contrat
+            </PageAction>
+          ) : null}
+        </>
       }
       description="Recherche, suivi et émission"
       title="Contrats"

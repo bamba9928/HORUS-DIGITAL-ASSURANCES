@@ -5,6 +5,7 @@ import {
   Banknote,
   Calculator,
   CheckCircle2,
+  Download,
   ExternalLink,
   FilePenLine,
   LoaderCircle,
@@ -26,6 +27,7 @@ import {
   calculateContractQuote,
   cancelContract,
   confirmContractPayment,
+  downloadContractPdf,
   fetchContractDetail,
   issueContract,
   type CancelMethod,
@@ -195,6 +197,19 @@ export default function ContractDetailPage() {
       );
     } finally {
       setIsActionLoading(false);
+    }
+  }
+
+  async function downloadPdf() {
+    if (!contract) return;
+    try {
+      await downloadContractPdf(contract.id);
+      toast.success("Récap PDF téléchargé");
+    } catch (err) {
+      toast.error(
+        "Téléchargement impossible",
+        err instanceof Error ? err.message : undefined,
+      );
     }
   }
 
@@ -544,6 +559,16 @@ export default function ContractDetailPage() {
                         Émettre le contrat
                       </ActionButton>
                     ) : null}
+
+                    <ActionButton
+                      disabled={isActionLoading}
+                      icon={Download}
+                      isLoading={false}
+                      onClick={() => void downloadPdf()}
+                      variant="secondary"
+                    >
+                      Récap PDF
+                    </ActionButton>
 
                     {/* Annulation flotte non supportée : attestations à annuler
                         individuellement auprès d'ASS (garde-fou backend également). */}

@@ -715,6 +715,58 @@ export async function listContracts(filters?: {
   return fetchApi<ApiListResponse<ContractListItem>>(`/contracts/${query ? `?${query}` : ""}`);
 }
 
+async function downloadApiFile(path: string, fallbackName: string) {
+  let response: Response;
+  try {
+    response = await fetch(`${getApiBaseUrl()}${path}`, { credentials: "include" });
+  } catch {
+    throw new Error("API inaccessible. Vérifiez que le serveur backend est démarré.");
+  }
+  if (!response.ok) {
+    throw new Error((await parseApiError(response)) || "Export impossible.");
+  }
+  const blob = await response.blob();
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function downloadContractsCsv(filters?: {
+  status?: ContractInternalStatus | "";
+  contract_type?: string;
+  search?: string;
+  expiration?: ExpirationWindow | "";
+  from?: string;
+  to?: string;
+}) {
+  const params = new URLSearchParams();
+  if (filters?.status) params.set("status", filters.status);
+  if (filters?.contract_type) params.set("contract_type", filters.contract_type);
+  if (filters?.search) params.set("search", filters.search);
+  if (filters?.expiration) params.set("expiration", filters.expiration);
+  if (filters?.from) params.set("from", filters.from);
+  if (filters?.to) params.set("to", filters.to);
+  const query = params.toString();
+  await downloadApiFile(
+    `/contracts/export/${query ? `?${query}` : ""}`,
+    "contrats_horus.csv",
+  );
+}
+
+export async function downloadContractPdf(contractId: number) {
+  await downloadApiFile(
+    `/contracts/${contractId}/export-pdf/`,
+    `contrat_${contractId}_horus.pdf`,
+  );
+}
+
 export async function fetchContractDetail(contractId: number) {
   return fetchApi<ContractDetail>(`/contracts/${contractId}/`);
 }

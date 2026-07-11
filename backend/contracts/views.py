@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from django.core.exceptions import ValidationError
 from django.db.models import Count, Q, Sum
+from django.http import HttpResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, status
@@ -11,6 +12,14 @@ from rest_framework.views import APIView
 
 from common.pagination import PaginationError, paginate_queryset
 from commissions.models import CommissionSnapshot
+from contracts.exports import (
+    ExportPeriodError,
+    apply_period,
+    build_contract_pdf,
+    csv_export_filename,
+    pdf_export_filename,
+    stream_contracts_csv,
+)
 from contracts.models import Contract
 from contracts.serializers import (
     ContractDetailSerializer,
@@ -149,6 +158,60 @@ class ContractDraftListCreateView(AuthenticatedContractMixin, generics.ListCreat
         return super().create(request, *args, **kwargs)
 
 
+class ContractFilterError(ValueError):
+    pass
+
+
+def filter_contracts_from_params(queryset, params):
+    """Applique les filtres de liste (statut, type, recherche, echeances...).
+
+    Partage entre la liste paginee et l'export CSV. Retourne
+    (queryset, order_field) ; leve ContractFilterError si un filtre est invalide.
+    """
+    internal_status = params.get("status")
+    if internal_status:
+        if internal_status not in Contract.InternalStatus.values:
+            raise ContractFilterError("Statut contrat invalide.")
+        queryset = queryset.filter(internal_status=internal_status)
+
+    contract_type = params.get("contract_type")
+    if contract_type:
+        if contract_type not in Contract.ContractType.values:
+            raise ContractFilterError("Type contrat invalide.")
+        queryset = queryset.filter(contract_type=contract_type)
+
+    contributor_param = params.get("contributor")
+    if contributor_param:
+        if not str(contributor_param).isdigit():
+            raise ContractFilterError("Contributeur invalide.")
+        queryset = queryset.filter(contributor_id=int(contributor_param))
+
+    organization_param = params.get("organization")
+    if organization_param:
+        if not str(organization_param).isdigit():
+            raise ContractFilterError("Organisation invalide.")
+        queryset = queryset.filter(organization_id=int(organization_param))
+
+    search = params.get("search", "").strip()
+    if search:
+        normalized_search = " ".join(search.upper().split())
+        search_query = Q(search_text__contains=normalized_search)
+        if normalized_search.isdigit():
+            search_query |= Q(pk=int(normalized_search))
+        queryset = queryset.filter(search_query)
+
+    order_field = "-updated_at"
+    expiration = params.get("expiration")
+    if expiration:
+        queryset, ok = apply_expiration_window(queryset, expiration)
+        if not ok:
+            raise ContractFilterError("Filtre d'echeance invalide.")
+        # Echeances : du plus urgent (deja expire / proche) au plus lointain.
+        order_field = "date_expiration"
+
+    return queryset, order_field
+
+
 class ContractListView(AuthenticatedContractMixin, APIView):
     def get(self, request):
         queryset = get_contract_queryset_for_user(request.user).select_related(
@@ -156,49 +219,12 @@ class ContractListView(AuthenticatedContractMixin, APIView):
             "contributor",
         )
 
-        internal_status = request.query_params.get("status")
-        if internal_status:
-            if internal_status not in Contract.InternalStatus.values:
-                return Response({"detail": "Statut contrat invalide."}, status=status.HTTP_400_BAD_REQUEST)
-            queryset = queryset.filter(internal_status=internal_status)
-
-        contract_type = request.query_params.get("contract_type")
-        if contract_type:
-            if contract_type not in Contract.ContractType.values:
-                return Response({"detail": "Type contrat invalide."}, status=status.HTTP_400_BAD_REQUEST)
-            queryset = queryset.filter(contract_type=contract_type)
-
-        contributor_param = request.query_params.get("contributor")
-        if contributor_param:
-            if not str(contributor_param).isdigit():
-                return Response({"detail": "Contributeur invalide."}, status=status.HTTP_400_BAD_REQUEST)
-            queryset = queryset.filter(contributor_id=int(contributor_param))
-
-        organization_param = request.query_params.get("organization")
-        if organization_param:
-            if not str(organization_param).isdigit():
-                return Response({"detail": "Organisation invalide."}, status=status.HTTP_400_BAD_REQUEST)
-            queryset = queryset.filter(organization_id=int(organization_param))
-
-        search = request.query_params.get("search", "").strip()
-        if search:
-            normalized_search = " ".join(search.upper().split())
-            search_query = Q(search_text__contains=normalized_search)
-            if normalized_search.isdigit():
-                search_query |= Q(pk=int(normalized_search))
-            queryset = queryset.filter(search_query)
-
-        order_field = "-updated_at"
-        expiration = request.query_params.get("expiration")
-        if expiration:
-            queryset, ok = apply_expiration_window(queryset, expiration)
-            if not ok:
-                return Response(
-                    {"detail": "Filtre d'echeance invalide."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            # Echeances : du plus urgent (deja expire / proche) au plus lointain.
-            order_field = "date_expiration"
+        try:
+            queryset, order_field = filter_contracts_from_params(
+                queryset, request.query_params
+            )
+        except ContractFilterError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         queryset = queryset.order_by(order_field)
         try:
@@ -331,6 +357,56 @@ class ContractDraftQuoteView(AuthenticatedContractMixin, APIView):
                 "quote": quote,
             }
         )
+
+
+class ContractExportCsvView(AuthenticatedContractMixin, APIView):
+    """Bordereau CSV des contrats visibles par l'utilisateur.
+
+    Respecte les mêmes filtres que la liste (?status=&contract_type=&search=&
+    expiration=...) + une période optionnelle sur la date de création
+    (?from=AAAA-MM-JJ&to=AAAA-MM-JJ).
+    """
+
+    def get(self, request):
+        queryset = get_contract_queryset_for_user(request.user).select_related(
+            "organization",
+            "contributor",
+            "commission_snapshot",
+        )
+        try:
+            queryset, order_field = filter_contracts_from_params(
+                queryset, request.query_params
+            )
+            queryset = apply_period(queryset, request.query_params)
+        except (ContractFilterError, ExportPeriodError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        response = StreamingHttpResponse(
+            stream_contracts_csv(queryset.order_by(order_field)),
+            content_type="text/csv; charset=utf-8",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{csv_export_filename()}"'
+        return response
+
+
+class ContractExportPdfView(AuthenticatedContractMixin, APIView):
+    """Fiche récapitulative PDF d'un contrat (parties, montants, attestation)."""
+
+    def get(self, request, pk):
+        contract = get_object_or_404(
+            get_contract_queryset_for_user(request.user).select_related(
+                "organization",
+                "contributor",
+                "commission_snapshot",
+            ),
+            pk=pk,
+        )
+        pdf_bytes = build_contract_pdf(contract)
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'attachment; filename="{pdf_export_filename(contract)}"'
+        )
+        return response
 
 
 class ContractConfirmPaymentView(AuthenticatedContractMixin, APIView):

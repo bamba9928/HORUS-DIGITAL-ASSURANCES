@@ -13,6 +13,7 @@ dependencies = [
     "psycopg2-binary==2.9.12",
     "dj-database-url==3.1.2",
     "sentry-sdk[django]==2.42.1",
+    "reportlab==4.4.5",
 ]
 
 [dependency-groups]
