@@ -1239,7 +1239,7 @@ function NewContractPageContent() {
                   <SummaryGrid>
                     <SummaryItem
                       label="Date d'effet"
-                      value={(isGarage ? garage.effectDate : coverageSource.effectDate) || "—"}
+                      value={formatDisplayDate(isGarage ? garage.effectDate : coverageSource.effectDate)}
                     />
                     <SummaryItem
                       label="Durée"
@@ -2407,7 +2407,7 @@ function IssuePanel({ issueResult }: { issueResult: IssueResult }) {
           <SummaryItem label="N° attestation" value={issueResult.attestation_number || "—"} />
           <SummaryItem label="Référence externe" value={issueResult.reference_externe || "—"} />
           <SummaryItem label="Référence Horus" value={issueResult.reference_trx_partner || "—"} />
-          <SummaryItem label="Date expiration" value={issueResult.date_expiration || "—"} />
+          <SummaryItem label="Date expiration" value={formatDisplayDate(issueResult.date_expiration)} />
         </dl>
         <div className="mt-5 flex flex-wrap gap-2.5">
           {issueResult.link_attestation_digitale ? (
@@ -2896,6 +2896,13 @@ function hydrateDraftPayload(contractType: string, draftPayload: Record<string, 
 
 function formatAmount(value: number) {
   return new Intl.NumberFormat("fr-FR").format(value);
+}
+
+// Affiche une date ISO (YYYY-MM-DD) au format jj/mm/aaaa, sans décalage de fuseau.
+function formatDisplayDate(value?: string | null) {
+  if (!value) return "—";
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
 }
 
 function upsertOption(options: SelectOption[], option: SelectOption) {
