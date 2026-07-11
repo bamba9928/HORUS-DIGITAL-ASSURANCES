@@ -43,18 +43,22 @@ import {
 } from "@/lib/permissions";
 
 type DraftVehicle = {
-  brand?: string; model?: string; registration?: string; chassis?: string;
+  brand?: string; model?: string; category?: string; registration?: string; chassis?: string;
   energy?: string; fiscalPower?: string; seats?: string; firstCirculationDate?: string;
   effectDate?: string; duration?: string; periodicity?: string; personType?: string;
   subcategory?: string; cylindree?: string; motoUsage?: string;
 };
-type DraftPerson = { firstName?: string; lastName?: string; phone?: string; email?: string; };
+type DraftPerson = { firstName?: string; lastName?: string; phone?: string; email?: string; address?: string; };
 type DraftPayload = {
   vehicle?: DraftVehicle;
-  fleet?: { vehicles?: (DraftVehicle & { id?: string; trailers?: { registration?: string; brand?: string; model?: string; }[] })[] };
+  fleet?: {
+    effectDate?: string; duration?: string; periodicity?: string; personType?: string;
+    vehicles?: (DraftVehicle & { id?: string; trailers?: { registration?: string; brand?: string; model?: string; }[] })[];
+  };
   garage?: { subcategory?: string; nombreCarte?: string; registration?: string; effectDate?: string; duration?: string; periodicity?: string; };
   policyholder?: DraftPerson;
   insured?: DraftPerson;
+  sameAsPolicyholder?: boolean;
   guarantees?: number[];
   guaranteeOptions?: Record<string, string | undefined>;
 };
@@ -127,6 +131,16 @@ export default function ContractDetailPage() {
       isCancelled = true;
     };
   }, [contractId, hasValidId]);
+
+  // Brouillon complet ? (toutes les conditions du formulaire réunies)
+  const draftComplete = useMemo(
+    () => (contract ? isDraftReadyForQuote(contract) : false),
+    [contract],
+  );
+  // On ne bloque le calcul que tant que le contrat est encore un brouillon :
+  // une fois QUOTE_READY, la complétude a déjà été validée.
+  const draftNeedsCompletion =
+    Boolean(contract) && contract!.internal_status === "DRAFT" && !draftComplete;
 
   const payableAmount = useMemo(() => {
     if (!contract?.prime_rc_ass) return null;
@@ -499,7 +513,8 @@ export default function ContractDetailPage() {
                       <ActionButton
                         disabled={
                           isActionLoading ||
-                          !["DRAFT", "QUOTE_READY"].includes(contract.internal_status)
+                          !["DRAFT", "QUOTE_READY"].includes(contract.internal_status) ||
+                          draftNeedsCompletion
                         }
                         icon={Calculator}
                         isLoading={isActionLoading}
@@ -508,6 +523,14 @@ export default function ContractDetailPage() {
                       >
                         Calculer le devis
                       </ActionButton>
+                    ) : null}
+
+                    {canManageWorkflow && draftNeedsCompletion ? (
+                      <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                        <FilePenLine size={13} className="mt-px shrink-0" />
+                        Complétez toutes les informations obligatoires du brouillon
+                        (souscripteur, véhicule et couverture) pour pouvoir calculer le devis.
+                      </p>
                     ) : null}
 
                     {canManageWorkflow ? (
@@ -1189,6 +1212,78 @@ function AttestationsPanel({
       </div>
     </section>
   );
+}
+
+/* ── Complétude du brouillon (mêmes règles que `canCalculateQuote` du formulaire) ──
+   Un devis ne peut être calculé que si toutes les informations obligatoires sont
+   saisies : parties, véhicule/garage/flotte et couverture. */
+function isDraftPhoneValid(phone?: string) {
+  return Boolean(phone && /^7\d{8}$/.test(phone));
+}
+
+function isDraftPersonComplete(person?: DraftPerson) {
+  return Boolean(
+    person?.firstName?.trim() &&
+      person?.lastName?.trim() &&
+      isDraftPhoneValid(person.phone) &&
+      person?.address?.trim(),
+  );
+}
+
+function isDraftVehicleComplete(
+  vehicle: DraftVehicle | undefined,
+  { requireCoverage }: { requireCoverage: boolean },
+) {
+  if (!vehicle) return false;
+  const isMoto = vehicle.category === "C5";
+  const coreOk = Boolean(
+    vehicle.brand &&
+      vehicle.model &&
+      vehicle.category &&
+      vehicle.subcategory &&
+      vehicle.energy &&
+      vehicle.registration,
+  );
+  if (!coreOk) return false;
+  const powerOk = isMoto
+    ? Boolean(vehicle.cylindree)
+    : Boolean(vehicle.fiscalPower && vehicle.seats);
+  if (!powerOk) return false;
+  if (requireCoverage && !(vehicle.effectDate && vehicle.duration && vehicle.periodicity)) {
+    return false;
+  }
+  return true;
+}
+
+function isDraftReadyForQuote(contract: ContractDetail): boolean {
+  const payload = contract.draft_payload as DraftPayload;
+  const partiesOk =
+    isDraftPersonComplete(payload.policyholder) &&
+    (payload.sameAsPolicyholder !== false || isDraftPersonComplete(payload.insured));
+  if (!partiesOk) return false;
+
+  if (contract.contract_type === "FLEET") {
+    const fleet = payload.fleet;
+    const vehicles = fleet?.vehicles ?? [];
+    if (!vehicles.length) return false;
+    if (!(fleet?.effectDate && fleet?.duration && fleet?.periodicity)) return false;
+    // La couverture est portée au niveau flotte, pas par véhicule.
+    return vehicles.every((v) => isDraftVehicleComplete(v, { requireCoverage: false }));
+  }
+
+  if (contract.contract_type === "GARAGE") {
+    const garage = payload.garage;
+    return Boolean(
+      garage?.subcategory &&
+        garage?.nombreCarte &&
+        garage?.effectDate &&
+        garage?.duration &&
+        garage?.periodicity,
+    );
+  }
+
+  // AUTO_MONO, MOTO, BUS_SCHOOL : véhicule unique avec sa couverture.
+  return isDraftVehicleComplete(payload.vehicle, { requireCoverage: true });
 }
 
 function formatMoney(value: number) {
