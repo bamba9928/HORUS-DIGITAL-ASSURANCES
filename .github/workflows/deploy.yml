@@ -30,9 +30,10 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           # Clé d'hôte épinglée : pas de ssh-keyscan (ses connexions pré-auth
           # déclenchent un ban fail2ban qui gèle ensuite la session de déploiement).
-          echo "51.178.55.113 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGOZ9ULrfl/2nc8Ki3OiWWxTPlQcFoFe0UGlt6nKOLXP" > ~/.ssh/known_hosts
+          # Port non standard : known_hosts exige la forme [hote]:port
+          echo "[51.178.55.113]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGOZ9ULrfl/2nc8Ki3OiWWxTPlQcFoFe0UGlt6nKOLXP" > ~/.ssh/known_hosts
 
       - name: Déployer
         run: |
-          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o ServerAliveInterval=30 \
+          ssh -p 2222 -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o ServerAliveInterval=30 \
             mada@51.178.55.113 'bash ~/deploy_horus.sh'
