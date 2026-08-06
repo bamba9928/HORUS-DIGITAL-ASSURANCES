@@ -23,14 +23,14 @@ HorusAssurancesDigital/
 │   ├── commissions/  # Calcul et suivi des commissions
 │   ├── payments/     # Confirmation des paiements
 │   ├── referentials/ # Données de référence (marques, garanties…)
-│   ├── integrations/ # Connecteur API A.A.S
+│   ├── integrations/ # Connecteur API A.S.S
 │   └── system/       # Configuration plateforme
 ├── web/              # Application Next.js
 │   └── src/
 │       ├── app/      # Pages (App Router)
 │       ├── components/
 │       └── lib/      # API client, permissions
-└── docs/             # Documentation API A.A.S et roadmap
+└── docs/             # Documentation API A.S.S et roadmap
 ```
 
 ## Démarrage rapide
