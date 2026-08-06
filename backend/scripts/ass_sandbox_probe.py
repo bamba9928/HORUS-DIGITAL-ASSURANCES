@@ -118,6 +118,10 @@ def probe_reduction(client):
                 "Reduction": response.get("Reduction"),
                 "PrimeRC": response.get("PrimeRC"),
                 "PrimeTotale": response.get("PrimeTotale"),
+                # `data` (= PrimeRC + Cedeao) est l'assiette de la commission
+                # apporteur : si la reduction la rabote, c'est la remuneration
+                # de l'apporteur qui baisse. A verifier explicitement.
+                "data": response.get("data"),
             }
 
     print(f"\n{'=' * 70}\n# VERDICT unite de remise_rc\n{'=' * 70}")
