@@ -131,8 +131,17 @@ class UserCreateSerializer(AccountIdentityValidationMixin, serializers.ModelSeri
             "matricule",
             "role",
             "organization",
+            "commission_percent_on_prime_rc",
+            "commission_fixed_on_policy_fee",
         ]
         read_only_fields = ["id", "matricule"]
+
+    def validate_commission_fixed_on_policy_fee(self, value):
+        if value is not None and value > settings.ASS_POLICY_FEE:
+            raise serializers.ValidationError(
+                f"La commission fixe sur cout de police ne peut pas depasser {settings.ASS_POLICY_FEE} FCFA."
+            )
+        return value
 
     def validate(self, attrs):
         actor = self.context["request"].user
@@ -159,7 +168,28 @@ class UserCreateSerializer(AccountIdentityValidationMixin, serializers.ModelSeri
         else:
             raise serializers.ValidationError("Permission refusee.")
 
-        self._validate_password_strength(attrs)
+        # Erreurs accumulees : un formulaire incomplet doit tout remonter d'un
+        # coup plutot que de faire corriger l'utilisateur en plusieurs passes.
+        errors = {}
+
+        # La commission est exigee des la creation d'un apporteur : sans elle le
+        # compte parait operationnel (saisie, encaissement) mais toute emission
+        # echoue sur CommissionNotConfiguredError, au dernier clic.
+        if role == User.Role.CONTRIBUTOR:
+            for field in (
+                "commission_percent_on_prime_rc",
+                "commission_fixed_on_policy_fee",
+            ):
+                if attrs.get(field) is None:
+                    errors[field] = "La commission est requise pour un apporteur (les deux valeurs)."
+
+        try:
+            self._validate_password_strength(attrs)
+        except serializers.ValidationError as exc:
+            errors.update(exc.detail)
+
+        if errors:
+            raise serializers.ValidationError(errors)
         return attrs
 
     def _validate_password_strength(self, attrs):
@@ -184,6 +214,9 @@ class UserCreateSerializer(AccountIdentityValidationMixin, serializers.ModelSeri
         password = validated_data.pop("password")
         user = User(**validated_data)
         user.set_password(password)
+        if user.has_configured_commission:
+            user.commission_configured_by = self.context["request"].user
+            user.commission_configured_at = timezone.now()
         user.full_clean()
         user.save()
         return user

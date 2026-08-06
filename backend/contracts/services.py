@@ -13,6 +13,10 @@ from commissions.services import CommissionNotConfiguredError, build_commission_
 from contracts.models import Contract
 from integrations.ass.client import AssClient, extract_available_qr
 from integrations.ass.constants import ASS_CANCEL_METHODS, ASS_POLICY_FEE, ASS_SUCCESS_STATUS
+from integrations.ass.referentials import (
+    reduction_rate_for_genre,
+    reduction_rate_for_genres,
+)
 from integrations.ass.exceptions import AssIntegrationError
 from payments.services import has_confirmed_payment
 
@@ -472,7 +476,7 @@ def build_auto_rc_payload(vehicle, guarantees=None, guarantee_options=None):
         "garanties": normalize_guarantees(guarantees),
         **guarantee_options_for_payload(guarantees, guarantee_options),
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": 0,
+        "remise_rc": reduction_rate_for_genre(vehicle.get("subcategory")),
     }
 
 
@@ -493,7 +497,7 @@ def build_auto_issue_payload(contract, reference):
         "garanties": selected_guarantees(contract.draft_payload),
         **guarantee_options,
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": 0,
+        "remise_rc": reduction_rate_for_genre(vehicle.get("subcategory")),
         "souscripteur": policyholder,
         "assure": insured,
         "vehicule": build_issue_vehicle_payload(vehicle),
@@ -511,7 +515,7 @@ def build_moto_rc_payload(vehicle, guarantees=None, guarantee_options=None):
         "usage": normalize_moto_usage(vehicle.get("motoUsage")),
         "nombrePlace": to_int(vehicle.get("seats"), default=1),
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": 0,
+        "remise_rc": reduction_rate_for_genre(vehicle.get("subcategory")),
         "garanties": normalize_guarantees(guarantees),
         **guarantee_options_for_payload(guarantees, guarantee_options),
     }
@@ -540,7 +544,7 @@ def build_moto_issue_payload(contract, reference):
         "garanties": selected_guarantees(contract.draft_payload),
         **guarantee_options,
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": 0,
+        "remise_rc": reduction_rate_for_genre(vehicle.get("subcategory")),
         "souscripteur": policyholder,
         "assure": insured,
         "vehicule": {
@@ -567,7 +571,9 @@ def build_fleet_rc_payload(draft_payload):
         "duree": to_int(fleet_duration or first_value(vehicles, "duration"), default=1),
         "dateEffet": fleet.get("effectDate") or first_value(vehicles, "effectDate") or "",
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": 0,
+        "remise_rc": reduction_rate_for_genres(
+            vehicle.get("subcategory") for vehicle in vehicles
+        ),
         "requests": [
             {
                 "requestId": vehicle.get("id"),
@@ -611,7 +617,9 @@ def build_fleet_issue_payload(contract, reference):
         ),
         "police": f"HORUS-FLEET-POL-{contract.id}",
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": 0,
+        "remise_rc": reduction_rate_for_genres(
+            vehicle.get("subcategory") for vehicle in vehicles
+        ),
         "souscripteur": policyholder,
         "items": [
             {
@@ -809,7 +817,7 @@ def build_bus_rc_payload(vehicle):
         "valeurActuelle": to_int(vehicle.get("currentValue"), default=0),
         "garanties": [],
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": 0,
+        "remise_rc": reduction_rate_for_genre(vehicle.get("subcategory")),
     }
 
 
@@ -828,7 +836,7 @@ def build_bus_issue_payload(contract, reference):
         "police": f"HORUS-BUS-{contract.id}",
         "referenceTrxPartner": reference,
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": 0,
+        "remise_rc": reduction_rate_for_genre(vehicle.get("subcategory")),
         "souscripteur": policyholder,
         "assure": insured,
         "vehicule": build_issue_vehicle_payload(vehicle),
@@ -845,7 +853,7 @@ def build_garage_rc_payload(garage):
         "valeurActuelle": 0,
         "garanties": [],
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": 0,
+        "remise_rc": reduction_rate_for_genre(garage.get("subcategory")),
     }
 
 
@@ -867,7 +875,7 @@ def build_garage_issue_payload(contract, reference):
         "police": f"HORUS-GARAGE-{contract.id}",
         "referenceTrxPartner": reference,
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": 0,
+        "remise_rc": reduction_rate_for_genre(garage.get("subcategory")),
         "souscripteur": policyholder,
         "assure": insured,
     }

@@ -8,6 +8,7 @@ import {
   EyeOff,
   Hash,
   Lock,
+  Percent,
   RefreshCw,
   ShieldCheck,
   UserPlus,
@@ -29,11 +30,15 @@ import { canManageUsers } from "@/lib/permissions";
 
 /* ── Constantes ─────────────────────────────────────────────────── */
 
+// Plafond de la commission fixe : le coût de police ASS (ASS_POLICY_FEE côté
+// backend, qui reste l'autorité — ici c'est un garde-fou de saisie).
+const POLICY_FEE_MAX = 3000;
+
 const ROLES = [
   {
     value: "CONTRIBUTOR" as const,
     label: "Apporteur",
-    description: "Crée et suit ses contrats. Commission configurée manuellement.",
+    description: "Crée et suit ses contrats. Commission définie à la création.",
   },
   {
     value: "FINANCE" as const,
@@ -133,6 +138,8 @@ export default function NewUserPage() {
     confirm: "",
     role: "CONTRIBUTOR",
     organization: "",
+    commission_percent: "",
+    commission_fixed: "",
   });
 
   const canCreate = canManageUsers(auth?.user);
@@ -148,12 +155,30 @@ export default function NewUserPage() {
   const effectiveOrg =
     form.organization || (organizations.length === 1 ? String(organizations[0].id) : "");
 
+  // Un apporteur sans commission encaisse mais ne peut rien emettre : le backend
+  // l'exige a la creation, on l'exige aussi ici pour un message immediat.
+  const commissionRequired = form.role === "CONTRIBUTOR";
+  const percentValue = Number(form.commission_percent);
+  const fixedValue = Number(form.commission_fixed);
+  const percentValid =
+    form.commission_percent.trim() !== "" &&
+    Number.isFinite(percentValue) &&
+    percentValue >= 0 &&
+    percentValue <= 100;
+  const fixedValid =
+    form.commission_fixed.trim() !== "" &&
+    Number.isInteger(fixedValue) &&
+    fixedValue >= 0 &&
+    fixedValue <= POLICY_FEE_MAX;
+  const commissionValid = !commissionRequired || (percentValid && fixedValid);
+
   const canSubmit =
     canCreate &&
     !isSubmitting &&
     form.username.trim().length > 0 &&
     form.password.length > 0 &&
     passwordsMatch &&
+    commissionValid &&
     (!orgRequired || effectiveOrg !== "");
 
   const set = <K extends keyof typeof form>(key: K) =>
@@ -212,6 +237,10 @@ export default function NewUserPage() {
       address: form.address.trim() || undefined,
       role: form.role as CreateUserPayload["role"],
       organization: effectiveOrg ? Number(effectiveOrg) : undefined,
+      commission_percent_on_prime_rc: commissionRequired
+        ? form.commission_percent.trim()
+        : undefined,
+      commission_fixed_on_policy_fee: commissionRequired ? fixedValue : undefined,
     };
     try {
       await createUser(payload);
@@ -483,6 +512,56 @@ export default function NewUserPage() {
               </p>
             ) : null}
           </div>
+
+          {/* Commission — obligatoire pour un apporteur */}
+          {commissionRequired ? (
+            <div className="rounded-xl border border-border bg-muted/40 p-4">
+              <div className="flex items-center gap-2">
+                <Percent className="text-primary" size={13} />
+                <h3 className="text-xs font-extrabold uppercase tracking-wide text-black/60">
+                  Commission de l&apos;apporteur
+                </h3>
+              </div>
+              <p className="mt-1 text-[11px] font-medium text-black/45">
+                Les deux valeurs sont obligatoires : sans elles, l&apos;apporteur pourra
+                saisir et encaisser, mais l&apos;émission de ses contrats sera refusée.
+              </p>
+              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                <FormField
+                  hint="Part variable, entre 0 et 100."
+                  inputMode="decimal"
+                  label="% sur la prime RC"
+                  onChange={set("commission_percent")}
+                  required
+                  suffix={
+                    <span className="text-xs font-bold text-black/35">%</span>
+                  }
+                  value={form.commission_percent}
+                />
+                <FormField
+                  hint={`Part fixe, plafonnée à ${POLICY_FEE_MAX} FCFA (coût de police).`}
+                  inputMode="numeric"
+                  label="Fixe sur le coût de police"
+                  onChange={set("commission_fixed")}
+                  required
+                  suffix={
+                    <span className="text-xs font-bold text-black/35">FCFA</span>
+                  }
+                  value={form.commission_fixed}
+                />
+              </div>
+              {form.commission_percent.trim() !== "" && !percentValid ? (
+                <p className="mt-2 text-[11px] font-bold text-amber-600">
+                  Le pourcentage doit être compris entre 0 et 100.
+                </p>
+              ) : null}
+              {form.commission_fixed.trim() !== "" && !fixedValid ? (
+                <p className="mt-2 text-[11px] font-bold text-amber-600">
+                  Le montant fixe doit être un entier entre 0 et {POLICY_FEE_MAX} FCFA.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </FormSection>
 
         {/* ── Erreur globale ─────────────────────────────────────────── */}

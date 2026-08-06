@@ -14,6 +14,10 @@ from contracts.services import (
     calculate_contract_quote,
     extract_prime_rc,
 )
+from integrations.ass.referentials import (
+    reduction_rate_for_genre,
+    reduction_rate_for_genres,
+)
 from organizations.models import Organization
 
 
@@ -338,7 +342,8 @@ def test_fleet_issue_payload_reuses_rc_amounts_returned_by_ass_quote():
     assert payload["souscripteur"]["nom"] == "DIOP"
     assert payload["items"][0]["assure"]["nom"] == "NDIAYE"
     assert payload["cout_police"] == 3_000
-    assert payload["remise_rc"] == 0
+    # Flotte homogene de VP : taux par defaut.
+    assert payload["remise_rc"] == 20
 
 
 def test_trailer_issue_payload_uses_issued_vehicle_reference_and_pdf_expiration_date():
@@ -423,3 +428,69 @@ def test_trailer_issue_payload_uses_issued_vehicle_reference_and_pdf_expiration_
     assert payloads[1]["periodicite"] == "MOIS"
     assert payloads[1]["typePersonne"] == "MORALE"
     assert payloads[1]["referenceTrxPartner"] == "REF-FLEET-REM-1-2"
+
+
+# ─── Reduction sur la prime nette (taux confirmes par ASS le 2026-08-06) ──────
+
+
+@pytest.mark.parametrize(
+    "genre,expected",
+    [
+        # Taux par defaut.
+        ("VP", 20),
+        ("TPM3T500", 20),
+        ("2RMOT", 20),
+        # Utilitaires C2 : 40 %.
+        ("TPC", 40),
+        ("TPC3T500", 40),
+        ("TPC3T500P", 40),
+        # Transport de personnes C4 : 8 %.
+        ("TPV8", 8),
+        ("TPV9", 8),
+        # Garde-fou : ces genres contiennent "TPC" mais relevent d'autres
+        # categories (auto-ecole, location, engins). Ils ne doivent PAS heriter
+        # des 40 % tant qu'ASS n'a pas tranche leur cas.
+        ("C7-AE-VTADC_TPC", 20),
+        ("C7-AE-VTSDC_TPC", 20),
+        ("C8-VLSC_TPC", 20),
+        ("C10-VS-EMC_TPC3T500", 20),
+        ("C10-VS-TAR_TPC3T500P", 20),
+        ("C10-VS-VCP_TPC3T500", 20),
+        # Genre absent ou inconnu : taux par defaut, jamais d'erreur.
+        (None, 20),
+        ("", 20),
+        ("GENRE-INEXISTANT", 20),
+    ],
+)
+def test_reduction_rate_for_genre(genre, expected):
+    assert reduction_rate_for_genre(genre) == expected
+
+
+@pytest.mark.parametrize(
+    "genres,expected",
+    [
+        # Flotte homogene : le taux du lot s'applique.
+        (["VP", "VP"], 20),
+        (["TPC", "TPC3T500"], 40),
+        (["TPV8", "TPV9"], 8),
+        # Flotte mixte : repli sur le taux par defaut plutot que d'accorder
+        # 40 % a un vehicule qui n'y a pas droit (remise_rc est unique a la
+        # racine du payload flotte).
+        (["VP", "TPC3T500"], 20),
+        (["TPC", "TPV8"], 20),
+        # Lot vide ou genres manquants.
+        ([], 20),
+        ([None, ""], 20),
+    ],
+)
+def test_reduction_rate_for_genres(genres, expected):
+    assert reduction_rate_for_genres(genres) == expected
+
+
+def test_auto_rc_payload_carries_the_genre_reduction_rate():
+    vp = build_auto_rc_payload({"subcategory": "VP", "fiscalPower": "8"})
+    utilitaire = build_auto_rc_payload({"subcategory": "TPC3T500", "fiscalPower": "8"})
+
+    assert vp["remise_rc"] == 20
+    assert utilitaire["remise_rc"] == 40
+    assert vp["cout_police"] == 3_000

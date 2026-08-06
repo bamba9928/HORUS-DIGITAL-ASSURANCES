@@ -187,6 +187,8 @@ export type CreateUserPayload = {
   address?: string;
   role: AuthUser["role"];
   organization?: number | null;
+  commission_percent_on_prime_rc?: string;
+  commission_fixed_on_policy_fee?: number;
 };
 
 export async function listUsers() {

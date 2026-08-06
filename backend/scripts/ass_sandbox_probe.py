@@ -93,6 +93,44 @@ def probe_rc_auto(client):
     return show("rc.request — VP, garanties []", payload, lambda: client.calculate_auto_rc(payload))
 
 
+def probe_reduction(client):
+    """Tranche l'unite de `remise_rc` : taux en % ou montant en FCFA ?
+
+    ASS a confirme des taux (20 % par defaut, 40 % TPC, 8 % TPV) mais le champ
+    n'est decrit dans aucune documentation. On envoie le meme vehicule trois
+    fois — sans reduction, avec 20 (lu comme un taux), avec 894 (le montant que
+    vaudraient 20 % d'une PrimeRC de 4469) — et on compare la `Reduction`
+    renvoyee. Celle qui vaut ~894 designe la bonne unite.
+    """
+    from contracts.services import build_auto_rc_payload
+
+    base = build_auto_rc_payload(VEHICLE_VP, guarantees=[], guarantee_options={})
+    results = {}
+    for label, value in (("sans reduction", 0), ("taux (20)", 20), ("montant (894)", 894)):
+        payload = {**base, "remise_rc": value}
+        response = show(
+            f"rc.request — remise_rc = {value} [{label}]",
+            payload,
+            lambda p=payload: client.calculate_auto_rc(p),
+        )
+        if response:
+            results[label] = {
+                "Reduction": response.get("Reduction"),
+                "PrimeRC": response.get("PrimeRC"),
+                "PrimeTotale": response.get("PrimeTotale"),
+            }
+
+    print(f"\n{'=' * 70}\n# VERDICT unite de remise_rc\n{'=' * 70}")
+    for label, values in results.items():
+        print(f"  {label:16} -> {values}")
+    print(
+        "\n  Lecture : la variante dont la Reduction vaut ~894 (20 % de la PrimeRC)\n"
+        "  donne l'unite attendue. Si les deux renvoient 0, ASS ignore le champ\n"
+        "  et applique ses taux ailleurs — a leur signaler."
+    )
+    return results
+
+
 def probe_rc_auto_options(client):
     from contracts.services import build_auto_rc_payload
 
@@ -248,6 +286,7 @@ PROBES = {
     "stock": probe_stock,
     "rc-auto": probe_rc_auto,
     "rc-auto-options": probe_rc_auto_options,
+    "reduction": probe_reduction,
     "rc-tpc": probe_rc_tpc,
     "rc-moto": probe_rc_moto,
     "rc-bus": probe_rc_bus,

@@ -266,3 +266,50 @@ def filter_subcategories(category=None, contract_type=None):
         }
         results = [item for item in results if item["category"] in allowed_categories]
     return results
+
+
+# ─── Reduction sur la prime nette ────────────────────────────────────────────
+# Taux confirmes par ASS (2026-08-06). C'est ASS qui applique le taux et renvoie
+# le montant calcule (champ "Reduction" de la reponse) : on transmet donc le
+# TAUX dans "remise_rc", pas une somme en francs.
+#
+# Verifie le 2026-06-11 : avec remise_rc=0 la reponse porte Reduction=0. ASS
+# n'applique donc aucun taux par defaut — c'est bien a nous de l'envoyer.
+
+ASS_REDUCTION_RATE_DEFAULT = 20
+ASS_REDUCTION_RATE_TPC = 40
+ASS_REDUCTION_RATE_TPV = 8
+
+# Perimetre volontairement strict, adosse a la categorie et non au libelle :
+# neuf genres composites contiennent "TPC" tout en appartenant a d'autres
+# categories (C7 auto-ecole, C8 location, C10 engins/tracteurs). Ils gardent le
+# taux par defaut tant qu'ASS n'a pas tranche leur cas.
+REDUCTION_GENRES_TPC = frozenset(
+    item["value"] for item in VEHICLE_SUBCATEGORIES if item["category"] == "C2"
+)
+REDUCTION_GENRES_TPV = frozenset(
+    item["value"] for item in VEHICLE_SUBCATEGORIES if item["category"] == "C4"
+)
+
+
+def reduction_rate_for_genre(genre):
+    """Taux de reduction (en %) applicable a un genre ASS."""
+    if genre in REDUCTION_GENRES_TPC:
+        return ASS_REDUCTION_RATE_TPC
+    if genre in REDUCTION_GENRES_TPV:
+        return ASS_REDUCTION_RATE_TPV
+    return ASS_REDUCTION_RATE_DEFAULT
+
+
+def reduction_rate_for_genres(genres):
+    """Taux commun a un lot de vehicules (flotte).
+
+    Le payload flotte n'expose qu'un seul "remise_rc" a la racine alors que
+    chaque vehicule porte son propre genre. On ne retient un taux specifique
+    que si tous les vehicules le partagent, sinon on retombe sur le taux par
+    defaut : jamais 40 % applique a un vehicule qui n'y a pas droit.
+    """
+    rates = {reduction_rate_for_genre(genre) for genre in genres if genre}
+    if len(rates) == 1:
+        return rates.pop()
+    return ASS_REDUCTION_RATE_DEFAULT
