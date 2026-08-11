@@ -981,12 +981,31 @@ def extract_fleet_items(ass_response):
 
 
 def extract_issue_data(ass_response):
+    """Extrait les references d'attestation d'une reponse d'emission.
+
+    Deux formats, comme pour extract_rc_breakdown :
+    - mock interne : les references sont sous "data" ;
+    - API reelle (valide en sandbox 2026-08-06) : il n'y a PAS de cle "data",
+      attestationNumber / linkAttestation / linkCarteBrune / secureKey /
+      dateExpiration sont a la RACINE de la reponse.
+
+    Ce point est critique : l'emission ASS a deja abouti et consomme un QR quand
+    on arrive ici. Refuser la reponse ferait perdre une attestation reellement
+    emise, sans moyen de la rattacher au contrat.
+    """
     if not is_success_response(ass_response):
         raise ContractIssueError(response_message(ass_response, "Emission ASS echouee."))
+
     data = ass_response.get("data")
-    if not isinstance(data, dict):
-        raise ContractIssueError("Reponse ASS emission invalide.")
-    return data
+    if isinstance(data, dict):
+        return data
+
+    if isinstance(ass_response, dict) and (
+        ass_response.get("attestationNumber") or ass_response.get("linkAttestation")
+    ):
+        return ass_response
+
+    raise ContractIssueError("Reponse ASS emission invalide.")
 
 
 def extract_fleet_issue_items(ass_response):

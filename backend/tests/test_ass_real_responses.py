@@ -8,9 +8,12 @@ import pytest
 
 from contracts.models import Contract
 from contracts.services import (
+    ContractIssueError,
+    extract_issue_data,
     extract_prime_rc,
     extract_rc_breakdown,
     normalize_moto_usage,
+    parse_ass_datetime,
 )
 from integrations.ass.client import extract_available_qr
 from integrations.ass.views import AssVerifyRegistrationView
@@ -148,3 +151,62 @@ def test_verify_registration_maps_real_status_codes():
     assert view._extract_is_registered(REAL_VERIF_ALREADY_INSURED) is True
     assert view._extract_is_registered(REAL_VERIF_FREE) is False
     assert view._extract_vehicle(REAL_VERIF_ALREADY_INSURED) is None
+
+
+# ─── Emission (reponse sandbox exacte, capturee le 2026-08-06) ───────────────
+# Point critique : la reponse d'emission reelle n'a PAS de cle "data". Les
+# references d'attestation sont a la RACINE. Un extract_issue_data qui exigeait
+# data=dict rejetait donc une emission pourtant reussie — apres qu'ASS ait
+# consomme un QR et genere l'attestation.
+REAL_ISSUE_RESPONSE = {
+    "operationStatus": "SUCCESS",
+    "operationMessage": "Opération effectuée avec succès.",
+    "referenceExterne": "HORUS-SBX-3F2A91C4D0E7",
+    "linkAttestation": "https://aastest.diotali.com/#/attestation/SN004TESTF6EBFK",
+    "attestationNumber": "SN004TESTF6EBFK",
+    "secureKey": "xxxxxxxxxxxxxx",
+    "dateExpiration": "2026-09-11 23:59:59",
+    "linkCarteBrune": "https://aastest.diotali.com/#/attestation/SN004TESTF6EBFK",
+    "PrimeRC": "3575",
+    "Reduction": "894",
+    "CoutPolice": "3000",
+    "PrimeTotale": "7884",
+}
+
+
+def test_extract_issue_data_accepte_le_format_racine_reel():
+    data = extract_issue_data(REAL_ISSUE_RESPONSE)
+
+    assert data["attestationNumber"] == "SN004TESTF6EBFK"
+    assert data["linkAttestation"].startswith("https://aastest.diotali.com/")
+    assert data["linkCarteBrune"].startswith("https://aastest.diotali.com/")
+    assert data["dateExpiration"] == "2026-09-11 23:59:59"
+
+
+def test_extract_issue_data_accepte_toujours_le_format_mock_imbrique():
+    mock = {
+        "operationStatus": "SUCCESS",
+        "data": {"attestationNumber": "SNMOCK0001", "linkAttestation": "https://example.test/a"},
+    }
+
+    assert extract_issue_data(mock)["attestationNumber"] == "SNMOCK0001"
+
+
+def test_extract_issue_data_refuse_une_reponse_sans_attestation():
+    """Une reponse SUCCESS mais vide de references reste une erreur."""
+    with pytest.raises(ContractIssueError):
+        extract_issue_data({"operationStatus": "SUCCESS", "data": "4769"})
+
+
+def test_date_expiration_reelle_est_parsee():
+    """Le format reel utilise un espace, pas le "T" du PDF."""
+    parsed = parse_ass_datetime(REAL_ISSUE_RESPONSE["dateExpiration"])
+
+    assert parsed is not None
+    assert (parsed.year, parsed.month, parsed.day) == (2026, 9, 11)
+
+
+def test_reduction_reelle_est_bien_appliquee_par_ass():
+    """remise_rc=20 envoye -> ASS renvoie Reduction=894 et une PrimeTotale reduite."""
+    assert REAL_ISSUE_RESPONSE["Reduction"] == "894"
+    assert int(REAL_ISSUE_RESPONSE["PrimeTotale"]) < 8_927

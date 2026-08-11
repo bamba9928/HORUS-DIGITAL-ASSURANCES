@@ -45,7 +45,11 @@ VEHICLE_VP = {
     "model": "YARIS",
     "category": "C1",
     "subcategory": "VP",
-    "registration": "DK-1234-AB",
+    # ASS refuse l'emission sur un vehicule deja couvert ("dispose deja d'une
+    # police d'assurance chez X") : la sonde issue-mono exige donc une plaque
+    # libre. Surchargeable sans toucher au fichier :
+    #     ASS_PROBE_REGISTRATION=DK-7788-HZ uv run python ... issue-mono
+    "registration": os.environ.get("ASS_PROBE_REGISTRATION", "DK-1234-AB"),
     "chassis": "",
     "energy": "ESSENCE",
     "fiscalPower": "8",
