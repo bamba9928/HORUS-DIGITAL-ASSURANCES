@@ -140,7 +140,9 @@ class AssClient:
                 "operationMessage": "Stock QR fictif.",
                 "data": "80.0",
             }
-        return self._post(ASS_ENDPOINT_STOCK_QR, payload or {})
+        # ASS exige {"code": "1000"} : un corps vide part en 400 KeyError. Tous
+        # les appelants le passent deja, ce defaut evite le piege au suivant.
+        return self._post(ASS_ENDPOINT_STOCK_QR, payload or {"code": "1000"})
 
     def verify_registration(self, payload):
         if settings.ASS_MOCK_ENABLED:

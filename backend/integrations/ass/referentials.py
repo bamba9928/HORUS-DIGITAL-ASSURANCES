@@ -280,6 +280,14 @@ ASS_REDUCTION_RATE_DEFAULT = 20
 ASS_REDUCTION_RATE_TPC = 40
 ASS_REDUCTION_RATE_TPV = 8
 
+# Plafond impose par l'API, verifie contre la sandbox le 2026-08-06 : envoyer 40
+# fait echouer l'appel avec un 400 explicite, sur TOUS les genres y compris TPC —
+#   "Erreur (8OO) : la remise RC doit etre compris entre 0 et 20%."
+# ASS a pourtant annonce 40 % pour les TPC : leur API dit le contraire, et c'est
+# elle qui fait foi. On borne donc le taux plutot que de garder un appel voue a
+# l'echec. Le jour ou ils relevent le plafond, seule cette constante bouge.
+ASS_REDUCTION_RATE_MAX = 20
+
 # Perimetre volontairement strict, adosse a la categorie et non au libelle :
 # neuf genres composites contiennent "TPC" tout en appartenant a d'autres
 # categories (C7 auto-ecole, C8 location, C10 engins/tracteurs). Ils gardent le
@@ -293,12 +301,14 @@ REDUCTION_GENRES_TPV = frozenset(
 
 
 def reduction_rate_for_genre(genre):
-    """Taux de reduction (en %) applicable a un genre ASS."""
+    """Taux de reduction (en %) applicable a un genre ASS, borne au plafond API."""
     if genre in REDUCTION_GENRES_TPC:
-        return ASS_REDUCTION_RATE_TPC
-    if genre in REDUCTION_GENRES_TPV:
-        return ASS_REDUCTION_RATE_TPV
-    return ASS_REDUCTION_RATE_DEFAULT
+        rate = ASS_REDUCTION_RATE_TPC
+    elif genre in REDUCTION_GENRES_TPV:
+        rate = ASS_REDUCTION_RATE_TPV
+    else:
+        rate = ASS_REDUCTION_RATE_DEFAULT
+    return min(rate, ASS_REDUCTION_RATE_MAX)
 
 
 def reduction_rate_for_genres(genres):

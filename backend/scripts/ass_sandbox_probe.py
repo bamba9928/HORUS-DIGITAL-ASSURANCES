@@ -17,6 +17,7 @@ test) puis "cancel" l'annule : a lancer explicitement.
 import json
 import os
 import sys
+from datetime import date, timedelta
 from uuid import uuid4
 
 os.environ["ASS_MOCK_ENABLED"] = "False"
@@ -32,7 +33,10 @@ from integrations.ass.client import AssClient  # noqa: E402
 from integrations.ass.exceptions import AssApiError  # noqa: E402
 
 
-EFFECT_DATE = "2026-06-12"
+# Date d'effet calculee a l'execution : ASS refuse toute date anterieure au jour
+# meme ("Erreur : la date d'effet doit etre posterieure ou egale a la date du
+# jour!"). Une constante figee rend les sondes ininterpretables des le lendemain.
+EFFECT_DATE = (date.today() + timedelta(days=1)).isoformat()
 
 # Vehicule VP tel que le wizard le produit (valeurs par defaut assumees :
 # chassis vide — facultatif —, 1ere circulation 2000-01-01, valeurs a 0).

@@ -440,10 +440,12 @@ def test_trailer_issue_payload_uses_issued_vehicle_reference_and_pdf_expiration_
         ("VP", 20),
         ("TPM3T500", 20),
         ("2RMOT", 20),
-        # Utilitaires C2 : 40 %.
-        ("TPC", 40),
-        ("TPC3T500", 40),
-        ("TPC3T500P", 40),
+        # Utilitaires C2 : ASS annonce 40 %, mais son API plafonne a 20 % et
+        # rejette 40 avec un 400 (verifie en sandbox le 2026-08-06). On envoie
+        # donc la valeur bornee, seule acceptee.
+        ("TPC", 20),
+        ("TPC3T500", 20),
+        ("TPC3T500P", 20),
         # Transport de personnes C4 : 8 %.
         ("TPV8", 8),
         ("TPV9", 8),
@@ -471,11 +473,10 @@ def test_reduction_rate_for_genre(genre, expected):
     [
         # Flotte homogene : le taux du lot s'applique.
         (["VP", "VP"], 20),
-        (["TPC", "TPC3T500"], 40),
+        (["TPC", "TPC3T500"], 20),
         (["TPV8", "TPV9"], 8),
-        # Flotte mixte : repli sur le taux par defaut plutot que d'accorder
-        # 40 % a un vehicule qui n'y a pas droit (remise_rc est unique a la
-        # racine du payload flotte).
+        # Flotte mixte : repli sur le taux par defaut (remise_rc est unique a la
+        # racine du payload flotte, il ne peut pas suivre chaque vehicule).
         (["VP", "TPC3T500"], 20),
         (["TPC", "TPV8"], 20),
         # Lot vide ou genres manquants.
@@ -492,5 +493,17 @@ def test_auto_rc_payload_carries_the_genre_reduction_rate():
     utilitaire = build_auto_rc_payload({"subcategory": "TPC3T500", "fiscalPower": "8"})
 
     assert vp["remise_rc"] == 20
-    assert utilitaire["remise_rc"] == 40
+    assert utilitaire["remise_rc"] == 20
     assert vp["cout_police"] == 3_000
+
+
+def test_no_genre_can_produce_a_rate_the_ass_api_would_reject():
+    """Garde-fou : l'API rejette tout remise_rc > 20 avec un 400 (2026-08-06).
+
+    Aucun genre du referentiel ne doit pouvoir generer un appel voue a l'echec.
+    """
+    from integrations.ass.referentials import VEHICLE_SUBCATEGORIES
+
+    for item in VEHICLE_SUBCATEGORIES:
+        rate = reduction_rate_for_genre(item["value"])
+        assert 0 <= rate <= 20, f"{item['value']} produit remise_rc={rate}, refuse par ASS"
