@@ -37,6 +37,83 @@ Conséquences :
 **Action ASS** : leur signaler que l'instance sandbox ne sert plus aucune base, et
 redemander le jeton après remontée (il est régénéré à chaque restauration).
 
+## 1 bis. Cause réelle du 404 : régression `dbfilter` chez ASS
+
+Le 404 n'était pas une instance vide — c'est leur Odoo qui **ne résout plus de base
+de données** pour une requête en Basic Auth seul. Preuve par les trois appels :
+
+| Requête `stock.qr` | Résultat |
+| --- | --- |
+| Cookie de session seul | **401** `Your token could not be authenticated` — la route existe, l'auth tourne |
+| Cookie **+** Basic Auth | **201 SUCCESS** — `data: "26.0"` |
+| Basic Auth seul | **404 HTML** — la route ne se résout pas |
+
+La base servie par la session s'appelle `insurance`
+(`/web/session/get_session_info`). Aucun autre moyen de la désigner ne fonctionne :
+`?db=insurance`, en-tête `X-Odoo-Db`, cookie `db` → 404 dans tous les cas. Seule
+une vraie session Odoo débloque la résolution.
+
+C'est donc une **régression de configuration chez ASS** (leur `dbfilter` ne mappe
+plus l'hôte sandbox sur la base `insurance`), apparue depuis la restauration de
+leur instance — les mêmes appels passaient en Basic Auth seul les 2026-06-11 et
+2026-08-06.
+
+Message à leur transmettre : *« Depuis la restauration de votre instance,
+`/api/v1/partner/*` sur kiiraytest renvoie un 404 HTML pour toute requête en Basic
+Auth seul : votre Odoo ne résout plus de base (la racine redirige vers
+`/web/database/selector`). Les mêmes appels réussissent avec un cookie de session
+lié à la base `insurance`. Merci de rétablir le `dbfilter` de la sandbox. »*
+
+En attendant, les sondes peuvent tourner en injectant un cookie de session dans le
+`requests.Session` passé à `AssClient(session=...)` — aucun changement de code
+nécessaire, le client accepte déjà une session.
+
+## 1 ter. ⚠️ `data` n'est plus l'assiette RC — le champ est devenu incohérent
+
+Sondes réelles du 2026-08-12, toutes en SUCCESS avec nos propres builders :
+
+| Endpoint | `data` | `PrimeRC` | `PrimeTotale` | `data` = PrimeRC + Cedeao ? |
+| --- | ---: | ---: | ---: | --- |
+| `rc.request` VP sans garanties | 5 069 | 3 575 | 7 884 | ❌ (3 875) |
+| `rc.request` VP + garanties [1,2,4] | 14 008 | 10 726 | 22 499 | ❌ (11 026) |
+| `rc.moto` 2RMOT | 3 003 | 2 382 | 6 495 | ❌ (2 682) |
+| `bus.ecole.rc` BE-VTA | **241 718** | 16 899 | 23 407 | ❌ — 10× la prime totale |
+| `rc.garage` C6-WG-4R | **164 183** | 68 831 | 83 908 | ❌ — 2× la prime totale |
+
+La règle « `data` = PrimeRC + CEDEAO », validée en juin, **ne tient plus sur aucun
+endpoint**. Pire, le même appel VP sans garanties renvoyait `data: 4769` le
+2026-08-06 pour une `PrimeRC` identique (3 575) : leur calcul de `data` a changé
+entre-temps.
+
+En revanche la **ventilation reste parfaitement cohérente sur les cinq sondes** :
+`PrimeRC + CoutPolice + PrimeAG + Taxe + Fga + Cedeao = PrimeTotale`, au franc près.
+`PrimeRC` et `PrimeTotale` sont donc fiables ; `data` ne l'est pas.
+
+Conséquences, car `extract_prime_rc` fait `int(data)` et alimente
+`contract.prime_rc_ass`, qui sert **à la fois** d'assiette de commission apporteur
+et de `responsabiliteCivile` envoyé à l'émission :
+
+1. **Émission incohérente** : un contrat garage déclarerait une RC de 164 183 F pour
+   une prime totale de 83 908 F ; un bus école, 241 718 F pour 23 407 F.
+2. **Commission faussée** : la décision métier du 2026-06-11 (« assiette = `data`,
+   soit PrimeRC + CEDEAO ») reposait sur une équivalence qui n'existe plus.
+
+Le PDF décrit pourtant `data` comme « Prime Net RC » — c'est-à-dire ce que
+`PrimeRC` contient réellement.
+
+**Correctif appliqué** : `extract_prime_rc` additionne désormais explicitement
+`PrimeRC + Cedeao` au lieu de lire `data`. La décision métier du 2026-06-11
+(assiette = RC + CEDEAO, et non PrimeRC pure) est donc **reconduite à l'identique**
+— seule la façon de l'obtenir change, puisque `data` ne la porte plus. `data` ne
+subsiste qu'en repli pour les réponses sans ventilation (remorque, formats
+historiques). Rétrocompatible : sur la réponse de juin, `4469 + 300 = 4769` = la
+valeur que `data` portait alors.
+
+Question à poser à ASS malgré tout : *« Que recouvre exactement le champ `data` de
+vos réponses RC ? Sur `rc.garage` il vaut 164 183 pour une `PrimeTotale` de
+83 908, et sur `bus.ecole.rc` 241 718 pour 23 407. Quelle valeur attendez-vous
+comme `responsabiliteCivile` à l'émission ? »*
+
 ## 2. Tests automatisés
 
 `234 tests passés` (`pytest backend/tests`, 3 min 51 s). Aucun échec.
@@ -129,5 +206,16 @@ joignabilité d'ASS.
   (`FleetCoverageSerializer`). Mono, moto, bus et garage passent sans borne côté
   backend ; seul le front limite à 12. Un appel API direct laisserait passer
   `duree=99`.
-- `check.qrcode.status` (Postman, segment `promobile` et non `partner`) n'est pas
-  implémenté.
+- `check.qrcode.status` (Postman) n'est pas implémenté. Attention : il vit sur le
+  segment **`promobile`**, pas `partner` — or `AssClient._build_url` applique un
+  segment unique à tous les appels. L'implémenter demanderait de rendre le segment
+  paramétrable par endpoint.
+- `incorpore.flotte.request` (ajout de véhicules à une flotte existante) et
+  `subtract.flotte.request` (retrait) sont **nommés** dans le tableau du PDF §7
+  mais n'ont aucune section de spécification : ni méthode, ni URL, ni payload. Non
+  implémentés — il n'y a donc pas d'avenant de flotte. À demander à ASS si le
+  besoin se confirme.
+- Le segment `{partner}` vaut littéralement `partner` en sandbox, mais le PDF §3.2
+  le décrit comme « votre nom de partenaire communiqué lors de la création de vos
+  accès » : il peut différer en production. Aucun changement de code à prévoir,
+  c'est déjà la variable d'env `ASS_API_PARTNER_SEGMENT`.

@@ -913,16 +913,34 @@ def build_garage_issue_payload(contract, reference):
 
 def extract_prime_rc(ass_response):
     """
-    Extrait la Prime RC depuis la reponse ASS.
-    Formats supportes :
-    - data: chaine ou entier (API reelle : data = PrimeRC + Cedeao, ex. "4769") ;
-    - data: dict camelCase (mock interne).
+    Assiette RC du contrat = PrimeRC + CEDEAO, additionnes explicitement.
 
-    La valeur alimente contract.prime_rc_ass : assiette de la commission
-    apporteur (RC + CEDEAO incluse — decision metier actee le 2026-06-11).
+    Alimente contract.prime_rc_ass, qui sert a la fois d'assiette de commission
+    apporteur (decision metier du 2026-06-11, reconduite le 2026-08-12) et de
+    `responsabiliteCivile` envoye a l'emission.
+
+    Ne PAS lire `data` : ce champ valait effectivement PrimeRC + CEDEAO en juin,
+    mais il a derive depuis. Sondes reelles du 2026-08-12 :
+
+        garage      data = 164 183  pour PrimeRC 68 831 / PrimeTotale 83 908
+        bus ecole   data = 241 718  pour PrimeRC 16 899 / PrimeTotale 23 407
+        VP          data =   5 069  pour PrimeRC  3 575 (le meme appel renvoyait
+                                    4 769 le 2026-08-06, a PrimeRC identique)
+
+    Le lire reviendrait a declarer sur l'attestation une RC superieure a la prime
+    totale encaissee. La ventilation, elle, reste juste au franc pres sur les cinq
+    sondes (PrimeRC + CoutPolice + PrimeAG + Taxe + Fga + Cedeao = PrimeTotale).
+
+    `data` ne subsiste qu'en repli, pour les reponses sans ventilation : remorque
+    (`remorque.rc.request`) et formats historiques.
     """
     if not is_success_response(ass_response):
         raise QuoteCalculationError(response_message(ass_response, "Calcul ASS echoue."))
+
+    if isinstance(ass_response, dict) and ass_response.get("PrimeRC") is not None:
+        breakdown = extract_rc_breakdown(ass_response)
+        return breakdown["prime_rc_ass"] + breakdown["cedeao"]
+
     data = ass_response.get("data")
     if data is None:
         raise QuoteCalculationError("Reponse ASS invalide : champ 'data' manquant.")

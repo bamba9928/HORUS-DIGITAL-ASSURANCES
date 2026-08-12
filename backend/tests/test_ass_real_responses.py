@@ -36,6 +36,35 @@ REAL_RC_RESPONSE = {
     "PrimeTotale": "8927",
 }
 
+# Sondes reelles du 2026-08-12 : `data` a derive et ne vaut plus PrimeRC + Cedeao.
+# Reponses sandbox exactes, conservees telles quelles.
+REAL_RC_GARAGE_RESPONSE = {
+    "operationStatus": "SUCCESS",
+    "operationMessage": "Opération effectuée avec succès.",
+    "data": "164183",  # > PrimeTotale : inexploitable comme assiette RC
+    "PrimeRC": "68831",
+    "Reduction": "17208",
+    "CoutPolice": "3000",
+    "PrimeAG": "0",
+    "Taxe": "10056",
+    "Fga": "1721",
+    "Cedeao": "300",
+    "PrimeTotale": "83908",
+}
+REAL_RC_BUS_RESPONSE = {
+    "operationStatus": "SUCCESS",
+    "operationMessage": "Opération effectuée avec succès.",
+    "data": "241718",  # 10x la prime totale
+    "PrimeRC": "16899",
+    "Reduction": "4225",
+    "CoutPolice": "3000",
+    "PrimeAG": "0",
+    "Taxe": "2786",
+    "Fga": "422",
+    "Cedeao": "300",
+    "PrimeTotale": "23407",
+}
+
 # stock.qr — compte sandbox sans stock alloue
 REAL_STOCK_RESPONSE = {
     "operationStatus": "SUCCESS",
@@ -59,7 +88,27 @@ REAL_VERIF_FREE = {
 
 
 def test_extract_prime_rc_supports_real_string_data():
+    # PrimeRC (4469) + Cedeao (300) — ici `data` vaut encore la meme chose.
     assert extract_prime_rc(REAL_RC_RESPONSE) == 4769
+
+
+@pytest.mark.parametrize(
+    ("response", "expected"),
+    [
+        (REAL_RC_GARAGE_RESPONSE, 68_831 + 300),
+        (REAL_RC_BUS_RESPONSE, 16_899 + 300),
+    ],
+)
+def test_extract_prime_rc_ignores_data_when_it_diverges(response, expected):
+    """L'assiette RC s'additionne, elle ne se lit pas dans `data`.
+
+    Sur ces deux reponses reelles, `data` depasse la prime totale encaissee : le
+    lire ferait declarer sur l'attestation une RC superieure au montant du
+    contrat, et gonflerait la commission apporteur d'autant.
+    """
+    assert extract_prime_rc(response) == expected
+    assert extract_prime_rc(response) != int(response["data"])
+    assert extract_prime_rc(response) < int(response["PrimeTotale"])
 
 
 def test_extract_rc_breakdown_supports_real_root_pascal_case_format():
