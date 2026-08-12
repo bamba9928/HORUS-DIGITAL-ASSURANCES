@@ -17,6 +17,22 @@ from organizations.models import Organization
 from payments.models import Payment
 
 
+@pytest.fixture(autouse=True)
+def _static_storage_without_manifest(settings):
+    """Neutralise le stockage a manifeste le temps des tests.
+
+    `STORAGES` pointe en temps normal sur CompressedManifestStaticFilesStorage,
+    qui exige un `collectstatic` prealable : sans lui, le moindre `{% static %}`
+    des gabarits unfold leve "Missing staticfiles manifest entry". Ces tests
+    verifient le rendu des ModelAdmin, pas le hachage des assets — les faire
+    dependre d'une etape de build les rendrait verts en local et rouges en CI.
+    """
+    settings.STORAGES = {
+        **settings.STORAGES,
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
+
+
 @pytest.fixture
 def admin_client(client, db):
     superuser = User.objects.create_superuser(
