@@ -1,5 +1,6 @@
 import logging
 import time
+from urllib.parse import urlsplit
 
 import requests
 from django.conf import settings
@@ -50,6 +51,25 @@ class AssClient:
         self.username = username if username is not None else settings.ASS_USERNAME
         self.password = password if password is not None else settings.ASS_PASSWORD
         self.session = session or requests.Session()
+        self._apply_session_cookie()
+
+    def _apply_session_cookie(self):
+        """Pose le cookie de session Odoo si ASS_SESSION_ID est configure.
+
+        Contournement temporaire de la regression `dbfilter` d'ASS (voir le
+        commentaire de ASS_SESSION_ID dans settings.py). Le cookie ne sert qu'a
+        designer la base : c'est toujours le Basic Auth qui authentifie.
+
+        Porte sur le seul hote d'ASS — un cookie sans domaine partirait vers
+        n'importe quelle URL appelee avec cette session.
+        """
+        session_id = getattr(settings, "ASS_SESSION_ID", "")
+        if not session_id or not self.base_url:
+            return
+        host = urlsplit(self.base_url).hostname
+        if not host:
+            return
+        self.session.cookies.set("session_id", session_id, domain=host, path="/")
 
     def calculate_auto_rc(self, payload):
         if settings.ASS_MOCK_ENABLED:

@@ -276,6 +276,18 @@ ASS_API_PARTNER_SEGMENT = config(
 )
 ASS_USERNAME = config("ASS_USERNAME", default="")
 ASS_PASSWORD = config("ASS_PASSWORD", default="")
+# CONTOURNEMENT TEMPORAIRE — a retirer des qu'ASS a corrige sa configuration.
+# Depuis la restauration de leur instance (constate le 2026-08-12), leur Odoo ne
+# resout plus de base de donnees pour une requete en Basic Auth seul : toutes les
+# routes /api/v1/partner/* repondent 404. Verifie sur stock.qr :
+#     cookie seul          -> 401 (la route existe, l'auth tourne)
+#     cookie + Basic Auth  -> 201 SUCCESS
+#     Basic Auth seul      -> 404
+# Aucun autre moyen de designer la base ne fonctionne (?db=, X-Odoo-Db, cookie db).
+# Renseigner ce cookie de session Odoo debloque les appels en attendant leur
+# correctif. Il EXPIRE (celui du 2026-08-12 court jusqu'au 18/08) : si les appels
+# se remettent a repondre 401, c'est qu'il est perime.
+ASS_SESSION_ID = config("ASS_SESSION_ID", default="")
 ASS_POLICY_FEE = config("ASS_POLICY_FEE", default=3000, cast=int)
 # Commission d'apport reversee par ASS a Horus sur la PrimeRC (en %). Constitue,
 # avec les frais de police, le revenu de Horus servant a payer la commission
