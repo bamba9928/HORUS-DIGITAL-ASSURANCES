@@ -13,3 +13,7 @@ node_modules/
 .next/
 build/
 dist/
+
+# Sortie de collectstatic : regeneree a chaque deploiement (deploy_horus.sh).
+backend/staticfiles/*
+!backend/staticfiles/.gitkeep
