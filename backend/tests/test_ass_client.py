@@ -201,6 +201,37 @@ def test_http_error_raises_ass_api_error_with_ass_message():
     ASS_MOCK_ENABLED=False,
     ASS_REAL_CALLS_ALLOWED=True,
 )
+def test_http_error_surfaces_ass_error_descrip_not_the_exception_class():
+    """Corps d'erreur reel d'ASS : le motif vit dans `error_descrip`.
+
+    Sans cette cle, on ne remontait que `error` — soit "UserError", qui bloque un
+    contrat sans dire pourquoi.
+    """
+    session = FakeAssSession(
+        response=FakeAssResponse(
+            payload={
+                "error": "UserError",
+                "error_descrip": "Erreur : Merci de choisir un option pour les personnes transportees.",
+            },
+            status_code=400,
+        )
+    )
+    client = AssClient(session=session)
+
+    with pytest.raises(AssApiError, match="personnes transportees") as exc_info:
+        client.calculate_auto_rc({"genre": "VP"})
+
+    assert "UserError" not in str(exc_info.value)
+
+
+@override_settings(
+    ASS_BASE_URL="https://kiiraytest.lasecu-assurances.sn",
+    ASS_API_PARTNER_SEGMENT="partner",
+    ASS_USERNAME="ass",
+    ASS_PASSWORD="secret-test",
+    ASS_MOCK_ENABLED=False,
+    ASS_REAL_CALLS_ALLOWED=True,
+)
 def test_network_error_raises_ass_api_error():
     session = FakeAssSession(error=requests.ConnectionError("connexion refusee"))
     client = AssClient(session=session)

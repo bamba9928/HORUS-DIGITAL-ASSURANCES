@@ -9,6 +9,7 @@ import pytest
 from contracts.models import Contract
 from contracts.services import (
     ContractIssueError,
+    contract_commission_basis,
     extract_issue_data,
     extract_prime_rc,
     extract_rc_breakdown,
@@ -93,22 +94,47 @@ def test_extract_prime_rc_supports_real_string_data():
 
 
 @pytest.mark.parametrize(
+    "response",
+    [REAL_RC_GARAGE_RESPONSE, REAL_RC_BUS_RESPONSE],
+)
+def test_extract_prime_rc_sends_data_even_when_it_looks_wrong(response):
+    """`responsabiliteCivile` doit valoir `data`, aussi surprenant soit-il.
+
+    ASS controle le montant : envoyer PrimeRC + CEDEAO fait echouer l'emission en
+    4006 "Merci de renseigner une Responsabilite civile valide" (constate en
+    production le 2026-08-12).
+    """
+    assert extract_prime_rc(response) == int(response["data"])
+
+
+@pytest.mark.parametrize(
     ("response", "expected"),
     [
         (REAL_RC_GARAGE_RESPONSE, 68_831 + 300),
         (REAL_RC_BUS_RESPONSE, 16_899 + 300),
     ],
 )
-def test_extract_prime_rc_ignores_data_when_it_diverges(response, expected):
-    """L'assiette RC s'additionne, elle ne se lit pas dans `data`.
+def test_commission_basis_ignores_data_when_it_diverges(response, expected):
+    """La commission ne se calcule pas sur `data`.
 
-    Sur ces deux reponses reelles, `data` depasse la prime totale encaissee : le
-    lire ferait declarer sur l'attestation une RC superieure au montant du
-    contrat, et gonflerait la commission apporteur d'autant.
+    Sur ces deux reponses reelles, `data` depasse la prime totale encaissee :
+    commissionner dessus paierait l'apporteur sur plus que ce que le client a
+    paye. L'assiette repart de la ventilation, PrimeRC + CEDEAO.
     """
-    assert extract_prime_rc(response) == expected
-    assert extract_prime_rc(response) != int(response["data"])
-    assert extract_prime_rc(response) < int(response["PrimeTotale"])
+    contract = Contract(prime_rc_ass=int(response["data"]), ass_response_payload=response)
+
+    assert contract_commission_basis(contract) == expected
+    assert contract_commission_basis(contract) < int(response["PrimeTotale"])
+
+
+def test_commission_basis_falls_back_when_no_breakdown():
+    """Flotte, remorque, formats historiques : pas de ventilation exploitable."""
+    contract = Contract(
+        prime_rc_ass=24_300,
+        ass_response_payload={"operationStatus": "SUCCESS", "data": "24300"},
+    )
+
+    assert contract_commission_basis(contract) == 24_300
 
 
 def test_extract_rc_breakdown_supports_real_root_pascal_case_format():

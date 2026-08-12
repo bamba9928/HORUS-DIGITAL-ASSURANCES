@@ -332,9 +332,10 @@ def finalize_contract_issue(*, contract_id, request_payload, ass_response, issue
     if contract.internal_status != Contract.InternalStatus.ISSUING:
         raise ContractIssueError("La reservation d'emission ASS n'est plus active.")
 
+    # Assiette de commission != montant envoye a ASS : voir contract_commission_basis.
     snapshot_values = build_commission_snapshot_values(
         contributor=contract.contributor,
-        prime_rc_ass=contract.prime_rc_ass,
+        prime_rc_ass=contract_commission_basis(contract),
         cout_police_ass=contract.cout_police_ass,
         ttc_ass=contract.ttc_ass,
     )
@@ -915,31 +916,22 @@ def extract_prime_rc(ass_response):
     """
     Assiette RC du contrat = PrimeRC + CEDEAO, additionnes explicitement.
 
-    Alimente contract.prime_rc_ass, qui sert a la fois d'assiette de commission
-    apporteur (decision metier du 2026-06-11, reconduite le 2026-08-12) et de
-    `responsabiliteCivile` envoye a l'emission.
+    Alimente contract.prime_rc_ass, envoye tel quel comme `responsabiliteCivile`
+    a l'emission.
 
-    Ne PAS lire `data` : ce champ valait effectivement PrimeRC + CEDEAO en juin,
-    mais il a derive depuis. Sondes reelles du 2026-08-12 :
+    C'est bien `data` qu'il faut lire, meme si sa valeur surprend : ASS controle
+    le montant recu et rejette tout ce qui ne correspond pas a son propre calcul.
+    Constate en production le 2026-08-12 — en envoyant PrimeRC + CEDEAO (3 875 la
+    ou `data` valait 5 069), `qrcode.request` repond 4006 "Merci de renseigner une
+    Responsabilite civile valide" et l'attestation ne part pas.
 
-        garage      data = 164 183  pour PrimeRC 68 831 / PrimeTotale 83 908
-        bus ecole   data = 241 718  pour PrimeRC 16 899 / PrimeTotale 23 407
-        VP          data =   5 069  pour PrimeRC  3 575 (le meme appel renvoyait
-                                    4 769 le 2026-08-06, a PrimeRC identique)
-
-    Le lire reviendrait a declarer sur l'attestation une RC superieure a la prime
-    totale encaissee. La ventilation, elle, reste juste au franc pres sur les cinq
-    sondes (PrimeRC + CoutPolice + PrimeAG + Taxe + Fga + Cedeao = PrimeTotale).
-
-    `data` ne subsiste qu'en repli, pour les reponses sans ventilation : remorque
-    (`remorque.rc.request`) et formats historiques.
+    `data` n'est en revanche PAS une assiette de commission defendable : il a
+    derive et depasse desormais la prime totale sur certains genres (rc.garage :
+    164 183 pour une PrimeTotale de 83 908). La commission se calcule donc a part,
+    voir contract_commission_basis().
     """
     if not is_success_response(ass_response):
         raise QuoteCalculationError(response_message(ass_response, "Calcul ASS echoue."))
-
-    if isinstance(ass_response, dict) and ass_response.get("PrimeRC") is not None:
-        breakdown = extract_rc_breakdown(ass_response)
-        return breakdown["prime_rc_ass"] + breakdown["cedeao"]
 
     data = ass_response.get("data")
     if data is None:
@@ -953,6 +945,29 @@ def extract_prime_rc(ass_response):
         return int(data)
     except (TypeError, ValueError) as exc:
         raise QuoteCalculationError("Reponse ASS invalide pour la Prime RC.") from exc
+
+
+def contract_commission_basis(contract):
+    """Assiette de la commission apporteur = PrimeRC + CEDEAO.
+
+    Volontairement distincte de `contract.prime_rc_ass`, qui porte le `data` d'ASS
+    parce que c'est la seule valeur qu'ils acceptent a l'emission (voir
+    extract_prime_rc). Or `data` a derive et ne represente plus une RC : sur
+    rc.garage il vaut 164 183 pour une prime totale de 83 908, sur bus.ecole.rc
+    241 718 pour 23 407. Commissionner la-dessus paierait l'apporteur sur un
+    montant superieur a ce que le client a paye.
+
+    On repart donc de la ventilation, juste au franc pres sur toutes les sondes.
+    Repli sur prime_rc_ass quand elle est absente : flotte (reponse en items),
+    remorque, et formats historiques.
+
+    Decision metier du 2026-06-11, reconduite le 2026-08-12 : l'assiette inclut
+    la CEDEAO (PrimeRC + 300) et non la PrimeRC pure.
+    """
+    breakdown = extract_rc_breakdown(contract.ass_response_payload or {})
+    if breakdown and breakdown.get("prime_rc_ass"):
+        return breakdown["prime_rc_ass"] + breakdown.get("cedeao", 0)
+    return contract.prime_rc_ass
 
 
 def extract_rc_breakdown(ass_response):
@@ -1277,17 +1292,39 @@ def normalize_guarantee_options(options):
     return normalized
 
 
+# Garantie -> option obligatoire. Messages calques sur ceux d'ASS.
+GUARANTEE_REQUIRED_OPTIONS = {
+    2: (
+        "garantiesOptPT",
+        "Garantie 2 (personnes transportees) : merci de choisir une option.",
+    ),
+    4: (
+        "garantiesOptAR",
+        "Garantie 4 (avance sur recours) : merci de renseigner le capital.",
+    ),
+}
+
+
 def validate_guarantee_option_dependencies(guarantees, options):
+    """L'option et sa garantie vont par paire.
+
+    ASS impose le sens garantie -> option, verifie en sandbox le 2026-08-12 :
+    cocher la garantie 2 sans `garantiesOptPT` fait echouer rc.request en 400
+    UserError ("Merci de choisir un option pour les personnes transportees"),
+    idem pour la garantie 4 sans `garantiesOptAR`. C'est ce sens-la qui casse une
+    tarification, et il n'etait pas verifie.
+
+    Le sens inverse (option sans sa garantie) est tolere par ASS, qui l'ignore,
+    mais on continue de le refuser : le formulaire ne propose l'option que si la
+    garantie est cochee, donc un tel payload traduit une incoherence.
+    """
     guarantee_values = set(normalize_guarantees(guarantees))
-    requirements = {
-        "garantiesOptPT": 2,
-        "garantiesOptAR": 4,
-    }
-    for field, required_guarantee in requirements.items():
-        if field in options and required_guarantee not in guarantee_values:
-            raise ValidationError(
-                f"{field} requiert la garantie ASS {required_guarantee}."
-            )
+
+    for guarantee, (field, message) in GUARANTEE_REQUIRED_OPTIONS.items():
+        if guarantee in guarantee_values and not options.get(field):
+            raise ValidationError(message)
+        if options.get(field) and guarantee not in guarantee_values:
+            raise ValidationError(f"{field} requiert la garantie ASS {guarantee}.")
 
 
 def validate_guarantee_configuration(draft_payload):

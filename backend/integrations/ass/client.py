@@ -300,6 +300,13 @@ class AssClient:
             detail = (
                 body.get("operationMessage")
                 or body.get("message")
+                # ASS ecrit "error_descrip", sans le "tion" final : c'est la cle
+                # qui porte le message exploitable. L'oublier faisait remonter le
+                # seul "error", soit "UserError" — un contrat bloque sans dire
+                # pourquoi (constate en production le 2026-08-12 sur un 400 dont
+                # le vrai motif etait "Merci de choisir un option pour les
+                # personnes transportees").
+                or body.get("error_descrip")
                 or body.get("error_description")
                 or body.get("error")
             )
