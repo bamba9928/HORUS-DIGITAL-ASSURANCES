@@ -95,7 +95,35 @@ moto / bus / garage** (seul `issue-mono` existe) — à écrire sur le modèle d
   appliqué par ASS côté serveur. Nous envoyons en plus `remise_rc` à 20 % — à
   confirmer avec eux qu'il n'y a pas de cumul non voulu.
 
-## 5. Écarts mineurs hors payload
+## 5. Bug de supervision corrigé — la page ASS mentait en prod
+
+Constaté **en production** : `/integrations/ass` affichait « Environnement : Mock
+(test) », « Appels réels : Désactivés » avec pastille verte, « Stock QR :
+Indisponible », statut et message vides.
+
+Or le VPS tourne en `ASS_MOCK_ENABLED=False` / `ASS_REAL_CALLS_ALLOWED=True`. Les
+quatre valeurs viennent du même appel `/stock-qr/` ; quand il échoue (ici : 503,
+ASS injoignable), `stock` reste `null` et **tous** les affichages retombaient sur
+la branche « mock » — `stock?.mode === "real" ? … : …` ne distingue pas « je sais
+que c'est du mock » de « je ne sais rien ».
+
+Un mode mock réel aurait affiché `80 attestation(s)` / `SUCCESS` / « Stock QR
+fictif. ». Trois champs vides = l'appel n'a jamais abouti.
+
+Gravité : l'erreur va dans le mauvais sens. Un exploitant lisant cet écran conclut
+« rien de réel ne peut partir » alors que le backend émettra de vraies attestations
+et consommera de vrais QR dès qu'ASS remontera.
+
+Correctif : troisième état explicite `unknown` dans
+`web/src/app/integrations/ass/page.tsx` (« Indéterminé — contrôle en échec »,
+« Inconnu », pastille rouge). La pastille verte n'apparaît plus que si le mode mock
+est **confirmé** par une réponse backend.
+
+À noter : **`/config` reste la source fiable** du mode — elle lit les settings
+Django (`ass_mock_enabled`, `ass_real_calls_allowed`) et ne dépend pas de la
+joignabilité d'ASS.
+
+## 6. Écarts mineurs hors payload
 
 - La durée n'est bornée (1–12 MOIS / 1–366 JOUR, PDF §3.3.2) que pour la **flotte**
   (`FleetCoverageSerializer`). Mono, moto, bus et garage passent sans borne côté

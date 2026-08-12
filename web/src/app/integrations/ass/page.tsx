@@ -65,6 +65,15 @@ export default function AssIntegrationPage() {
 
   const isLoading = authLoading || isDataLoading;
 
+  // `stock` reste null des que l'appel echoue (503 ASS injoignable, 403, reseau).
+  // Sans ce troisieme etat, chaque affichage retombait sur la branche "mock" et
+  // la page annoncait "Mock (test) / Appels reels desactives" en vert alors que
+  // le backend pouvait tres bien etre en mode reel. Un ecran de supervision qui
+  // se trompe dans ce sens est pire que pas d'ecran du tout.
+  const mode: "real" | "mock" | "unknown" = stock ? stock.mode : "unknown";
+  const isReal = mode === "real";
+  const isUnknown = mode === "unknown";
+
   async function refresh() {
     if (!auth?.authenticated) return;
     setError("");
@@ -146,11 +155,17 @@ export default function AssIntegrationPage() {
                 }
               />
               <MetricCard
-                detail={stock?.mode === "real" ? "API partenaire" : "Données simulées"}
+                detail={
+                  isUnknown
+                    ? "Contrôle impossible"
+                    : isReal
+                      ? "API partenaire"
+                      : "Données simulées"
+                }
                 icon={ServerCog}
                 label="Environnement"
-                tone={stock?.mode === "real" ? "success" : "warning"}
-                value={isLoading ? "—" : stock?.mode === "real" ? "Réel" : "Mock"}
+                tone={isReal ? "success" : "warning"}
+                value={isLoading ? "—" : isUnknown ? "Inconnu" : isReal ? "Réel" : "Mock"}
               />
               <MetricCard
                 detail={stock?.operation_message || "En attente de contrôle"}
@@ -179,7 +194,16 @@ export default function AssIntegrationPage() {
                     <LoadingState label="Vérification du service" />
                   ) : (
                     <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                      <InfoRow label="Environnement" value={stock?.mode === "real" ? "Réel" : "Mock (test)"} />
+                      <InfoRow
+                        label="Environnement"
+                        value={
+                          isUnknown
+                            ? "Indéterminé — contrôle en échec"
+                            : isReal
+                              ? "Réel"
+                              : "Mock (test)"
+                        }
+                      />
                       <InfoRow
                         label="Stock QR disponible"
                         value={
@@ -195,7 +219,7 @@ export default function AssIntegrationPage() {
                 </section>
 
                 {/* Vérification d'immatriculation */}
-                <RegistrationVerificationPanel isMock={stock?.mode !== "real"} />
+                <RegistrationVerificationPanel isMock={mode === "mock"} />
               </div>
 
               {/* ── Colonne droite ───────────────────────────── */}
@@ -213,7 +237,14 @@ export default function AssIntegrationPage() {
                   </div>
                   <div className="mt-5 space-y-3">
                     <SecurityRow label="Credentials" value="Backend uniquement" ok />
-                    <SecurityRow label="Appels réels" value={stock?.mode === "real" ? "Activés" : "Désactivés"} ok={stock?.mode !== "real"} />
+                    {/* Pastille verte uniquement si le mock est CONFIRME : un
+                        controle en echec ne prouve pas que les appels reels
+                        sont coupes. */}
+                    <SecurityRow
+                      label="Appels réels"
+                      ok={mode === "mock"}
+                      value={isUnknown ? "Indéterminé" : isReal ? "Activés" : "Désactivés"}
+                    />
                     <SecurityRow label="Auth client" value="Session Horus" ok />
                     <SecurityRow label="Transport" value="HTTPS + Basic Auth" ok />
                   </div>
@@ -224,7 +255,11 @@ export default function AssIntegrationPage() {
                   <div className="border-b border-border px-4 py-3.5">
                     <h2 className="text-[13.5px] font-extrabold">Endpoints ASS</h2>
                     <p className="mt-0.5 text-xs font-medium text-black/40">
-                      {stock?.mode === "real" ? "Appels réels actifs" : "Mode mock — aucun appel réseau"}
+                      {isUnknown
+                        ? "État inconnu — dernier contrôle en échec"
+                        : isReal
+                          ? "Appels réels actifs"
+                          : "Mode mock — aucun appel réseau"}
                     </p>
                   </div>
                   <div className="divide-y divide-border">
@@ -243,7 +278,7 @@ export default function AssIntegrationPage() {
                           {ep.type}
                         </span>
                         <span
-                          className={`size-2 shrink-0 rounded-full ${stock?.mode === "real" ? "bg-emerald-400" : "bg-amber-400"}`}
+                          className={`size-2 shrink-0 rounded-full ${isReal ? "bg-emerald-400" : "bg-amber-400"}`}
                         />
                       </div>
                     ))}
