@@ -138,6 +138,18 @@ wheels = [
 ]
 
 [[package]]
+name = "django-unfold"
+version = "0.104.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/12/41/0685cfdad4cf77a571e48227c78a9b8ae6d15679c2e9c9e724142a26cc3a/django_unfold-0.104.1.tar.gz", hash = "sha256:13b52e8100f2d844568cf08a2057cacd3686bc1083e0e491d05fc688025c966f", size = 1126154 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/37/25/d9165c8b4e1deb37d0ac68bfe837c59a4ddb895f5df8b9c97b4bd433ab23/django_unfold-0.104.1-py3-none-any.whl", hash = "sha256:4eece526e1e80f5133632acae260cc53ab2f52020ff9f64bb98d9c9c738d9888", size = 1254159 },
+]
+
+[[package]]
 name = "djangorestframework"
 version = "3.17.1"
 source = { registry = "https://pypi.org/simple" }
@@ -183,6 +195,7 @@ dependencies = [
     { name = "dj-database-url" },
     { name = "django" },
     { name = "django-cors-headers" },
+    { name = "django-unfold" },
     { name = "djangorestframework" },
     { name = "gunicorn" },
     { name = "psycopg2-binary" },
@@ -205,6 +218,7 @@ requires-dist = [
     { name = "dj-database-url", specifier = "==3.1.2" },
     { name = "django", specifier = "==6.0.6" },
     { name = "django-cors-headers", specifier = "==4.9.0" },
+    { name = "django-unfold", specifier = ">=0.104.1" },
     { name = "djangorestframework", specifier = "==3.17.1" },
     { name = "gunicorn", specifier = "==26.0.0" },
     { name = "psycopg2-binary", specifier = "==2.9.12" },

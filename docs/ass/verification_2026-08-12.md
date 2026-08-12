@@ -98,21 +98,63 @@ et de `responsabiliteCivile` envoyé à l'émission :
 2. **Commission faussée** : la décision métier du 2026-06-11 (« assiette = `data`,
    soit PrimeRC + CEDEAO ») reposait sur une équivalence qui n'existe plus.
 
-Le PDF décrit pourtant `data` comme « Prime Net RC » — c'est-à-dire ce que
-`PrimeRC` contient réellement.
+### Correctif : séparer les deux usages
 
-**Correctif appliqué** : `extract_prime_rc` additionne désormais explicitement
-`PrimeRC + Cedeao` au lieu de lire `data`. La décision métier du 2026-06-11
-(assiette = RC + CEDEAO, et non PrimeRC pure) est donc **reconduite à l'identique**
-— seule la façon de l'obtenir change, puisque `data` ne la porte plus. `data` ne
-subsiste qu'en repli pour les réponses sans ventilation (remorque, formats
-historiques). Rétrocompatible : sur la réponse de juin, `4469 + 300 = 4769` = la
-valeur que `data` portait alors.
+Première tentative — remplacer `data` par `PrimeRC + Cedeao` dans
+`extract_prime_rc` — **invalidée en production le jour même** : `qrcode.request`
+répond alors `4006 "Merci de renseigner une Responsabilité civile valide"`. ASS
+**contrôle** le montant reçu contre son propre calcul ; c'est `data` qu'il faut
+lui envoyer, aussi surprenante que soit sa valeur. C'est cohérent avec la chaîne
+validée le 2026-08-06, qui envoyait déjà `data`.
+
+Les deux usages ont donc été séparés :
+
+| Usage | Valeur | Fonction |
+| --- | --- | --- |
+| `responsabiliteCivile` envoyé à ASS | `data` | `extract_prime_rc` → `contract.prime_rc_ass` |
+| Assiette de commission apporteur | `PrimeRC + Cedeao` | `contract_commission_basis(contract)` |
+
+La décision métier du 2026-06-11 (assiette = RC + CEDEAO, non PrimeRC pure) est
+préservée — elle ne porte simplement plus sur le même champ. Le repli sur
+`prime_rc_ass` couvre les réponses sans ventilation (flotte, remorque, formats
+historiques).
+
+⚠️ Les contrats chiffrés pendant la fenêtre où `prime_rc_ass` valait
+`PrimeRC + Cedeao` portent une RC qu'ASS refusera : relancer leur devis.
 
 Question à poser à ASS malgré tout : *« Que recouvre exactement le champ `data` de
 vos réponses RC ? Sur `rc.garage` il vaut 164 183 pour une `PrimeTotale` de
-83 908, et sur `bus.ecole.rc` 241 718 pour 23 407. Quelle valeur attendez-vous
-comme `responsabiliteCivile` à l'émission ? »*
+83 908, et sur `bus.ecole.rc` 241 718 pour 23 407. »*
+
+## 1 quater. Garanties optionnelles : la dépendance est inverse
+
+Constaté en production, puis cartographié en sandbox le 2026-08-12 :
+
+| Cas | Réponse ASS |
+| --- | --- |
+| Garantie 2 **sans** `garantiesOptPT` | 400 « Merci de choisir un option pour les personnes transportées » |
+| Garantie 4 **sans** `garantiesOptAR` | 400 « Merci de renseigner le capital pour la garantie avance sur recours » |
+| Option envoyée **sans** sa garantie | accepté, silencieusement ignoré |
+| `garantiesOptAS` | facultatif en toutes circonstances |
+
+`validate_guarantee_option_dependencies` ne vérifiait que le sens toléré (option
+sans garantie) et laissait passer les deux qui échouent. Corrigé : cocher la
+garantie 2 ou 4 impose désormais son option, avec un message explicite et sans
+appel réseau.
+
+## 1 quinquies. Le vrai motif d'erreur était jeté
+
+ASS renvoie ses erreurs métier sous la forme :
+
+```json
+{"error": "UserError", "error_descrip": "Erreur : Merci de choisir un option pour les personnes transportées."}
+```
+
+`AssClient._parse_error_body` lisait `error_description` (avec « tion ») et
+retombait donc sur `error` — l'utilisateur voyait « UserError » et rien d'autre,
+pour un contrat bloqué. Corrigé en ajoutant `error_descrip`. À noter que le motif
+complet était déjà persisté dans `AssApiLog.response_payload` : seul l'affichage
+le masquait.
 
 ## 2. Tests automatisés
 

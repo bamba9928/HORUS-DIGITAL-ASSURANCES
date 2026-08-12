@@ -4,6 +4,7 @@ from pathlib import Path
 import dj_database_url
 from decouple import config
 from django.core.exceptions import ImproperlyConfigured
+from django.urls import reverse_lazy
 
 from integrations.ass.constants import (
     ASS_API_PARTNER_SEGMENT as DEFAULT_ASS_API_PARTNER_SEGMENT,
@@ -36,6 +37,11 @@ if SECRET_KEY == "dev-only-change-me" and any(host not in _LOCAL_HOSTS for host 
 
 
 INSTALLED_APPS = [
+    # unfold habille l'admin Django : doit preceder django.contrib.admin pour
+    # que ses gabarits prennent le pas sur ceux du contrib.
+    'unfold',
+    'unfold.contrib.filters',
+    'unfold.contrib.forms',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -305,3 +311,90 @@ ASS_CANCEL_ENDPOINT_FALLBACK = config(
 )
 # Seuil d'alerte stock QR sur le dashboard (et statut low_stock de l'API).
 ASS_QR_STOCK_ALERT_THRESHOLD = config("ASS_QR_STOCK_ALERT_THRESHOLD", default=10, cast=int)
+
+
+# ─── Admin Django (unfold) ────────────────────────────────────────────────────
+# L'admin sert l'exploitation interne : support, finance, correction ponctuelle.
+# Le parcours metier passe par l'API + le front Next.js, jamais par l'admin.
+UNFOLD = {
+    "SITE_TITLE": "Horus Assurances",
+    "SITE_HEADER": "Horus Assurances",
+    "SITE_SUBHEADER": "Administration",
+    "SITE_SYMBOL": "shield_person",
+    "SHOW_HISTORY": True,
+    "SHOW_VIEW_ON_SITE": False,
+    "COLORS": {
+        "primary": {
+            "50": "238 242 255",
+            "100": "224 231 255",
+            "200": "199 210 254",
+            "300": "165 180 252",
+            "400": "129 140 248",
+            "500": "99 102 241",
+            "600": "79 70 229",
+            "700": "67 56 202",
+            "800": "55 48 163",
+            "900": "49 46 129",
+            "950": "30 27 75",
+        },
+    },
+    "SIDEBAR": {
+        "show_search": True,
+        "show_all_applications": True,
+        "navigation": [
+            {
+                "title": "Production",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Contrats",
+                        "icon": "description",
+                        "link": reverse_lazy("admin:contracts_contract_changelist"),
+                    },
+                    {
+                        "title": "Paiements",
+                        "icon": "payments",
+                        "link": reverse_lazy("admin:payments_payment_changelist"),
+                    },
+                    {
+                        "title": "Commissions",
+                        "icon": "savings",
+                        "link": reverse_lazy("admin:commissions_commissionsnapshot_changelist"),
+                    },
+                ],
+            },
+            {
+                "title": "Organisation",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Utilisateurs",
+                        "icon": "person",
+                        "link": reverse_lazy("admin:accounts_user_changelist"),
+                    },
+                    {
+                        "title": "Groupes",
+                        "icon": "corporate_fare",
+                        "link": reverse_lazy("admin:organizations_organization_changelist"),
+                    },
+                ],
+            },
+            {
+                "title": "Integration ASS",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Journal des appels",
+                        "icon": "receipt_long",
+                        "link": reverse_lazy("admin:ass_assapilog_changelist"),
+                    },
+                    {
+                        "title": "Marques vehicules",
+                        "icon": "directions_car",
+                        "link": reverse_lazy("admin:referentials_vehiclebrand_changelist"),
+                    },
+                ],
+            },
+        ],
+    },
+}

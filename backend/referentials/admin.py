@@ -1,10 +1,11 @@
 from django.contrib import admin
+from unfold.admin import ModelAdmin
 
 from referentials.models import VehicleBrand
 
 
 @admin.register(VehicleBrand)
-class VehicleBrandAdmin(admin.ModelAdmin):
+class VehicleBrandAdmin(ModelAdmin):
     list_display = [
         "name",
         "value",

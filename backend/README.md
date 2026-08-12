@@ -29,10 +29,36 @@ uv run python backend/manage.py migrate
 # Créer un superutilisateur (rôle ADMIN_GENERAL)
 uv run python backend/manage.py createsuperuser
 
+# Collecter les fichiers statiques — obligatoire même en dev
+# (STORAGES utilise un stockage à manifeste : sans cette étape,
+#  l'admin répond 500 « Missing staticfiles manifest entry »)
+uv run python backend/manage.py collectstatic --noinput
+
 # Lancer le serveur de développement
 uv run python backend/manage.py runserver
-# → http://localhost:8000
+# → http://localhost:8000  —  admin : http://localhost:8000/admin/
 ```
+
+### Admin Django
+
+L'admin est habillé par [django-unfold](https://unfoldadmin.com/) et sert
+l'exploitation interne : support, finance, correction ponctuelle. Le parcours
+métier passe par l'API et le front Next.js, jamais par l'admin.
+
+| Modèle | Droits |
+| --- | --- |
+| Utilisateurs, Groupes, Marques véhicules | création / modification / suppression |
+| Contrats | consultation + suppression (purge des tests) |
+| Paiements, Commissions | consultation seule |
+| Journal des appels ASS | consultation seule |
+
+Les objets financiers sont volontairement non modifiables : ils sont produits par
+des services qui portent les invariants — paiement confirmé avant émission,
+montants figés à l'émission, machine à états des commissions. Les éditer depuis
+l'admin les contournerait sans filet.
+
+Après ajout ou modification d'une classe admin, `pytest backend/tests/test_admin.py`
+vérifie que chaque écran s'ouvre encore (`manage.py check` ne le détecte pas).
 
 ## Variables d'environnement
 
