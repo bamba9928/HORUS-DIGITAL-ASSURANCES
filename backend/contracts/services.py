@@ -547,11 +547,29 @@ def build_moto_issue_payload(contract, reference):
         "remise_rc": reduction_rate_for_genre(vehicle.get("subcategory")),
         "souscripteur": policyholder,
         "assure": insured,
-        "vehicule": {
-            **build_issue_vehicle_payload(vehicle),
-            "cylindre": to_int(vehicle.get("cylindree"), default=0),
-            "usage": normalize_moto_usage(vehicle.get("motoUsage")),
-        },
+        "vehicule": build_moto_issue_vehicle_payload(vehicle),
+    }
+
+
+def build_moto_issue_vehicle_payload(vehicle):
+    """Vehicule d'une emission moto : strictement les champs documentes.
+
+    Ne PAS reutiliser build_issue_vehicle_payload ici : il ajoute
+    puissanceFiscale / valeurNeuve / valeurActuelle / chassis, absents du PDF
+    §6.2 comme de la collection Postman. L'API rejette les champs inconnus avec
+    un 400 explicite ("Invalid field '<champ>' on model '<endpoint>'", constate
+    sur chargeUtile), donc chaque extra est un echec d'emission garanti.
+    """
+    return {
+        "cylindre": to_int(vehicle.get("cylindree"), default=0),
+        "dateMiseCirculation": vehicle.get("firstCirculationDate") or "",
+        "nombrePlace": to_int(vehicle.get("seats"), default=1),
+        "immatriculation": vehicle.get("registration") or "",
+        "energie": vehicle.get("energy") or "",
+        "genre": vehicle.get("subcategory") or "",
+        "modele": vehicle.get("model") or "",
+        "marque": vehicle.get("brand") or "",
+        "usage": normalize_moto_usage_for_issue(vehicle.get("motoUsage")),
     }
 
 
@@ -574,11 +592,12 @@ def build_fleet_rc_payload(draft_payload):
         "remise_rc": reduction_rate_for_genres(
             vehicle.get("subcategory") for vehicle in vehicles
         ),
+        # Pas de "duree" par vehicule : absent de la collection Postman et la
+        # couverture flotte impose de toute facon une duree unique a la racine.
         "requests": [
             {
                 "requestId": vehicle.get("id"),
                 "puissanceFiscale": to_int(vehicle.get("fiscalPower"), default=1),
-                "duree": to_int(fleet_duration or vehicle.get("duration"), default=1),
                 "genre": vehicle.get("subcategory"),
                 "energie": vehicle.get("energy"),
                 "valeurNeuve": to_int(vehicle.get("newValue"), default=0),
@@ -837,6 +856,12 @@ def build_bus_issue_payload(contract, reference):
         "referenceTrxPartner": reference,
         "cout_police": ASS_POLICY_FEE,
         "remise_rc": reduction_rate_for_genre(vehicle.get("subcategory")),
+        # Assiette de tarification repetee a la racine comme dans la collection
+        # Postman : mêmes valeurs qu'a l'appel bus.ecole.rc, sinon ASS pourrait
+        # retarifer autrement que le devis deja encaisse.
+        "valeurNeuve": to_int(vehicle.get("newValue"), default=0),
+        "valeurActuelle": to_int(vehicle.get("currentValue"), default=0),
+        "garanties": [],
         "souscripteur": policyholder,
         "assure": insured,
         "vehicule": build_issue_vehicle_payload(vehicle),
@@ -876,6 +901,11 @@ def build_garage_issue_payload(contract, reference):
         "referenceTrxPartner": reference,
         "cout_police": ASS_POLICY_FEE,
         "remise_rc": reduction_rate_for_genre(garage.get("subcategory")),
+        # Idem bus : valeurs repetees a l'identique de rc.garage (le tarif garage
+        # depend du nombre de cartes, pas d'une valeur vehicule — d'ou les zeros).
+        "valeurNeuve": 0,
+        "valeurActuelle": 0,
+        "garanties": [],
         "souscripteur": policyholder,
         "assure": insured,
     }
@@ -1099,12 +1129,27 @@ def add_months(value, months):
 
 
 def normalize_moto_usage(value):
-    # Valide en sandbox (2026-06-11) : l'API n'accepte que COMMERCIAL /
+    # Valide en sandbox (2026-06-11) : rc.moto n'accepte que COMMERCIAL /
     # NON_COMMERCIAL (sans E final), contrairement au PDF qui documente
     # commerciale / non_commerciale.
     upper = str(value or "").upper().removesuffix("E")
     if upper in {"COMMERCIAL", "NON_COMMERCIAL"}:
         return upper
+    return value
+
+
+def normalize_moto_usage_for_issue(value):
+    """Forme attendue par moto.request : COMMERCIALE / NON_COMMERCIALE (avec E).
+
+    Les deux endpoints moto ne parlent pas la meme langue : `usage` est un champ
+    du modele rc.moto pour la tarification (sans E, prouve en sandbox) et un
+    champ du vehicule a l'emission, ou le PDF (exemple §6.2) et la collection
+    Postman ecrivent tous deux la forme longue. Non confirme en sandbox :
+    l'emission moto reste a valider.
+    """
+    normalized = normalize_moto_usage(value)
+    if normalized in {"COMMERCIAL", "NON_COMMERCIAL"}:
+        return f"{normalized}E"
     return value
 
 

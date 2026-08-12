@@ -7,8 +7,13 @@ from contracts.services import (
     QuoteCalculationError,
     build_auto_issue_payload,
     build_auto_rc_payload,
+    build_bus_issue_payload,
+    build_bus_rc_payload,
     build_fleet_issue_payload,
+    build_fleet_rc_payload,
     build_fleet_trailer_issue_payloads,
+    build_garage_issue_payload,
+    build_garage_rc_payload,
     build_moto_issue_payload,
     build_moto_rc_payload,
     calculate_contract_quote,
@@ -190,7 +195,7 @@ def test_moto_payload_uses_pdf_usage_values_and_expiration_date():
     )
     issue_payload = build_moto_issue_payload(contract, "REF-MOTO")
 
-    # Valide en sandbox (2026-06-11) : l'API n'accepte que COMMERCIAL /
+    # Valide en sandbox (2026-06-11) : rc.moto n'accepte que COMMERCIAL /
     # NON_COMMERCIAL ; NON_COMMERCIALE est rejete ("Wrong value for rc.moto.usage").
     assert rc_payload["usage"] == "NON_COMMERCIAL"
     assert rc_payload["garanties"] == [2]
@@ -198,12 +203,161 @@ def test_moto_payload_uses_pdf_usage_values_and_expiration_date():
     assert issue_payload["dateExpiration"] == "2025-01-10"
     assert issue_payload["periodicite"] == "MOIS"
     assert issue_payload["typePersonne"] == "PHYSIQUE"
-    assert issue_payload["vehicule"]["usage"] == "NON_COMMERCIAL"
+    # A l'emission c'est l'inverse : PDF (exemple §6.2) et Postman ecrivent tous
+    # deux la forme longue pour vehicule.usage.
+    assert issue_payload["vehicule"]["usage"] == "NON_COMMERCIALE"
     assert issue_payload["vehicule"]["cylindre"] == 126
     assert issue_payload["garanties"] == [2]
     assert issue_payload["garantiesOptPT"] == "OPTION_1"
     assert issue_payload["souscripteur"]["cellulaire"] == "771112233"
     assert issue_payload["cout_police"] == 3_000
+
+
+def test_moto_issue_vehicle_carries_only_documented_fields():
+    """moto.request : aucun champ hors PDF §6.2 / Postman.
+
+    L'API rejette les champs inconnus par un 400 ("Invalid field '<champ>' on
+    model '<endpoint>'"), donc un extra ici casse toute emission moto.
+    """
+    contract = Contract(
+        id=8,
+        prime_rc_ass=14_273,
+        draft_payload={
+            "guarantees": [],
+            "guaranteeOptions": {},
+            "policyholder": TEST_POLICYHOLDER,
+            "insured": TEST_POLICYHOLDER,
+            "vehicle": {
+                "brand": "YAMAHA",
+                "model": "Vespa",
+                "subcategory": "2RCYC",
+                "energy": "ESSENCE",
+                "cylindree": "126",
+                "duration": "6",
+                "periodicity": "MOIS",
+                "personType": "PHYSIQUE",
+                "effectDate": "2024-07-11",
+                "firstCirculationDate": "2022-11-08",
+                "registration": "DK-0000-MT",
+                "motoUsage": "non_commerciale",
+                "seats": "2",
+                # Renseignes par le wizard mais sans objet pour une moto : ils ne
+                # doivent pas fuiter dans le payload.
+                "fiscalPower": "3",
+                "newValue": "1500000",
+                "currentValue": "900000",
+                "chassis": "CH-MOTO-1",
+            },
+        },
+    )
+
+    vehicule = build_moto_issue_payload(contract, "REF-MOTO-2")["vehicule"]
+
+    assert set(vehicule) == {
+        "cylindre",
+        "dateMiseCirculation",
+        "nombrePlace",
+        "immatriculation",
+        "energie",
+        "genre",
+        "modele",
+        "marque",
+        "usage",
+    }
+
+
+def test_bus_and_garage_issue_repeat_the_rc_tariff_basis_at_root():
+    """bus.ecole.request / garage.request : meme assiette qu'a la tarification.
+
+    Les corps Postman portent valeurNeuve / valeurActuelle / garanties a la
+    racine ; les omettre exposerait a une retarification par ASS differente du
+    devis deja encaisse.
+    """
+    bus_vehicle = {
+        "brand": "MERCEDES",
+        "model": "BUSSY",
+        "subcategory": "BE-VTA",
+        "energy": "ESSENCE",
+        "fiscalPower": "20",
+        "seats": "30",
+        "duration": "6",
+        "periodicity": "MOIS",
+        "effectDate": "2024-10-01",
+        "firstCirculationDate": "1999-11-08",
+        "registration": "DK-9807-BS",
+        "newValue": "45000000",
+        "currentValue": "35000000",
+    }
+    bus_contract = Contract(
+        id=9,
+        prime_rc_ass=391_193,
+        draft_payload={
+            "vehicle": bus_vehicle,
+            "policyholder": TEST_POLICYHOLDER,
+            "insured": TEST_POLICYHOLDER,
+        },
+    )
+    bus_rc = build_bus_rc_payload(bus_vehicle)
+    bus_issue = build_bus_issue_payload(bus_contract, "REF-BUS")
+
+    for field in ["valeurNeuve", "valeurActuelle", "garanties"]:
+        assert bus_issue[field] == bus_rc[field], field
+
+    garage = {
+        "subcategory": "C6-WG-4R",
+        "nombreCarte": "1",
+        "registration": "AA-111-KL",
+        "duration": "6",
+        "periodicity": "MOIS",
+        "effectDate": "2024-10-01",
+        "personType": "MORALE",
+    }
+    garage_contract = Contract(
+        id=10,
+        prime_rc_ass=237_675,
+        draft_payload={
+            "garage": garage,
+            "policyholder": TEST_POLICYHOLDER,
+            "insured": TEST_POLICYHOLDER,
+        },
+    )
+    garage_rc = build_garage_rc_payload(garage)
+    garage_issue = build_garage_issue_payload(garage_contract, "REF-GARAGE")
+
+    for field in ["valeurNeuve", "valeurActuelle", "garanties"]:
+        assert garage_issue[field] == garage_rc[field], field
+
+
+def test_fleet_rc_declares_duration_once_at_root():
+    """rc.flotte.request : la duree vit a la racine, pas dans chaque requests[]."""
+    vehicle = {
+        "id": "veh-1",
+        "brand": "TOYOTA",
+        "model": "YARIS",
+        "subcategory": "VP",
+        "energy": "ESSENCE",
+        "fiscalPower": "8",
+        "seats": "5",
+        "newValue": "0",
+        "currentValue": "0",
+    }
+    payload = build_fleet_rc_payload(
+        {
+            "referenceFlotte": "HORUS-F1",
+            "fleet": {
+                "effectDate": "2026-09-01",
+                "duration": "12",
+                "periodicity": "MOIS",
+                "personType": "MORALE",
+                "vehicles": [vehicle],
+            },
+            "guarantees": [],
+            "guaranteeOptions": {},
+        }
+    )
+
+    assert payload["duree"] == 12
+    assert "duree" not in payload["requests"][0]
 
 
 @pytest.mark.django_db
@@ -277,7 +431,8 @@ def test_fleet_quote_prices_second_trailer_with_remorque_rc_request():
     assert contract.ass_request_payload["flotte"]["dateEffet"] == "2026-06-01"
     assert contract.ass_request_payload["flotte"]["duree"] == 3
     assert contract.ass_request_payload["flotte"]["periodicite"] == "MOIS"
-    assert contract.ass_request_payload["flotte"]["requests"][0]["duree"] == 3
+    # La duree flotte est portee une seule fois, a la racine (cf. collection Postman).
+    assert "duree" not in contract.ass_request_payload["flotte"]["requests"][0]
     assert contract.ass_request_payload["flotte"]["requests"][0]["garanties"] == [1, 2]
     assert contract.ass_request_payload["flotte"]["requests"][0]["garantiesOptPT"] == "OPTION_1"
     assert contract.ass_response_payload["remorques"][0]["prime_rc_ass"] == 0

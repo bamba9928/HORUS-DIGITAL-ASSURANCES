@@ -315,8 +315,12 @@ class AssClient:
         # Format non valide en sandbox (bug serveur ASS sur rc.flotte.request) :
         # on conserve la structure documentee dans la collection Postman.
         items = []
+        # La duree flotte n'existe qu'a la racine (comme chez ASS) : on la
+        # redescend sur chaque vehicule pour tarifer, sinon le mock facturerait
+        # tout le monde sur 1 mois.
+        duree = payload.get("duree")
         for request in payload.get("requests", []):
-            rc_response = self._mock_rc_response(request)
+            rc_response = self._mock_rc_response({"duree": duree, **request})
             items.append(
                 {
                     "requestId": request.get("requestId"),
