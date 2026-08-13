@@ -83,12 +83,13 @@ export default function Home() {
     <AppShell
       actions={
         userCanCreateContract ? (
-          <PageAction href="/contracts/new" icon={FilePlus2}>
+          <PageAction desktopOnly href="/contracts/new" icon={FilePlus2}>
             Nouveau contrat
           </PageAction>
         ) : null
       }
       description="Vue d'ensemble des opérations"
+      hideTitleOnMobile
       title="Tableau de bord"
     >
       <div className="space-y-6">

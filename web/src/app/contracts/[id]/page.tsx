@@ -4,10 +4,10 @@ import {
   ArrowLeft,
   Banknote,
   Calculator,
-  CheckCircle2,
   Download,
   ExternalLink,
   FilePenLine,
+  FileText,
   LoaderCircle,
   Send,
   ShieldCheck,
@@ -22,7 +22,16 @@ import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
 import { OmPaymentDialog } from "@/components/OmPaymentDialog";
 import { useToast } from "@/components/ToastProvider";
-import { AlertMessage, ContractTypeBadge, MetricCard, StatusBadge, humanize } from "@/components/ui";
+import {
+  AlertMessage,
+  ContractTypeBadge,
+  DataList,
+  DataRow,
+  Panel,
+  StatStrip,
+  StatusBadge,
+  humanize,
+} from "@/components/ui";
 import {
   calculateContractQuote,
   cancelContract,
@@ -141,6 +150,18 @@ export default function ContractDetailPage() {
   // une fois QUOTE_READY, la complétude a déjà été validée.
   const draftNeedsCompletion =
     Boolean(contract) && contract!.internal_status === "DRAFT" && !draftComplete;
+
+  // La date d'effet vit dans le brouillon, à un endroit différent selon le produit.
+  const effectDate = useMemo(() => {
+    if (!contract) return null;
+    const payload = contract.draft_payload as DraftPayload;
+    return (
+      payload.vehicle?.effectDate ||
+      payload.fleet?.effectDate ||
+      payload.garage?.effectDate ||
+      null
+    );
+  }, [contract]);
 
   const payableAmount = useMemo(() => {
     if (!contract?.prime_rc_ass) return null;
@@ -261,7 +282,7 @@ export default function ContractDetailPage() {
       description={
         contract ? contract.vehicle_label || humanize(contract.contract_type) : "Détail"
       }
-      title={`Contrat #${params.id}`}
+      title={`Contrat ${params.id}`}
     >
       <div className="space-y-5">
         {!hasValidId ? (
@@ -285,41 +306,42 @@ export default function ContractDetailPage() {
 
         {contract ? (
           <>
-            {/* ── Hero ───────────────────────────────────────────── */}
+            {/* ── Hero : identité, avancement et montants dans un seul bloc ── */}
             <section className="app-surface overflow-hidden animate-fade-in">
-              <div className="p-5 sm:p-6">
-                <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="px-4 py-4 sm:px-5 sm:py-5">
+                <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
                   <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <StatusBadge status={contract.internal_status} />
                       {contract.ass_status ? (
                         <StatusBadge status={contract.ass_status} />
                       ) : null}
                       <ContractTypeBadge contractType={contract.contract_type} />
                     </div>
-                    <h2 className="mt-3 text-xl font-black tracking-tight">
+                    <h2 className="mt-2.5 text-[19px] font-black leading-tight tracking-[-0.03em] text-strong sm:text-[21px]">
                       {contract.vehicle_label || humanize(contract.contract_type)}
                     </h2>
-                    <p className="mt-1 text-sm font-medium text-black/40">
+                    <p className="mt-1 text-[12.5px] font-semibold text-faint">
                       {contract.contributor_username}
                       {contract.organization_name
                         ? ` · ${contract.organization_name}`
                         : ""}
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-x-8 gap-y-3">
-                    <InfoField label="Immatriculation" value={contract.immatriculation || "—"} mono />
-                    <InfoField label="Créé le" value={formatDate(contract.created_at)} />
-                    {contract.date_expiration ? (
-                      <InfoField label="Expiration" value={formatDate(contract.date_expiration)} />
-                    ) : null}
-                  </div>
+                  {contract.immatriculation ? (
+                    <div className="shrink-0 rounded-[10px] border-[1.5px] border-border bg-[#fbfbfe] px-3 py-1.5 text-right">
+                      <p className="eyebrow">Immatriculation</p>
+                      <p className="font-mono text-[15px] font-black tracking-[-0.02em] text-strong">
+                        {contract.immatriculation}
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
               {/* Workflow stepper */}
               {contract.internal_status !== "CANCELLED" ? (
-                <div className="border-t border-border px-5 py-4 sm:px-6">
+                <div className="border-t border-border px-4 py-3.5 sm:px-5">
                   <div className="flex items-center">
                     {WORKFLOW_STEPS.map((step, idx) => {
                       const stepIndex = WORKFLOW_STEPS.indexOf(
@@ -335,7 +357,7 @@ export default function ContractDetailPage() {
                                 ? "text-primary"
                                 : isDone
                                   ? "text-emerald-600"
-                                  : "text-black/22"
+                                  : "text-black/28"
                             }`}
                           >
                             <div
@@ -349,7 +371,7 @@ export default function ContractDetailPage() {
                             >
                               {isDone ? "✓" : idx + 1}
                             </div>
-                            <span className="hidden text-[10px] font-bold sm:block">
+                            <span className="hidden text-[10px] font-extrabold uppercase tracking-[0.04em] sm:block">
                               {STEP_LABELS[step]}
                             </span>
                           </div>
@@ -371,33 +393,54 @@ export default function ContractDetailPage() {
                   Contrat annulé
                 </div>
               )}
-            </section>
 
-            {/* ── KPI cards ──────────────────────────────────────── */}
-            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-              <MetricCard
-                icon={Banknote}
-                label="Prime RC"
-                value={contract.prime_rc_ass === null ? "—" : formatMoney(contract.prime_rc_ass)}
+              {/* Dates clés — même grille que les montants pour un alignement net */}
+              <StatStrip
+                items={[
+                  { label: "Créé le", value: formatDate(contract.created_at) },
+                  {
+                    label: "Date d'effet",
+                    value: effectDate ? formatDate(effectDate) : "—",
+                  },
+                  {
+                    label: "Échéance",
+                    value: contract.date_expiration
+                      ? formatDate(contract.date_expiration)
+                      : "—",
+                  },
+                  {
+                    label: "Attestation",
+                    value: contract.attestation_number || "—",
+                    mono: Boolean(contract.attestation_number),
+                  },
+                ]}
+                size="sm"
               />
-              <MetricCard
-                icon={ShieldCheck}
-                label="Police ASS"
-                value={formatMoney(contract.cout_police_ass)}
+
+              {/* Montants — la synthèse ; le détail reste dans « Tarification » */}
+              <StatStrip
+                items={[
+                  {
+                    label: "Prime RC",
+                    value:
+                      contract.prime_rc_ass === null
+                        ? "—"
+                        : formatMoney(contract.prime_rc_ass),
+                  },
+                  { label: "Police ASS", value: formatMoney(contract.cout_police_ass) },
+                  {
+                    label: "TTC ASS",
+                    value: contract.ttc_ass === null ? "—" : formatMoney(contract.ttc_ass),
+                    tone: "primary",
+                  },
+                  {
+                    label: "Montant attendu",
+                    value: payableAmount === null ? "—" : formatMoney(payableAmount),
+                    tone: "success",
+                  },
+                ]}
               />
-              <MetricCard
-                icon={Banknote}
-                label="TTC ASS"
-                tone="primary"
-                value={contract.ttc_ass === null ? "—" : formatMoney(contract.ttc_ass)}
-              />
-              <MetricCard
-                icon={CheckCircle2}
-                label="Montant attendu"
-                tone="success"
-                value={payableAmount === null ? "—" : formatMoney(payableAmount)}
-              />
-            </div>
+            </section>
 
             {/* ── Main grid ──────────────────────────────────────── */}
             <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
@@ -405,44 +448,42 @@ export default function ContractDetailPage() {
               <div className="space-y-5">
                 <DraftDetailsPanel contract={contract} />
 
-                <Panel title="Paiements">
+                <Panel bodyClassName="" icon={Banknote} title="Paiements">
                   <div className="overflow-x-auto">
                     <table className="app-table app-table-responsive">
                       <thead>
                         <tr>
                           <th>Référence</th>
-                          <th>Montant</th>
                           <th>Statut</th>
                           <th>Date</th>
+                          <th className="num">Montant</th>
                         </tr>
                       </thead>
                       <tbody>
                         {contract.payments.map((p) => (
                           <tr key={p.id}>
-                            <td className="font-bold" data-label="Référence">
-                              {p.external_reference || "—"}
-                            </td>
-                            <td
-                              className="font-extrabold tabular-nums"
-                              data-label="Montant"
-                            >
-                              {formatMoney(p.amount)}
+                            <td className="row-head" data-label="Référence">
+                              <span className="cell-mono">
+                                {p.external_reference || "—"}
+                              </span>
                             </td>
                             <td data-label="Statut">
                               <StatusBadge status={p.status} />
                             </td>
-                            <td
-                              className="text-[13px] text-black/45"
-                              data-label="Date"
-                            >
-                              {formatDate(p.created_at)}
+                            <td data-label="Date">
+                              <span className="cell-sub">{formatDate(p.created_at)}</span>
+                            </td>
+                            <td className="num" data-label="Montant">
+                              <span className="text-[13.5px] font-black text-strong">
+                                {formatMoney(p.amount)}
+                              </span>
                             </td>
                           </tr>
                         ))}
                         {!contract.payments.length ? (
                           <tr>
                             <td
-                              className="py-8 text-center text-sm font-semibold text-black/38"
+                              className="py-8 text-center text-sm font-semibold text-faint"
                               colSpan={4}
                             >
                               Aucun paiement enregistré
@@ -454,37 +495,39 @@ export default function ContractDetailPage() {
                   </div>
                 </Panel>
 
-                <Panel title="Commission">
+                <Panel icon={Calculator} title="Commission">
                   {contract.commission_snapshot ? (
-                    <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:grid-cols-4">
-                      <InfoField
+                    <DataList columns={2}>
+                      <DataRow
+                        accent
                         label="Commission totale"
                         value={formatMoney(contract.commission_snapshot.commission_total)}
-                        highlight
                       />
-                      <InfoField
+                      <DataRow
                         label="Marge Horus"
                         value={formatMoney(contract.commission_snapshot.marge_horus)}
                       />
-                      <InfoField
+                      <DataRow
                         label="Reversé ASS"
-                        value={formatMoney(contract.commission_snapshot.montant_reverse_ass)}
+                        value={formatMoney(
+                          contract.commission_snapshot.montant_reverse_ass,
+                        )}
                       />
-                      <InfoField
-                        label="Part Prime RC"
+                      <DataRow
+                        label="Part prime RC"
                         value={formatMoney(
                           contract.commission_snapshot.commission_prime_rc_amount,
                         )}
                       />
-                      <InfoField
-                        label="Part Police"
+                      <DataRow
+                        label="Part police"
                         value={formatMoney(
                           contract.commission_snapshot.commission_policy_fee_amount,
                         )}
                       />
-                    </div>
+                    </DataList>
                   ) : (
-                    <p className="text-sm font-semibold text-black/38">
+                    <p className="text-sm font-semibold text-faint">
                       Aucun snapshot commission.
                     </p>
                   )}
@@ -494,11 +537,8 @@ export default function ContractDetailPage() {
               {/* ── Right sidebar ─────────────────────────────── */}
               <aside className="space-y-5 xl:sticky xl:top-[74px]">
                 {/* Actions panel */}
-                <section className="app-surface overflow-hidden">
-                  <div className="border-b border-border px-4 py-3.5">
-                    <h2 className="text-[13.5px] font-extrabold">Actions</h2>
-                  </div>
-                  <div className="space-y-2 p-4">
+                <Panel bodyClassName="space-y-2 p-3.5" title="Actions">
+                  <>
                     {canManageWorkflow && contract.internal_status === "DRAFT" ? (
                       <Link
                         className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-primary to-[var(--primary-strong)] text-sm font-extrabold text-white shadow-sm shadow-primary/25 transition hover:shadow-[0_4px_14px_rgba(150,0,192,0.35)] hover:brightness-105"
@@ -608,8 +648,8 @@ export default function ContractDetailPage() {
                         Annuler le contrat
                       </ActionButton>
                     ) : null}
-                  </div>
-                </section>
+                  </>
+                </Panel>
 
                 {/* Tarification — permanent dès qu'un devis existe */}
                 <TarificationPanel
@@ -745,6 +785,14 @@ function DraftDetailsPanel({ contract }: { contract: ContractDetail }) {
   const isEmpty =
     !vehicle && !fleet?.vehicles?.length && !garage && !policyholder && !insured;
 
+  // Selon le produit, la couverture est portée par le véhicule, la flotte ou le garage.
+  const coverage: { effectDate?: string; duration?: string; periodicity?: string } =
+    contract.contract_type === "FLEET"
+      ? (fleet ?? {})
+      : contract.contract_type === "GARAGE"
+        ? (garage ?? {})
+        : (vehicle ?? {});
+
   function personName(p: DraftPerson | undefined) {
     if (!p) return "—";
     return [p.firstName, p.lastName].filter(Boolean).join(" ") || "—";
@@ -756,138 +804,175 @@ function DraftDetailsPanel({ contract }: { contract: ContractDetail }) {
   }
 
   return (
-    <Panel title="Détails du contrat">
+    <Panel icon={FileText} title="Détails du contrat">
       {isEmpty ? (
-        <p className="text-sm font-semibold text-black/38">Brouillon vide.</p>
+        <p className="text-sm font-semibold text-faint">Brouillon vide.</p>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-5">
+          {/* ── Parties ──────────────────────────────────── */}
+          {policyholder || insured ? (
+            <Block title="Parties">
+              <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+                {policyholder ? (
+                  <div>
+                    <p className="eyebrow mb-1 text-primary">Souscripteur</p>
+                    <DataList>
+                      <DataRow label="Nom complet" value={personName(policyholder)} />
+                      <DataRow label="Téléphone" value={policyholder.phone || "—"} mono />
+                      <DataRow label="Email" value={policyholder.email || "—"} />
+                      <DataRow label="Adresse" value={policyholder.address || "—"} />
+                    </DataList>
+                  </div>
+                ) : null}
+                {insured ? (
+                  <div>
+                    <p className="eyebrow mb-1 text-primary">Assuré</p>
+                    <DataList>
+                      <DataRow label="Nom complet" value={personName(insured)} />
+                      <DataRow label="Téléphone" value={insured.phone || "—"} mono />
+                      <DataRow label="Email" value={insured.email || "—"} />
+                      <DataRow label="Adresse" value={insured.address || "—"} />
+                    </DataList>
+                  </div>
+                ) : null}
+              </div>
+            </Block>
+          ) : null}
+
           {/* ── Véhicule (mono) ───────────────────────────── */}
           {vehicle && contract.contract_type !== "GARAGE" ? (
-            <div>
-              <SectionLabel>Véhicule</SectionLabel>
-              <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:grid-cols-3">
-                {vehicle.brand ? <InfoField label="Marque" value={vehicle.brand} /> : null}
-                {vehicle.model ? <InfoField label="Modèle" value={vehicle.model} /> : null}
-                {(vehicle.registration || contract.immatriculation) ? (
-                  <InfoField label="Immatriculation" value={vehicle.registration || contract.immatriculation} mono />
-                ) : null}
-                {vehicle.energy ? <InfoField label="Énergie" value={vehicle.energy} /> : null}
-                {vehicle.fiscalPower ? <InfoField label="Puissance" value={`${vehicle.fiscalPower} CV`} /> : null}
-                {vehicle.seats ? <InfoField label="Places" value={vehicle.seats} /> : null}
-                {vehicle.firstCirculationDate ? (
-                  <InfoField label="1ère circulat." value={formatDate(vehicle.firstCirculationDate)} />
-                ) : null}
-                {vehicle.effectDate ? <InfoField label="Date d'effet" value={formatDate(vehicle.effectDate)} /> : null}
-                {durationLabel(vehicle) ? (
-                  <InfoField label="Durée" value={durationLabel(vehicle)!} />
-                ) : null}
-                {contract.date_expiration ? (
-                  <InfoField label="Échéance" value={formatDate(contract.date_expiration)} />
-                ) : null}
-                {vehicle.subcategory ? <InfoField label="Genre" value={vehicle.subcategory} /> : null}
-              </div>
-            </div>
+            <Block title="Véhicule">
+              <DataList columns={2}>
+                <DataRow label="Marque" value={vehicle.brand || "—"} />
+                <DataRow label="Modèle" value={vehicle.model || "—"} />
+                <DataRow
+                  label="Immatriculation"
+                  mono
+                  value={vehicle.registration || contract.immatriculation || "—"}
+                />
+                <DataRow label="Genre" value={vehicle.subcategory || "—"} />
+                <DataRow label="Énergie" value={vehicle.energy || "—"} />
+                <DataRow
+                  label={vehicle.cylindree ? "Cylindrée" : "Puissance fiscale"}
+                  value={
+                    vehicle.cylindree
+                      ? `${vehicle.cylindree} cm³`
+                      : vehicle.fiscalPower
+                        ? `${vehicle.fiscalPower} CV`
+                        : "—"
+                  }
+                />
+                <DataRow label="Places" value={vehicle.seats || "—"} />
+                <DataRow
+                  label="1re circulation"
+                  value={
+                    vehicle.firstCirculationDate
+                      ? formatDate(vehicle.firstCirculationDate)
+                      : "—"
+                  }
+                />
+              </DataList>
+            </Block>
           ) : null}
 
           {/* ── Garage ───────────────────────────────────── */}
           {garage && contract.contract_type === "GARAGE" ? (
-            <div>
-              <SectionLabel>Garage</SectionLabel>
-              <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:grid-cols-3">
-                {garage.subcategory ? <InfoField label="Genre" value={garage.subcategory} /> : null}
-                {garage.nombreCarte ? <InfoField label="Nb cartes" value={garage.nombreCarte} /> : null}
-                {garage.registration ? <InfoField label="Immatriculation" value={garage.registration} mono /> : null}
-                {garage.effectDate ? <InfoField label="Date d'effet" value={formatDate(garage.effectDate)} /> : null}
-                {durationLabel(garage) ? <InfoField label="Durée" value={durationLabel(garage)!} /> : null}
-                {contract.date_expiration ? (
-                  <InfoField label="Échéance" value={formatDate(contract.date_expiration)} />
-                ) : null}
-              </div>
-            </div>
+            <Block title="Garage">
+              <DataList columns={2}>
+                <DataRow label="Genre" value={garage.subcategory || "—"} />
+                <DataRow label="Nombre de cartes" value={garage.nombreCarte || "—"} />
+                <DataRow label="Immatriculation" mono value={garage.registration || "—"} />
+              </DataList>
+            </Block>
           ) : null}
+
+          {/* ── Couverture ───────────────────────────────── */}
+          <Block title="Couverture">
+            <DataList columns={2}>
+              <DataRow
+                label="Date d'effet"
+                value={coverage.effectDate ? formatDate(coverage.effectDate) : "—"}
+              />
+              <DataRow label="Durée" value={durationLabel(coverage) || "—"} />
+              <DataRow
+                label="Échéance"
+                value={
+                  contract.date_expiration ? formatDate(contract.date_expiration) : "—"
+                }
+              />
+              <DataRow
+                label="Garanties"
+                value={
+                  guarantees?.length ? (
+                    <span className="flex flex-wrap gap-1">
+                      {guarantees.map((g) => (
+                        <span
+                          className="rounded-md bg-primary/10 px-2 py-0.5 text-[11.5px] font-bold text-primary"
+                          key={g}
+                        >
+                          {g}
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    "RC seule"
+                  )
+                }
+              />
+            </DataList>
+            {guaranteeOptions && Object.entries(guaranteeOptions).some(([, v]) => v) ? (
+              <div className="mt-3 flex flex-wrap gap-1.5 border-t border-border pt-3">
+                {Object.entries(guaranteeOptions)
+                  .filter(([, v]) => v)
+                  .map(([k, v]) => (
+                    <span
+                      className="rounded-md border border-border bg-[#fbfbfe] px-2.5 py-1 text-[11.5px] font-bold text-body"
+                      key={k}
+                    >
+                      {k} : {v}
+                    </span>
+                  ))}
+              </div>
+            ) : null}
+          </Block>
 
           {/* ── Flotte ───────────────────────────────────── */}
           {fleet?.vehicles?.length ? (
-            <div>
-              <SectionLabel>{fleet.vehicles.length} véhicule(s) de flotte</SectionLabel>
-              <div className="space-y-1.5">
-                {fleet.vehicles.map((v, i) => (
-                  <div
-                    className="flex items-center gap-3 rounded-lg border border-border px-3 py-2 text-sm"
-                    key={v.id ?? i}
-                  >
-                    <span className="min-w-0 flex-1 font-semibold">
-                      {[v.brand, v.model].filter(Boolean).join(" ") || `Véhicule ${i + 1}`}
-                    </span>
-                    <span className="shrink-0 font-mono text-xs text-black/45">
-                      {v.registration || v.chassis || "—"}
-                    </span>
-                    {v.trailers?.length ? (
-                      <span className="shrink-0 text-xs text-black/38">
-                        {v.trailers.length} rem.
-                      </span>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          {/* ── Souscripteur / Assuré ────────────────────── */}
-          {(policyholder || insured) ? (
-            <div className="grid gap-5 sm:grid-cols-2">
-              {policyholder ? (
-                <div>
-                  <SectionLabel>Souscripteur</SectionLabel>
-                  <div className="space-y-3">
-                    <InfoField label="Nom complet" value={personName(policyholder)} />
-                    {policyholder.phone ? <InfoField label="Téléphone" value={policyholder.phone} /> : null}
-                    {policyholder.email ? <InfoField label="Email" value={policyholder.email} /> : null}
-                  </div>
-                </div>
-              ) : null}
-              {insured ? (
-                <div>
-                  <SectionLabel>Assuré</SectionLabel>
-                  <div className="space-y-3">
-                    <InfoField label="Nom complet" value={personName(insured)} />
-                    {insured.phone ? <InfoField label="Téléphone" value={insured.phone} /> : null}
-                    {insured.email ? <InfoField label="Email" value={insured.email} /> : null}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {/* ── Garanties ────────────────────────────────── */}
-          {guarantees?.length ? (
-            <div>
-              <SectionLabel>Garanties ASS</SectionLabel>
-              <div className="flex flex-wrap gap-1.5">
-                {guarantees.map((g) => (
-                  <span
-                    className="rounded-md bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary"
-                    key={g}
-                  >
-                    Garantie {g}
-                  </span>
-                ))}
-              </div>
-              {guaranteeOptions && Object.entries(guaranteeOptions).some(([, v]) => v) ? (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {Object.entries(guaranteeOptions)
-                    .filter(([, v]) => v)
-                    .map(([k, v]) => (
-                      <span
-                        className="rounded-md border border-border px-2.5 py-1 text-xs font-semibold text-black/55"
-                        key={k}
-                      >
-                        {k}: {v}
-                      </span>
+            <Block title={`Flotte — ${fleet.vehicles.length} véhicule(s)`}>
+              <div className="-mx-4 overflow-x-auto sm:-mx-5">
+                <table className="app-table app-table-responsive">
+                  <thead>
+                    <tr>
+                      <th>Véhicule</th>
+                      <th>Immat. / châssis</th>
+                      <th className="center">Remorques</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fleet.vehicles.map((v, i) => (
+                      <tr key={v.id ?? i}>
+                        <td className="row-head" data-label="Véhicule">
+                          <span className="cell-main">
+                            {[v.brand, v.model].filter(Boolean).join(" ") ||
+                              `Véhicule ${i + 1}`}
+                          </span>
+                        </td>
+                        <td data-label="Immat. / châssis">
+                          <span className="cell-mono">
+                            {v.registration || v.chassis || "—"}
+                          </span>
+                        </td>
+                        <td className="center" data-label="Remorques">
+                          <span className="font-bold text-body">
+                            {v.trailers?.length ?? 0}
+                          </span>
+                        </td>
+                      </tr>
                     ))}
-                </div>
-              ) : null}
-            </div>
+                  </tbody>
+                </table>
+              </div>
+            </Block>
           ) : null}
         </div>
       )}
@@ -895,44 +980,15 @@ function DraftDetailsPanel({ contract }: { contract: ContractDetail }) {
   );
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="mb-3 text-[10.5px] font-black uppercase tracking-wide text-black/38">
-      {children}
-    </p>
-  );
-}
-
-function Panel({ children, title }: { children: React.ReactNode; title: string }) {
-  return (
-    <section className="app-surface overflow-hidden">
-      <div className="border-b border-border px-5 py-3.5">
-        <h2 className="text-[13.5px] font-extrabold">{title}</h2>
-      </div>
-      <div className="p-5">{children}</div>
-    </section>
-  );
-}
-
-function InfoField({
-  label,
-  value,
-  mono = false,
-  highlight = false,
-}: {
-  label: string;
-  value: string | number;
-  mono?: boolean;
-  highlight?: boolean;
-}) {
+/* Bloc de section interne : un titre discret, un filet, un contenu aligné. */
+function Block({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="text-[10px] font-black uppercase tracking-wide text-black/38">{label}</p>
-      <p
-        className={`mt-1 text-sm font-bold ${mono ? "font-mono" : ""} ${highlight ? "text-primary" : ""}`}
-      >
-        {value}
-      </p>
+      <div className="mb-2 flex items-center gap-2.5">
+        <p className="eyebrow shrink-0">{title}</p>
+        <span className="h-px flex-1 bg-border" />
+      </div>
+      {children}
     </div>
   );
 }
@@ -952,16 +1008,26 @@ function QuoteRow({
 }) {
   return (
     <div
-      className={`flex items-center justify-between px-4 py-3 ${total ? "bg-primary/[0.04]" : ""}`}
+      className={`flex items-baseline justify-between gap-3 px-4 ${
+        total ? "bg-primary/[0.05] py-3" : "py-2"
+      }`}
     >
       <span
-        className={`text-xs font-bold ${total ? "font-extrabold text-primary" : "text-black/50"}`}
+        className={
+          total
+            ? "text-[11px] font-black uppercase tracking-[0.06em] text-primary"
+            : "text-[12px] font-bold text-muted-fg"
+        }
       >
         {label}
       </span>
       <span
-        className={`text-sm font-extrabold tabular-nums ${
-          total ? "text-primary" : reduction ? "text-emerald-600" : text ? "text-foreground" : ""
+        className={`tabular-nums ${
+          total
+            ? "text-[15px] font-black text-primary"
+            : `text-[13px] font-extrabold ${
+                reduction ? "text-emerald-600" : text ? "text-strong" : "text-strong"
+              }`
         }`}
       >
         {value}
@@ -1044,10 +1110,13 @@ function TarificationPanel({
 
   return (
     <section className="app-surface overflow-hidden animate-fade-in">
-      <div className="border-b border-border px-4 py-3.5">
-        <h2 className="text-[13.5px] font-extrabold">Tarification</h2>
+      <div className="panel-head">
+        <h2 className="panel-title">
+          <Calculator className="text-primary" size={14} />
+          Tarification
+        </h2>
       </div>
-      <div className="divide-y divide-border">
+      <div className="divide-y divide-[#f0f2f8]">
         <QuoteRow label="Prime RC" value={formatMoney(b.prime_rc_ass)} />
         <QuoteRow label="Police ASS" value={formatMoney(b.cout_police)} />
         {b.taxe !== undefined && b.taxe !== null ? (
@@ -1081,21 +1150,19 @@ function TarificationPanel({
       {/* Véhicules flotte si disponibles en mémoire */}
       {isFleet && fleetItems.length > 0 ? (
         <div className="border-t border-border">
-          <div className="px-4 pb-2 pt-3">
-            <p className="text-[10px] font-black uppercase tracking-wide text-black/38">
-              Véhicules ({fleetItems.length})
-            </p>
+          <div className="px-4 pb-1.5 pt-2.5">
+            <p className="eyebrow">Véhicules ({fleetItems.length})</p>
           </div>
-          <div className="divide-y divide-border pb-2">
+          <div className="divide-y divide-[#f0f2f8] pb-2">
             {fleetItems.map((item) => (
               <div
-                className="flex items-center justify-between px-4 py-2"
+                className="flex items-baseline justify-between gap-3 px-4 py-2"
                 key={item.request_id}
               >
-                <span className="truncate text-xs font-semibold text-black/55">
+                <span className="truncate text-[12px] font-bold text-muted-fg">
                   {item.label}
                 </span>
-                <span className="shrink-0 pl-4 text-xs font-extrabold tabular-nums">
+                <span className="shrink-0 text-[12.5px] font-extrabold tabular-nums text-strong">
                   {formatMoney(item.prime_rc_ass)}
                 </span>
               </div>
@@ -1145,40 +1212,43 @@ function AttestationsPanel({
 
   return (
     <section className="app-surface overflow-hidden">
-      <div className="border-b border-border px-4 py-3.5">
-        <h2 className="text-[13.5px] font-extrabold">Attestations</h2>
+      <div className="panel-head">
+        <h2 className="panel-title">
+          <ShieldCheck className="text-primary" size={14} />
+          Attestations
+        </h2>
       </div>
       <div className="p-4">
         {rows.length ? (
           <div className="divide-y divide-border">
             {rows.map((a) => (
               <div
-                className="grid gap-3 py-4 first:pt-0 last:pb-0"
+                className="py-3.5 first:pt-0 last:pb-0"
                 key={`${a.kind}-${a.reference_externe}-${a.attestation_number}`}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-black">{a.label}</p>
-                    <p className="mt-0.5 text-[10px] font-black uppercase tracking-wide text-black/38">
+                  <div className="min-w-0">
+                    <p className="truncate text-[13.5px] font-black text-strong">
+                      {a.label}
+                    </p>
+                    <p className="eyebrow mt-0.5">
                       {a.kind === "TRAILER" ? "Remorque" : "Véhicule"}
                       {a.immatriculation ? ` · ${a.immatriculation}` : ""}
                     </p>
                   </div>
-                  <span className="shrink-0 text-right font-mono text-sm font-black tabular-nums text-primary">
+                  <span className="shrink-0 text-right font-mono text-[13px] font-black tabular-nums text-primary">
                     {a.attestation_number || "—"}
                   </span>
                 </div>
-                <InfoField
-                  label="Référence externe"
-                  value={a.reference_externe || "—"}
-                  mono
-                />
-                <InfoField
-                  label="Expiration"
-                  value={a.date_expiration ? formatDate(a.date_expiration) : "—"}
-                />
+                <DataList className="mt-2">
+                  <DataRow label="Réf. externe" mono value={a.reference_externe || "—"} />
+                  <DataRow
+                    label="Expiration"
+                    value={a.date_expiration ? formatDate(a.date_expiration) : "—"}
+                  />
+                </DataList>
                 {(a.link_attestation_digitale || a.link_attestation_cedeao) ? (
-                  <div className="flex flex-wrap gap-2 pt-1">
+                  <div className="mt-2.5 flex flex-wrap gap-2">
                     {a.link_attestation_digitale ? (
                       <a
                         className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary/10 px-3 text-[12px] font-bold text-primary transition hover:bg-primary/20"
@@ -1207,7 +1277,7 @@ function AttestationsPanel({
             ))}
           </div>
         ) : (
-          <p className="text-sm font-semibold text-black/38">Aucune attestation émise.</p>
+          <p className="text-sm font-semibold text-faint">Aucune attestation émise.</p>
         )}
       </div>
     </section>

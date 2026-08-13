@@ -217,11 +217,11 @@ export default function PaymentsPage() {
                   <tr>
                     <th>Contrat</th>
                     <th>Organisation</th>
-                    <th>Montant</th>
                     <th>Référence</th>
                     <th>Statut</th>
                     <th>Confirmé le</th>
                     <th>Confirmé par</th>
+                    <th className="num">Montant</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -258,15 +258,16 @@ function PaymentRow({ payment }: { payment: PaymentListItem }) {
   return (
     <tr>
       {/* Contrat */}
-      <td data-label="Contrat">
+      <td className="row-head" data-label="Contrat">
         <Link
-          className="inline-flex items-center justify-center size-7 rounded-md text-primary hover:bg-primary/10 transition"
+          className="cell-main text-primary hover:underline"
           href={`/contracts/${payment.contract}`}
           title="Voir le contrat"
         >
-          <ExternalLink size={14} />
+          Dossier {payment.contract}
+          <ExternalLink className="ml-1 inline align-[-1px]" size={11} />
         </Link>
-        <p className="mt-0.5 text-xs text-black/38">
+        <p className="cell-sub">
           {CONTRACT_STATUS_LABELS[payment.contract_internal_status] ??
             payment.contract_internal_status}
         </p>
@@ -274,21 +275,12 @@ function PaymentRow({ payment }: { payment: PaymentListItem }) {
 
       {/* Organisation */}
       <td data-label="Organisation">
-        <span className="text-sm font-semibold">{payment.organization_name}</span>
-      </td>
-
-      {/* Montant */}
-      <td data-label="Montant">
-        <span className="font-extrabold tabular-nums">{formatMoney(payment.amount)}</span>
+        <span className="cell-main">{payment.organization_name}</span>
       </td>
 
       {/* Référence */}
       <td data-label="Référence">
-        {payment.external_reference ? (
-          <span className="font-mono text-sm text-black/60">{payment.external_reference}</span>
-        ) : (
-          <span className="text-sm text-black/25">—</span>
-        )}
+        <span className="cell-mono">{payment.external_reference || "—"}</span>
       </td>
 
       {/* Statut */}
@@ -297,17 +289,22 @@ function PaymentRow({ payment }: { payment: PaymentListItem }) {
       </td>
 
       {/* Confirmé le */}
-      <td className="whitespace-nowrap text-sm text-black/45" data-label="Confirmé le">
-        {payment.confirmed_at ? formatDateTime(payment.confirmed_at) : "—"}
+      <td data-label="Confirmé le">
+        <span className="cell-sub">
+          {payment.confirmed_at ? formatDateTime(payment.confirmed_at) : "—"}
+        </span>
       </td>
 
       {/* Confirmé par */}
       <td data-label="Confirmé par">
-        {payment.created_by_username ? (
-          <span className="text-sm font-semibold">{payment.created_by_username}</span>
-        ) : (
-          <span className="text-sm text-black/25">—</span>
-        )}
+        <span className="cell-main">{payment.created_by_username || "—"}</span>
+      </td>
+
+      {/* Montant */}
+      <td className="num" data-label="Montant">
+        <span className="text-[13.5px] font-black text-strong">
+          {formatMoney(payment.amount)}
+        </span>
       </td>
     </tr>
   );

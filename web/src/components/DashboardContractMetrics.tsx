@@ -81,6 +81,14 @@ export function DashboardContractMetrics() {
 
   return (
     <div>
+      <div className="mb-2.5 flex items-center justify-between gap-2">
+        <h2 className="text-[12.5px] font-black uppercase tracking-[0.05em] text-muted-fg">
+          Production
+        </h2>
+        <span className="text-[12px] font-bold text-faint">
+          {isLoading ? "—" : `${summary.total} dossier(s)`}
+        </span>
+      </div>
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {metrics.map((metric) => (
           <MetricCard

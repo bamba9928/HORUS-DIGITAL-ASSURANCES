@@ -249,23 +249,24 @@ export default function CommissionsPage() {
                   <tr>
                     <th>Contrat</th>
                     <th>Apporteur</th>
-                    <th>Montants ASS</th>
-                    <th>Commission</th>
-                    <th>Marge Horus</th>
                     <th>Date</th>
                     <th>Statut</th>
+                    <th className="num">Montants ASS</th>
+                    <th className="num">Commission</th>
+                    <th className="num">Marge Horus</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((snapshot) => (
                     <tr key={snapshot.id}>
-                      <td data-label="Contrat">
+                      <td className="row-head" data-label="Contrat">
                         <Link
-                          className="inline-flex items-center justify-center size-7 rounded-md text-primary hover:bg-primary/10 transition"
+                          className="cell-main text-primary hover:underline"
                           href={`/contracts/${snapshot.contract}`}
                           title="Voir le contrat"
                         >
-                          <ExternalLink size={14} />
+                          Dossier {snapshot.contract}
+                          <ExternalLink className="ml-1 inline align-[-1px]" size={11} />
                         </Link>
                       </td>
 
@@ -275,45 +276,20 @@ export default function CommissionsPage() {
                             {initials(snapshot.contributor_username)}
                           </span>
                           <div className="min-w-0">
-                            <p className="truncate font-extrabold">
+                            <p className="cell-main max-w-40 truncate">
                               {snapshot.contributor_full_name}
                             </p>
-                            <p className="mt-0.5 truncate text-xs text-black/40">
+                            <p className="cell-sub max-w-40 truncate">
                               {snapshot.organization_name}
                             </p>
                           </div>
                         </div>
                       </td>
 
-                      <td data-label="Montants ASS">
-                        <p className="font-bold tabular-nums">{formatMoney(snapshot.prime_rc_ass)}</p>
-                        <p className="mt-0.5 text-xs text-black/40">
-                          TTC {formatMoney(snapshot.ttc_ass)}
-                        </p>
-                      </td>
-
-                      <td data-label="Commission">
-                        <p className="font-extrabold tabular-nums">
-                          {formatMoney(snapshot.commission_total)}
-                        </p>
-                        <p className="mt-0.5 text-xs text-black/40">
-                          {formatMoney(snapshot.commission_prime_rc_amount)} RC +{" "}
-                          {formatMoney(snapshot.commission_policy_fee_amount)} police
-                        </p>
-                      </td>
-
-                      <td className="font-extrabold tabular-nums" data-label="Marge Horus">
-                        <span className={snapshot.marge_horus < 0 ? "text-red-600" : undefined}>
-                          {formatMoney(snapshot.marge_horus)}
-                        </span>
-                      </td>
-
                       <td data-label="Date">
-                        <p className="text-sm font-semibold">{formatDate(snapshot.created_at)}</p>
+                        <p className="cell-main">{formatDate(snapshot.created_at)}</p>
                         {snapshot.updated_at !== snapshot.created_at ? (
-                          <p className="mt-0.5 text-xs text-black/40">
-                            màj {formatDate(snapshot.updated_at)}
-                          </p>
+                          <p className="cell-sub">màj {formatDate(snapshot.updated_at)}</p>
                         ) : null}
                       </td>
 
@@ -346,13 +322,40 @@ export default function CommissionsPage() {
                           ) : null}
                         </div>
                         {snapshot.paid_at ? (
-                          <p className="mt-1 text-xs text-black/40">
+                          <p className="cell-sub mt-1">
                             Payée le {formatDate(snapshot.paid_at)}
                             {snapshot.paid_by_username
                               ? ` par ${snapshot.paid_by_username}`
                               : ""}
                           </p>
                         ) : null}
+                      </td>
+
+                      <td className="num" data-label="Montants ASS">
+                        <p className="text-[13.5px] font-bold text-strong">
+                          {formatMoney(snapshot.prime_rc_ass)}
+                        </p>
+                        <p className="cell-sub">TTC {formatMoney(snapshot.ttc_ass)}</p>
+                      </td>
+
+                      <td className="num" data-label="Commission">
+                        <p className="text-[13.5px] font-black text-strong">
+                          {formatMoney(snapshot.commission_total)}
+                        </p>
+                        <p className="cell-sub">
+                          {formatMoney(snapshot.commission_prime_rc_amount)} RC +{" "}
+                          {formatMoney(snapshot.commission_policy_fee_amount)} police
+                        </p>
+                      </td>
+
+                      <td className="num" data-label="Marge Horus">
+                        <span
+                          className={`text-[13.5px] font-black ${
+                            snapshot.marge_horus < 0 ? "text-red-600" : "text-strong"
+                          }`}
+                        >
+                          {formatMoney(snapshot.marge_horus)}
+                        </span>
                       </td>
                     </tr>
                   ))}

@@ -194,7 +194,7 @@ export default function ContractsPage() {
             {isExporting ? "Export…" : "Exporter CSV"}
           </PageAction>
           {canCreateContract(auth?.user) ? (
-            <PageAction href="/contracts/new" icon={FilePlus2}>
+            <PageAction desktopOnly href="/contracts/new" icon={FilePlus2}>
               Nouveau contrat
             </PageAction>
           ) : null}
@@ -331,12 +331,13 @@ export default function ContractsPage() {
                 <thead>
                   <tr>
                     <th>Dossier</th>
+                    <th>Statut</th>
                     <th>Véhicule</th>
                     <th>Apporteur</th>
-                    <th>Montants</th>
                     <th>Attestation</th>
                     <th>Échéance</th>
                     <th>Mis à jour</th>
+                    <th className="num">TTC ASS</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -352,23 +353,26 @@ export default function ContractsPage() {
                       tabIndex={0}
                     >
                       {/* Dossier */}
-                      <td data-label="Dossier">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <StatusBadge status={contract.internal_status} />
-                          </div>
-                          <div className="mt-1">
-                            <ContractTypeBadge contractType={contract.contract_type} />
-                          </div>
+                      <td className="row-head" data-label="Dossier">
+                        <p className="cell-mono text-primary">
+                          {contract.policy_number || `Dossier ${contract.id}`}
+                        </p>
+                        <div className="mt-1">
+                          <ContractTypeBadge contractType={contract.contract_type} />
                         </div>
+                      </td>
+
+                      {/* Statut */}
+                      <td data-label="Statut">
+                        <StatusBadge status={contract.internal_status} />
                       </td>
 
                       {/* Véhicule */}
                       <td data-label="Véhicule">
-                        <p className="font-bold">
+                        <p className="cell-main max-w-52 truncate">
                           {contract.vehicle_label || "Non renseigné"}
                         </p>
-                        <p className="mt-0.5 font-mono text-xs text-black/40">
+                        <p className="cell-sub font-mono">
                           {contract.immatriculation || "—"}
                         </p>
                       </td>
@@ -380,54 +384,51 @@ export default function ContractsPage() {
                             {initials(contract.contributor_username)}
                           </span>
                           <div className="min-w-0">
-                            <p className="truncate font-semibold">
+                            <p className="cell-main max-w-40 truncate">
                               {contract.contributor_full_name}
                             </p>
-                            <p className="mt-0.5 truncate text-xs text-black/38">
-                              {contract.organization_name}
+                            <p className="cell-sub max-w-40 truncate">
+                              {contract.organization_name || "—"}
                             </p>
                           </div>
                         </div>
                       </td>
 
-                      {/* Montants */}
-                      <td data-label="Montants">
-                        <p className="font-extrabold tabular-nums">
-                          {contract.ttc_ass === null ? "—" : formatMoney(contract.ttc_ass)}
-                        </p>
-                        <p className="mt-0.5 text-xs text-black/38">
-                          RC&nbsp;
-                          {contract.prime_rc_ass === null
-                            ? "—"
-                            : formatMoney(contract.prime_rc_ass)}
-                        </p>
-                      </td>
-
                       {/* Attestation */}
                       <td data-label="Attestation">
-                        <p className="font-semibold tabular-nums">
+                        <p className="cell-main tabular-nums">
                           {contract.attestation_number || "—"}
                         </p>
-                        <p className="mt-0.5 max-w-36 truncate text-xs text-black/38">
+                        <p className="cell-sub max-w-36 truncate">
                           {contract.reference_externe || "Non émise"}
                         </p>
                       </td>
 
                       {/* Échéance */}
-                      <td className="whitespace-nowrap text-[13px]" data-label="Échéance">
+                      <td data-label="Échéance">
                         {contract.date_expiration ? (
                           <ExpiryInline now={now} value={contract.date_expiration} />
                         ) : (
-                          <span className="text-black/25">—</span>
+                          <span className="cell-sub">—</span>
                         )}
                       </td>
 
                       {/* Date */}
-                      <td
-                        className="whitespace-nowrap text-[13px] text-black/45"
-                        data-label="Mis à jour"
-                      >
-                        {formatDate(contract.updated_at)}
+                      <td data-label="Mis à jour">
+                        <span className="cell-sub">{formatDate(contract.updated_at)}</span>
+                      </td>
+
+                      {/* Montants */}
+                      <td className="num" data-label="TTC ASS">
+                        <p className="text-[13.5px] font-black text-strong">
+                          {contract.ttc_ass === null ? "—" : formatMoney(contract.ttc_ass)}
+                        </p>
+                        <p className="cell-sub">
+                          RC&nbsp;
+                          {contract.prime_rc_ass === null
+                            ? "—"
+                            : formatMoney(contract.prime_rc_ass)}
+                        </p>
                       </td>
                     </tr>
                   ))}
@@ -478,10 +479,19 @@ function formatDate(value: string) {
 function ExpiryInline({ value, now }: { value: string; now: number }) {
   const days = Math.ceil((new Date(value).getTime() - now) / 86_400_000);
   const tone =
-    days < 0 ? "text-red-600" : days <= 30 ? "text-amber-600" : "text-black/55";
+    days < 0 ? "text-red-600" : days <= 30 ? "text-amber-600" : "text-strong";
   return (
-    <span className={`font-semibold ${tone}`}>
-      {days < 0 ? `Expiré (${Math.abs(days)} j)` : `${days} j`}
-    </span>
+    <>
+      <p className={`text-[13px] font-bold ${tone}`}>
+        {new Intl.DateTimeFormat("fr-FR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        }).format(new Date(value))}
+      </p>
+      <p className={`cell-sub ${days <= 30 ? tone : ""}`}>
+        {days < 0 ? `Expiré depuis ${Math.abs(days)} j` : `dans ${days} j`}
+      </p>
+    </>
   );
 }

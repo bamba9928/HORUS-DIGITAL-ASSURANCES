@@ -215,8 +215,8 @@ export function DashboardRecentContracts() {
                 <th>Échéance</th>
                 <th>Statut</th>
                 <th>Apporteur / groupe</th>
-                <th>Prime ASS</th>
-                <th className="text-right">Actions</th>
+                <th className="num">Prime ASS</th>
+                <th className="num">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -292,59 +292,57 @@ function ContractRow({ contract }: { contract: ContractListItem }) {
 
   return (
     <tr>
-      <td data-label="Police">
-        <p className="whitespace-nowrap font-mono text-xs font-black text-primary">
-          {contract.policy_number || `Dossier #${contract.id}`}
+      <td className="row-head" data-label="Police">
+        <p className="cell-mono text-primary">
+          {contract.policy_number || `Dossier ${contract.id}`}
         </p>
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
           <ContractTypeBadge contractType={contract.contract_type} />
           {contract.attestation_number ? (
-            <span className="text-[10px] font-semibold text-black/38">
+            <span className="text-[10.5px] font-bold text-faint">
               Att. {contract.attestation_number}
             </span>
           ) : null}
         </div>
       </td>
       <td data-label="Client">
-        <p className="max-w-44 truncate font-bold">
+        <p className="cell-main max-w-44 truncate">
           {contract.client_name || "Non renseigné"}
         </p>
-        <p className="mt-0.5 text-xs text-black/38">{contract.client_phone || "—"}</p>
+        <p className="cell-sub font-mono">{contract.client_phone || "—"}</p>
       </td>
       <td data-label="Immat.">
-        <p className="whitespace-nowrap font-mono text-xs font-bold">
+        <p className="cell-mono">
           {contract.immatriculation || registrationFromLabel(contract.vehicle_label) || "—"}
         </p>
-        <p className="mt-0.5 max-w-40 truncate text-xs text-black/38">
+        <p className="cell-sub max-w-40 truncate">
           {contract.vehicle_label || "Véhicule non renseigné"}
         </p>
       </td>
-      <td className="whitespace-nowrap" data-label="Effet">
-        {formatDate(contract.effect_date)}
+      <td data-label="Effet">
+        <span className="cell-main">{formatDate(contract.effect_date)}</span>
       </td>
-      <td className="whitespace-nowrap" data-label="Échéance">
-        {formatDate(contract.date_expiration)}
+      <td data-label="Échéance">
+        <span className="cell-main">{formatDate(contract.date_expiration)}</span>
       </td>
       <td data-label="Statut">
         <StatusBadge status={contract.internal_status} />
       </td>
       <td data-label="Apporteur / groupe">
-        <p className="max-w-40 truncate font-semibold">
+        <p className="cell-main max-w-40 truncate">
           {contract.contributor_full_name || contract.contributor_username}
         </p>
-        <p className="mt-0.5 max-w-40 truncate text-xs text-black/38">
-          {contract.organization_name || "—"}
-        </p>
+        <p className="cell-sub max-w-40 truncate">{contract.organization_name || "—"}</p>
       </td>
-      <td data-label="Prime ASS">
-        <p className="whitespace-nowrap font-black tabular-nums">
+      <td className="num" data-label="Prime ASS">
+        <p className="text-[13.5px] font-black text-strong">
           {totalPrime === null ? "—" : formatMoney(totalPrime)}
         </p>
-        <p className="mt-0.5 whitespace-nowrap text-xs text-black/38">
+        <p className="cell-sub">
           RC {contract.prime_rc_ass === null ? "—" : formatMoney(contract.prime_rc_ass)}
         </p>
       </td>
-      <td data-label="Actions">
+      <td className="num" data-label="Actions">
         <div className="flex justify-end gap-1.5">
           <Link
             aria-label={`Voir le contrat ${contract.id}`}

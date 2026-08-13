@@ -200,7 +200,7 @@ export default function EcheancesPage() {
                     <th>Véhicule</th>
                     <th>Client</th>
                     <th>Échéance</th>
-                    <th>Attestation</th>
+                    <th className="num">Attestation</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -215,33 +215,36 @@ export default function EcheancesPage() {
                       role="link"
                       tabIndex={0}
                     >
-                      <td data-label="Dossier">
-                        <StatusBadge status={contract.internal_status} />
-                        <div className="mt-1">
+                      <td className="row-head" data-label="Dossier">
+                        <p className="cell-mono text-primary">
+                          {contract.policy_number || `Dossier ${contract.id}`}
+                        </p>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <StatusBadge status={contract.internal_status} />
                           <ContractTypeBadge contractType={contract.contract_type} />
                         </div>
                       </td>
                       <td data-label="Véhicule">
-                        <p className="font-bold">
+                        <p className="cell-main max-w-52 truncate">
                           {contract.vehicle_label || "Non renseigné"}
                         </p>
-                        <p className="mt-0.5 font-mono text-xs text-black/40">
+                        <p className="cell-sub font-mono">
                           {contract.immatriculation || "—"}
                         </p>
                       </td>
                       <td data-label="Client">
-                        <p className="font-semibold">{contract.client_name || "—"}</p>
-                        <p className="mt-0.5 text-xs text-black/38">
-                          {contract.client_phone || ""}
+                        <p className="cell-main max-w-44 truncate">
+                          {contract.client_name || "—"}
                         </p>
+                        <p className="cell-sub font-mono">{contract.client_phone || "—"}</p>
                       </td>
                       <td data-label="Échéance">
                         <ExpiryCell now={now} value={contract.date_expiration} />
                       </td>
-                      <td data-label="Attestation">
-                        <p className="font-semibold tabular-nums">
+                      <td className="num" data-label="Attestation">
+                        <span className="cell-mono">
                           {contract.attestation_number || "—"}
-                        </p>
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -262,7 +265,7 @@ export default function EcheancesPage() {
 
 /* ── ExpiryCell ──────────────────────────────────────────────────── */
 function ExpiryCell({ value, now }: { value: string | null; now: number }) {
-  if (!value) return <span className="text-sm text-black/25">—</span>;
+  if (!value) return <span className="cell-sub">—</span>;
   const days = Math.ceil((new Date(value).getTime() - now) / 86_400_000);
   const expired = days < 0;
   const urgent = days >= 0 && days <= 15;
@@ -271,11 +274,11 @@ function ExpiryCell({ value, now }: { value: string | null; now: number }) {
     : days === 0
       ? "Expire aujourd'hui"
       : `Dans ${days} j`;
-  const tone = expired ? "text-red-600" : urgent ? "text-amber-600" : "text-black/70";
+  const tone = expired ? "text-red-600" : urgent ? "text-amber-600" : "text-strong";
   return (
     <div>
-      <p className={`font-extrabold ${tone}`}>{label}</p>
-      <p className="mt-0.5 text-xs text-black/40">{formatDate(value)}</p>
+      <p className={`text-[13px] font-black ${tone}`}>{formatDate(value)}</p>
+      <p className={`cell-sub ${expired || urgent ? tone : ""}`}>{label}</p>
     </div>
   );
 }

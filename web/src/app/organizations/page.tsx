@@ -213,7 +213,7 @@ export default function OrganizationsPage() {
                     <th>Organisation</th>
                     <th>Code</th>
                     <th>Type</th>
-                    <th>Utilisateurs</th>
+                    <th className="num">Utilisateurs</th>
                     <th>Statut</th>
                     <th>Créée le</th>
                     {canManage ? <th /> : null}
@@ -298,36 +298,35 @@ function OrgRow({
 }) {
   return (
     <tr className={org.status === "ACTIVE" ? "" : "opacity-55"}>
-      <td data-label="Organisation">
+      <td className="row-head" data-label="Organisation">
         <div className="flex items-center gap-3">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-[11px] font-black text-primary">
             {org.name.slice(0, 2).toUpperCase()}
           </span>
-          <span className="font-extrabold">{org.name}</span>
+          <span className="cell-main">{org.name}</span>
         </div>
       </td>
       <td data-label="Code">
-        <span className="font-mono text-sm font-bold text-black/55">{org.code}</span>
+        <span className="cell-mono">{org.code}</span>
       </td>
-      <td
-        className="whitespace-nowrap text-sm font-semibold text-black/55"
-        data-label="Type"
-      >
-        {organizationTypeLabel(org.organization_type)}
+      <td data-label="Type">
+        <span className="cell-main">
+          {organizationTypeLabel(org.organization_type)}
+        </span>
       </td>
-      <td data-label="Utilisateurs">
-        <span className="font-semibold tabular-nums">{org.user_count}</span>
+      <td className="num" data-label="Utilisateurs">
+        <span className="text-[13.5px] font-black text-strong">{org.user_count}</span>
       </td>
       <td data-label="Statut">
         <StatusBadge status={org.status} />
       </td>
-      <td className="whitespace-nowrap text-sm text-black/45" data-label="Créée le">
-        {formatDate(org.created_at)}
+      <td data-label="Créée le">
+        <span className="cell-sub">{formatDate(org.created_at)}</span>
       </td>
       {canManage ? (
-        <td className="text-right" data-label="Action">
+        <td className="num" data-label="Action">
           <button
-            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-bold text-black/45 transition hover:bg-muted hover:text-black"
+            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-bold text-muted-fg transition hover:bg-muted hover:text-black"
             onClick={onEdit}
             type="button"
           >

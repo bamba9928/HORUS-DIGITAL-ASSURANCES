@@ -104,11 +104,15 @@ export function AppShell({
   title,
   description,
   actions,
+  hideTitleOnMobile = false,
 }: {
   children: React.ReactNode;
   title: string;
   description?: string;
   actions?: React.ReactNode;
+  /** Masque visuellement le titre sous `sm` (il reste lu par les lecteurs
+   *  d'écran). Utile quand le titre n'apporte rien sur petit écran. */
+  hideTitleOnMobile?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -134,6 +138,10 @@ export function AppShell({
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const user = auth?.user;
+  // Action principale épinglée au centre de la barre mobile : inutile de la
+  // proposer sur la page de création elle-même.
+  const showMobileCreateCta =
+    canCreateContract(user) && pathname !== "/contracts/new";
   const visibleNavigation = navigation.filter((item) => {
     if (item.href === "/contracts/new") return canCreateContract(user);
     return true;
@@ -286,48 +294,81 @@ export function AppShell({
       >
         {/* ── Topbar ──────────────────────────────────────────────── */}
         <header className="sticky top-0 z-30 border-b border-border bg-white/96 backdrop-blur-sm">
-          <div className="flex min-h-[58px] items-center gap-3 px-4 sm:px-6">
-            {/* Mobile menu button */}
-            <button
-              aria-label="Ouvrir la navigation"
-              className="flex size-9 items-center justify-center rounded-lg border border-border text-black/55 hover:bg-muted lg:hidden"
-              onClick={() => setMobileOpen(true)}
-              type="button"
-            >
-              <Menu size={17} />
-            </button>
+          {/* Sur mobile la barre passe en 3 zones (gauche / centre / droite) pour
+              que le bouton principal soit réellement centré, quelle que soit la
+              largeur des zones latérales. */}
+          <div
+            className={`min-h-[58px] items-center gap-3 px-4 sm:px-6 ${
+              showMobileCreateCta
+                ? "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:flex"
+                : "flex"
+            }`}
+          >
+            {/* ── Zone gauche : navigation + titre ─────────────────── */}
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              {/* Mobile menu button */}
+              <button
+                aria-label="Ouvrir la navigation"
+                className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border text-black/55 hover:bg-muted lg:hidden"
+                onClick={() => setMobileOpen(true)}
+                type="button"
+              >
+                <Menu size={17} />
+              </button>
 
-            {/* Desktop collapse toggle */}
-            <button
-              aria-expanded={!sidebarCollapsed}
-              aria-label={sidebarCollapsed ? "Déplier le menu" : "Replier le menu"}
-              className="hidden size-9 items-center justify-center rounded-lg border border-border text-black/50 transition hover:bg-muted hover:text-black lg:flex"
-              onClick={() => setSidebarCollapsedPreference(!sidebarCollapsed)}
-              title={sidebarCollapsed ? "Déplier le menu" : "Replier le menu"}
-              type="button"
-            >
-              {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
-            </button>
+              {/* Desktop collapse toggle */}
+              <button
+                aria-expanded={!sidebarCollapsed}
+                aria-label={sidebarCollapsed ? "Déplier le menu" : "Replier le menu"}
+                className="hidden size-9 shrink-0 items-center justify-center rounded-lg border border-border text-black/50 transition hover:bg-muted hover:text-black lg:flex"
+                onClick={() => setSidebarCollapsedPreference(!sidebarCollapsed)}
+                title={sidebarCollapsed ? "Déplier le menu" : "Replier le menu"}
+                type="button"
+              >
+                {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+              </button>
 
-            {/* Title */}
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-2">
-                <h1 className="truncate text-base font-black tracking-tight sm:text-[17px]">
-                  {title}
-                </h1>
-                {description ? (
-                  <span className="hidden truncate text-sm font-medium text-black/40 sm:inline">
-                    — {description}
-                  </span>
-                ) : null}
+              {/* Title */}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-2">
+                  <h1
+                    className={`truncate text-base font-black tracking-tight sm:text-[17px] ${
+                      hideTitleOnMobile ? "sr-only sm:not-sr-only" : ""
+                    }`}
+                  >
+                    {title}
+                  </h1>
+                  {description ? (
+                    <span className="hidden truncate text-sm font-medium text-black/40 sm:inline">
+                      — {description}
+                    </span>
+                  ) : null}
+                </div>
               </div>
             </div>
 
-            {/* Actions slot */}
-            {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+            {/* ── Zone centre : action principale, mobile uniquement ─── */}
+            {showMobileCreateCta ? (
+              <Link
+                aria-label="Nouveau contrat"
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full bg-gradient-to-br from-primary to-[var(--primary-strong)] px-3 text-[12.5px] font-extrabold text-white shadow-sm shadow-primary/30 transition active:scale-[0.97] min-[500px]:px-3.5 lg:hidden"
+                href="/contracts/new"
+                title="Nouveau contrat"
+              >
+                <FilePlus2 size={15} />
+                {/* En dessous de 500px on garde la pastille seule : sinon le
+                    titre de page est rogné jusqu'à devenir illisible. */}
+                <span className="hidden min-[500px]:inline">Nouveau contrat</span>
+              </Link>
+            ) : null}
 
-            {/* Session widget */}
-            <TopbarSession auth={auth} isLoading={isAuthLoading} />
+            {/* ── Zone droite : actions de page + session ───────────── */}
+            <div className="flex min-w-0 items-center justify-end gap-2">
+              {actions ? (
+                <div className="flex shrink-0 items-center gap-2">{actions}</div>
+              ) : null}
+              <TopbarSession auth={auth} isLoading={isAuthLoading} />
+            </div>
           </div>
         </header>
 
@@ -420,20 +461,31 @@ export function AppShell({
         {visibleNavigation.slice(0, 4).map((item) => {
           const Icon = item.icon;
           const active = isActivePath(pathname, item.href);
+          // La création de contrat est une action, pas une destination :
+          // accent vert plein pour la détacher du reste de la navigation.
+          const isCreate = item.href === "/contracts/new";
           return (
             <Link
               className={`flex min-w-0 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[10px] font-bold transition ${
-                active ? "text-primary" : "text-black/40"
+                isCreate
+                  ? "text-emerald-700"
+                  : active
+                    ? "text-primary"
+                    : "text-black/40"
               }`}
               href={item.href}
               key={item.href}
             >
               <span
                 className={`flex size-7 items-center justify-center rounded-lg transition ${
-                  active ? "bg-primary/10" : ""
+                  isCreate
+                    ? "bg-emerald-600 text-white shadow-sm shadow-emerald-600/30"
+                    : active
+                      ? "bg-primary/10"
+                      : ""
                 }`}
               >
-                <Icon size={17} strokeWidth={active ? 2.5 : 2} />
+                <Icon size={17} strokeWidth={isCreate || active ? 2.5 : 2} />
               </span>
               <span className="max-w-full truncate">
                 {item.href === "/" ? "Accueil" : item.label}

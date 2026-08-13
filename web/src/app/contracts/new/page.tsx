@@ -927,7 +927,7 @@ function NewContractPageContent() {
           </span>
         </div>
       )}
-      description={isEditingDraft ? `Reprise du brouillon #${savedDraftId}` : "Souscription et émission ASS"}
+      description={isEditingDraft ? `Reprise du brouillon ${savedDraftId}` : "Souscription et émission ASS"}
       title="Nouveau contrat"
     >
       <div className="space-y-5">
@@ -2619,10 +2619,10 @@ function AutoSaveIndicator({
     <span
       aria-label={`Brouillon ${draftId} enregistré`}
       className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"
-      title={`Brouillon #${draftId} enregistré`}
+      title={`Brouillon ${draftId} enregistré`}
     >
       <CloudCheck size={15} />
-      <span className="hidden sm:inline">Brouillon #{draftId} enregistré</span>
+      <span className="hidden sm:inline">Brouillon {draftId} enregistré</span>
     </span>
   );
 }

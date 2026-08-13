@@ -52,15 +52,17 @@ export function DashboardFinancialMetrics() {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-extrabold text-black/55">Activité financière</h2>
+      <div className="mb-2.5 flex items-center justify-between gap-2">
+        <h2 className="text-[12.5px] font-black uppercase tracking-[0.05em] text-muted-fg">
+          Activité financière
+        </h2>
         <div className="flex gap-1">
           {periods.map((p) => (
             <button
               className={`rounded-full px-2.5 py-1 text-[12px] font-bold transition ${
                 period === p.value
-                  ? "bg-primary text-white"
-                  : "bg-muted text-black/50 hover:bg-border"
+                  ? "bg-primary text-white shadow-sm shadow-primary/25"
+                  : "bg-muted text-muted-fg hover:bg-border"
               }`}
               key={p.value}
               onClick={() => setPeriod(p.value)}

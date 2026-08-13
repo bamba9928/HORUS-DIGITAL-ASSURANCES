@@ -95,7 +95,9 @@ export default function ClientsPage() {
     >
       <div className="space-y-5">
         {/* ── KPI cards ─────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+        {/* 3 colonnes dès que la place existe : sinon la 3e carte reste
+            orpheline sur une deuxième rangée à moitié vide. */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <MetricCard
             icon={Users}
             label="Total clients"
@@ -161,10 +163,11 @@ export default function ClientsPage() {
                   <tr>
                     <th>Souscripteur</th>
                     <th>Téléphone</th>
-                    <th>Types</th>
+                    <th>Produits</th>
                     <th>Groupe(s)</th>
-                    <th className="text-center">Contrats</th>
+                    <th className="num">Contrats</th>
                     <th>Dernier contrat</th>
+                    <th className="num">Fiche</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -197,29 +200,37 @@ function ClientRow({ client }: { client: ClientItem }) {
 
   return (
     <tr>
-      {/* Souscripteur */}
-      <td data-label="Souscripteur">
+      {/* Souscripteur — identité + nature juridique dans une seule cellule */}
+      <td className="row-head" data-label="Souscripteur">
         <div className="flex items-center gap-2.5">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-black text-primary">
             {nameInitials(client.nom, client.prenom)}
           </span>
           <div className="min-w-0">
-            <p className="font-extrabold">{fullName}</p>
+            <p className="cell-main truncate">{fullName}</p>
+            <p className="cell-sub truncate">
+              {client.person_type === "MORALE" ? "Personne morale" : "Personne physique"}
+              {client.email ? ` · ${client.email}` : ""}
+            </p>
           </div>
         </div>
       </td>
 
       {/* Téléphone */}
       <td data-label="Téléphone">
-        <span className="font-mono text-sm font-semibold">{client.phone}</span>
+        <span className="cell-mono">{client.phone}</span>
       </td>
 
-      {/* Types */}
-      <td data-label="Types">
+      {/* Produits */}
+      <td data-label="Produits">
         <div className="flex flex-wrap gap-1">
-          {client.contract_types.map((t) => (
-            <ContractTypeBadge contractType={t} key={t} />
-          ))}
+          {client.contract_types.length ? (
+            client.contract_types.map((t) => (
+              <ContractTypeBadge contractType={t} key={t} />
+            ))
+          ) : (
+            <span className="cell-sub">—</span>
+          )}
         </div>
       </td>
 
@@ -236,28 +247,32 @@ function ClientRow({ client }: { client: ClientItem }) {
               </span>
             ))
           ) : (
-            <span className="text-sm text-black/25">—</span>
+            <span className="cell-sub">—</span>
           )}
         </div>
       </td>
 
       {/* Nb contrats */}
-      <td className="text-center" data-label="Contrats">
-        <span className="text-sm font-extrabold tabular-nums text-primary">
+      <td className="num" data-label="Contrats">
+        <span className="text-[14px] font-black text-primary">
           {client.contract_count}
         </span>
       </td>
 
       {/* Dernier contrat */}
-      <td className="whitespace-nowrap" data-label="Dernier contrat">
+      <td data-label="Dernier contrat">
+        <span className="cell-main">{formatDate(client.last_contract_date)}</span>
+      </td>
+
+      {/* Accès fiche */}
+      <td className="num" data-label="Fiche">
         <Link
-          className="inline-flex items-center justify-center size-7 rounded-md text-primary hover:bg-primary/10 transition"
+          className="inline-flex size-7 items-center justify-center rounded-lg border border-border bg-white text-black/50 transition hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
           href={`/contracts/${client.last_contract_id}`}
-          title="Voir le contrat"
+          title="Ouvrir le dernier contrat"
         >
-          <ExternalLink size={14} />
+          <ExternalLink size={13} />
         </Link>
-        <p className="mt-0.5 text-xs text-black/38">{formatDate(client.last_contract_date)}</p>
       </td>
     </tr>
   );

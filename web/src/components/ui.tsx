@@ -15,6 +15,8 @@ type PageActionProps = {
   icon?: typeof ArrowRight;
   children: React.ReactNode;
   variant?: "primary" | "secondary";
+  /** Masque l'action sous `lg` : à utiliser quand la barre mobile l'expose déjà. */
+  desktopOnly?: boolean;
 } & ({ href: string; onClick?: never } | { onClick: () => void; href?: never });
 
 export function PageAction({
@@ -23,8 +25,11 @@ export function PageAction({
   icon: Icon,
   children,
   variant = "primary",
+  desktopOnly = false,
 }: PageActionProps) {
-  const className = `inline-flex h-9 items-center justify-center gap-1.5 rounded-[9px] px-4 text-[13.5px] font-bold transition ${
+  const className = `${
+    desktopOnly ? "hidden lg:inline-flex" : "inline-flex"
+  } h-9 items-center justify-center gap-1.5 rounded-[9px] px-4 text-[13.5px] font-bold transition ${
     variant === "primary"
       ? "bg-gradient-to-br from-primary to-[var(--primary-strong)] text-white shadow-sm shadow-primary/30 hover:shadow-[0_4px_14px_0_rgba(150,0,192,0.35)] hover:brightness-105"
       : "border border-border bg-white text-black/80 shadow-[var(--shadow-xs)] hover:bg-muted hover:border-[var(--border-strong)]"
@@ -92,32 +97,33 @@ export function MetricCard({
 }) {
   const cfg = toneConfig[tone];
   return (
-    <div className="app-surface min-w-0 overflow-hidden transition hover:shadow-md">
+    <div className="app-surface flex min-w-0 flex-col overflow-hidden transition hover:shadow-md">
       {/* Colored top strip */}
       <div className={`h-[3px] ${cfg.bar}`} />
-      <div className="p-4">
+      <div className="flex min-w-0 flex-1 flex-col p-3.5">
         <div className="flex items-start justify-between gap-2">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-black/45">{label}</p>
+          <p className="eyebrow leading-[1.4]">{label}</p>
           {Icon ? (
             <span
-              className={`flex size-[34px] shrink-0 items-center justify-center rounded-xl ${cfg.icon}`}
+              className={`flex size-8 shrink-0 items-center justify-center rounded-[10px] ${cfg.icon}`}
             >
-              <Icon size={15} />
+              <Icon size={14} />
             </span>
           ) : null}
         </div>
         {loading ? (
-          <span className="skeleton mt-3 block h-[26px] w-24 rounded-md sm:h-[28px]" />
+          <span className="skeleton mt-2.5 block h-[25px] w-24 rounded-md sm:h-[27px]" />
         ) : (
           <p
-            className={`mt-3 truncate text-[26px] font-black leading-none tracking-tight sm:text-[28px] ${cfg.value}`}
+            className={`mt-2.5 truncate text-[23px] font-black leading-none tracking-[-0.03em] tabular sm:text-[26px] ${cfg.value || "text-strong"}`}
+            title={String(value)}
           >
             {value}
           </p>
         )}
-        <div className="mt-2 flex items-center gap-2">
+        <div className="mt-auto flex items-center gap-2 pt-1.5">
           {detail ? (
-            <p className="truncate text-xs font-medium text-black/38">{detail}</p>
+            <p className="truncate text-[11.5px] font-semibold text-faint">{detail}</p>
           ) : null}
           {trend ? (
             <span
@@ -135,6 +141,125 @@ export function MetricCard({
   );
 }
 
+/* ── Panel : carte à en-tête normalisé ───────────────────────────── */
+export function Panel({
+  title,
+  icon: Icon,
+  action,
+  children,
+  bodyClassName = "p-4 sm:p-5",
+  className = "",
+}: {
+  title: string;
+  icon?: typeof ArrowRight;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  bodyClassName?: string;
+  className?: string;
+}) {
+  return (
+    <section className={`app-surface overflow-hidden ${className}`}>
+      <div className="panel-head">
+        <h2 className="panel-title">
+          {Icon ? <Icon className="text-primary" size={14} /> : null}
+          {title}
+        </h2>
+        {action}
+      </div>
+      <div className={bodyClassName}>{children}</div>
+    </section>
+  );
+}
+
+/* ── DataList : paires libellé / valeur alignées ─────────────────── */
+export function DataList({
+  columns = 1,
+  children,
+  className = "",
+}: {
+  columns?: 1 | 2;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <dl className={`data-grid ${columns === 2 ? "data-grid-2" : ""} ${className}`}>
+      {children}
+    </dl>
+  );
+}
+
+export function DataRow({
+  label,
+  value,
+  mono = false,
+  accent = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  mono?: boolean;
+  accent?: boolean;
+}) {
+  return (
+    <div className="data-row">
+      <dt>{label}</dt>
+      <dd className={`${mono ? "mono" : ""} ${accent ? "accent" : ""}`}>
+        {value === "" || value === null || value === undefined ? "—" : value}
+      </dd>
+    </div>
+  );
+}
+
+/* ── StatStrip : bandeau de chiffres alignés (remplace les cartes
+      flottantes quand les montants appartiennent au même bloc) ───── */
+export function StatStrip({
+  items,
+  size = "md",
+  className = "",
+}: {
+  items: {
+    label: string;
+    value: React.ReactNode;
+    tone?: "neutral" | "primary" | "success";
+    mono?: boolean;
+  }[];
+  size?: "md" | "sm";
+  className?: string;
+}) {
+  const toneClass = {
+    neutral: "text-strong",
+    primary: "text-primary",
+    success: "text-emerald-700",
+  };
+  const valueClass =
+    size === "md"
+      ? "mt-1 text-[17px] font-black sm:text-[19px]"
+      : "mt-1 text-[13.5px] font-extrabold sm:text-[14px]";
+  return (
+    <div
+      className={`grid grid-cols-2 gap-px border-t border-border bg-border sm:grid-cols-4 ${className}`}
+    >
+      {items.map((item) => {
+        // Un placeholder ne porte pas la couleur d'accent : sinon le tiret
+        // se lit comme une valeur mise en avant.
+        const isEmpty = item.value === "—" || item.value === null;
+        return (
+          <div className="min-w-0 bg-white px-4 py-2.5" key={item.label}>
+            <p className="eyebrow">{item.label}</p>
+            <p
+              className={`truncate tabular tracking-[-0.025em] ${valueClass} ${
+                isEmpty ? "text-faint" : toneClass[item.tone ?? "neutral"]
+              } ${item.mono ? "font-mono tracking-[-0.03em]" : ""}`}
+              title={typeof item.value === "string" ? item.value : undefined}
+            >
+              {isEmpty ? "—" : item.value}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ── SectionHeader ───────────────────────────────────────────────── */
 export function SectionHeader({
   title,
@@ -148,9 +273,9 @@ export function SectionHeader({
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h2 className="text-[15px] font-extrabold tracking-tight">{title}</h2>
+        <h2 className="text-[15px] font-black tracking-[-0.022em] text-strong">{title}</h2>
         {description ? (
-          <p className="mt-0.5 text-sm font-medium text-black/40">{description}</p>
+          <p className="mt-0.5 text-[13px] font-semibold text-faint">{description}</p>
         ) : null}
       </div>
       {action}
@@ -247,9 +372,9 @@ export function EmptyState({
       <span className="flex size-14 items-center justify-center rounded-2xl border border-border bg-gradient-to-br from-muted to-white text-black/28 shadow-inner">
         <Inbox size={24} strokeWidth={1.5} />
       </span>
-      <p className="mt-4 text-[15px] font-extrabold text-black/70">{title}</p>
+      <p className="mt-4 text-[15px] font-black tracking-[-0.02em] text-strong">{title}</p>
       {description ? (
-        <p className="mt-1.5 max-w-xs text-sm font-medium text-black/38">{description}</p>
+        <p className="mt-1.5 max-w-xs text-[13px] font-semibold text-faint">{description}</p>
       ) : null}
       {action ? <div className="mt-5">{action}</div> : null}
     </div>

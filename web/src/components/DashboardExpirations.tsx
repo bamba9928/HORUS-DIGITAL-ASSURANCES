@@ -29,37 +29,43 @@ export function DashboardExpirations() {
   const stats = [
     { label: "Expirés", value: summary?.expired ?? 0, tone: "text-red-600" },
     { label: "≤ 30 j", value: summary?.expiring_30 ?? 0, tone: "text-amber-600" },
-    { label: "≤ 60 j", value: summary?.expiring_60 ?? 0, tone: "text-black/70" },
+    { label: "≤ 60 j", value: summary?.expiring_60 ?? 0, tone: "text-strong" },
   ];
 
   return (
-    <section className="app-surface p-5">
+    <section className="app-surface px-4 py-4 sm:px-5">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-2.5">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-primary/8 text-primary">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-primary">
             <CalendarClock size={19} />
           </span>
           <div>
-            <h2 className="font-extrabold tracking-tight">Échéances à venir</h2>
-            <p className="mt-0.5 text-sm text-black/40">Contrats émis à renouveler</p>
+            <h2 className="text-[15px] font-black tracking-[-0.022em] text-strong">
+              Échéances à venir
+            </h2>
+            <p className="mt-0.5 text-[13px] font-semibold text-faint">
+              Contrats émis à renouveler
+            </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-5 sm:gap-7">
+        <div className="flex items-center gap-4 sm:gap-6">
           {stats.map((stat) => (
-            <div className="text-center" key={stat.label}>
+            <div className="min-w-14 text-right" key={stat.label}>
               {isLoading ? (
-                <Skeleton className="mx-auto h-7 w-9 rounded" />
+                <Skeleton className="ml-auto h-6 w-9 rounded" />
               ) : (
-                <p className={`text-2xl font-extrabold tabular-nums ${stat.tone}`}>
+                <p
+                  className={`text-[22px] font-black leading-none tabular-nums ${stat.tone}`}
+                >
                   {stat.value}
                 </p>
               )}
-              <p className="mt-0.5 text-xs font-semibold text-black/45">{stat.label}</p>
+              <p className="eyebrow mt-1">{stat.label}</p>
             </div>
           ))}
           <Link
-            className="inline-flex items-center gap-1 rounded-md bg-primary/8 px-3 py-2 text-sm font-bold text-primary transition hover:bg-primary/15"
+            className="inline-flex h-9 items-center gap-1 rounded-lg bg-primary/8 px-3 text-[13px] font-bold text-primary transition hover:bg-primary/15"
             href="/echeances"
           >
             Voir

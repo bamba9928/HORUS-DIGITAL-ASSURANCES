@@ -249,14 +249,15 @@ function UserRow({
 
   return (
     <tr className={!user.is_active ? "opacity-55" : ""}>
-      <td data-label="Utilisateur">
+      <td className="row-head" data-label="Utilisateur">
         <div>
           <div className="flex items-center gap-2">
             <Link
-              className="font-extrabold hover:text-primary hover:underline"
+              className="cell-main hover:text-primary hover:underline"
               href={`/users/${user.id}`}
             >
-              {user.username}
+              {[user.first_name, user.last_name].filter(Boolean).join(" ") ||
+                user.username}
             </Link>
             {!user.is_active ? (
               <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600">
@@ -264,11 +265,9 @@ function UserRow({
               </span>
             ) : null}
           </div>
-          <p className="mt-1 text-xs font-semibold text-black/45">
-            {[user.first_name, user.last_name].filter(Boolean).join(" ") || user.email || "Sans nom"}
-          </p>
-          <p className="mt-0.5 font-mono text-[11px] font-bold text-black/35">
-            {user.matricule}
+          <p className="cell-sub">
+            {user.username}
+            {user.matricule ? ` · ${user.matricule}` : ""}
           </p>
           {error ? <p className="mt-2 text-xs font-bold text-red-700">{error}</p> : null}
         </div>
@@ -276,8 +275,8 @@ function UserRow({
       <td data-label="Rôle">
         <StatusBadge status={user.role} />
       </td>
-      <td className="font-bold" data-label="Groupe">
-        {user.organization_name ?? "—"}
+      <td data-label="Groupe">
+        <span className="cell-main">{user.organization_name ?? "—"}</span>
       </td>
       <td data-label="Prime RC">
         <div className="relative">
