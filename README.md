@@ -135,6 +135,6 @@ Voir `backend/.env.example` et `web/.env.example` pour la liste complète.
 ## Documentation
 
 Le dossier `docs/` contient :
-- `docs/ass/analyse_api_ass.md` — Analyse détaillée de l'API A.A.S
+- `docs/ass/analyse_api_ass.md` — Analyse détaillée de l'API A.S.S
 - `docs/ass/roadmap_horus_ass.md` — Roadmap d'implémentation
 - `docs/ass/*.postman_*.json` — Collections Postman pour les tests
