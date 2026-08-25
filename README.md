@@ -100,7 +100,7 @@ DRAFT → QUOTE_READY → PAYMENT_PENDING → PAID → ISSUING → ISSUED
 2. **QUOTE_READY** — Devis calculé (appel API A.S.S)
 3. **PAYMENT_PENDING** — En attente de paiement
 4. **PAID** — Paiement confirmé
-5. **ISSUING** — Émission A.A.S réservée et en cours
+5. **ISSUING** — Émission A.S.S réservée et en cours
 6. **ISSUED** — Attestation émise (appel API A.S.S)
 7. **CANCELLED** — Annulé
 
