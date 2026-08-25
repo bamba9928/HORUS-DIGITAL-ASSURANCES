@@ -1,6 +1,6 @@
 # Horus Assurances Digital
 
-Plateforme B2B de gestion de contrats d'assurance automobile pour le marché sénégalais, intégrée avec l'API partenaire **A.A.S** (African Assurance Services).
+Plateforme B2B de gestion de contrats d'assurance automobile pour le marché sénégalais, intégrée avec l'API partenaire **A.S.S** .
 
 ## Stack technique
 
