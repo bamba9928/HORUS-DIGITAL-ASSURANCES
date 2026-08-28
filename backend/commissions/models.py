@@ -39,12 +39,20 @@ class CommissionSnapshot(models.Model):
     commission_prime_rc_amount = models.PositiveIntegerField()
     commission_policy_fee_amount = models.PositiveIntegerField()
     commission_total = models.PositiveIntegerField()
-    # Commission d'apport reversee par ASS a Horus sur la PrimeRC (revenu Horus).
+    # Taux de commission d'apport applique (20 %, 40 % sur les genres TPC), fige
+    # a l'emission : le bareme peut changer, le contrat emis reste auditable.
+    ass_partner_commission_rate_used = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+    )
+    # Commission d'apport reversee par ASS a Horus sur la prime nette (revenu Horus).
     ass_partner_commission = models.PositiveIntegerField(default=0)
-    # Part du TTC encaisse reversee a ASS (prime assureur + taxes/fonds).
+    # Part du net a verser reversee a ASS, hors plateforme :
+    # TTC - cout de police - commission d'apport.
     montant_reverse_ass = models.PositiveIntegerField(default=0)
-    # Marge nette de Horus = revenu Horus (frais de police + apport ASS) - commission
-    # apporteur. Peut etre negative (commission apporteur > revenu Horus).
+    # Marge nette de Horus. Depuis la regle du 2026-08-28 elle vaut exactement la
+    # commission d'apport : le cout de police est retenu par l'apporteur.
     marge_horus = models.IntegerField(default=0)
     paid_at = models.DateTimeField(null=True, blank=True)
     paid_by = models.ForeignKey(
@@ -59,6 +67,11 @@ class CommissionSnapshot(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+    @property
+    def net_a_verser(self):
+        """Montant paye par l'apporteur via Orange Money = TTC - cout de police."""
+        return self.ttc_ass - self.cout_police_ass
 
     def __str__(self):
         return f"Commission {self.commission_total} FCFA - {self.status}"

@@ -405,6 +405,8 @@ export type CommissionSnapshot = {
   commission_prime_rc_amount: number;
   commission_policy_fee_amount: number;
   commission_total: number;
+  net_a_verser: number;
+  ass_partner_commission_rate_used: string;
   ass_partner_commission: number;
   montant_reverse_ass: number;
   marge_horus: number;
@@ -629,6 +631,8 @@ export type ContractCommissionSnapshot = {
   commission_prime_rc_amount: number;
   commission_policy_fee_amount: number;
   commission_total: number;
+  net_a_verser: number;
+  ass_partner_commission_rate_used: string;
   ass_partner_commission: number;
   montant_reverse_ass: number;
   marge_horus: number;

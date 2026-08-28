@@ -2205,7 +2205,9 @@ function QuoteResultPanel({ quote }: { quote: ContractQuote }) {
                 </div>
                 {/* Colonne droite */}
                 <div className="divide-y divide-border">
-                  <QuoteRow label="Réduction" value={quote.reduction ?? 0} isReduction />
+                  {quote.reduction ? (
+                    <QuoteRow label="Réduction" value={quote.reduction} isReduction />
+                  ) : null}
                   <QuoteRow label="Prime A.G" value={quote.prime_ag ?? 0} />
                   <QuoteRow label="Fonds de garantie" value={quote.fonds_garantie ?? 0} />
                   <QuoteRow

@@ -165,12 +165,18 @@ export default function ContractDetailPage() {
 
   const payableAmount = useMemo(() => {
     if (!contract?.prime_rc_ass) return null;
-    // Le backend attend la prime totale ASS (taxe, CEDEAO, fonds de garantie…)
-    // quand elle existe ; sinon prime RC + coût de police.
+    // Net à verser = TTC − coût de police. L'apporteur retient le coût de police
+    // à la source, il ne verse que le solde (règle du 28/08/2026). Le backend
+    // applique la même formule dans payments.services.expected_payment_amount :
+    // envoyer le TTC entier ferait échouer la confirmation de paiement.
+    // TTC = prime totale ASS (taxe, CEDEAO, fonds de garantie…) quand elle
+    // existe ; sinon prime RC + coût de police.
     const primeTotale = contract.quote_breakdown?.prime_totale;
-    return primeTotale && primeTotale > 0
-      ? primeTotale
-      : contract.prime_rc_ass + contract.cout_police_ass;
+    const ttc =
+      primeTotale && primeTotale > 0
+        ? primeTotale
+        : contract.prime_rc_ass + contract.cout_police_ass;
+    return Math.max(0, ttc - contract.cout_police_ass);
   }, [contract]);
 
   async function calculateQuote() {
@@ -434,7 +440,7 @@ export default function ContractDetailPage() {
                     tone: "primary",
                   },
                   {
-                    label: "Montant attendu",
+                    label: "Net à verser",
                     value: payableAmount === null ? "—" : formatMoney(payableAmount),
                     tone: "success",
                   },

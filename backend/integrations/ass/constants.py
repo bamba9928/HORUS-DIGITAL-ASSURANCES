@@ -1,6 +1,13 @@
 ASS_SANDBOX_BASE_URL = "https://kiiraytest.lasecu-assurances.sn"
+ASS_PRODUCTION_BASE_URL = "https://manager.ass-assurances.sn"
+
+# Segment {partner} de l'URL /api/v1/{partner}/... : c'est le NOM DE PARTENAIRE
+# attribue par ASS, pas un mot-cle fixe. La sandbox mutualisee repondait sur la
+# valeur litterale "partner" ; un compte nominatif porte son propre nom (mail du
+# DSI d'ASS, 2026-08-20 : « le parametre {partner} doit etre remplace par votre
+# nom de partenaire »). Ce defaut n'est qu'un filet pour la sandbox historique :
+# toute installation reelle DOIT surcharger ASS_API_PARTNER_SEGMENT.
 ASS_API_PARTNER_SEGMENT = "partner"
-ASS_API_PREFIX = f"/api/v1/{ASS_API_PARTNER_SEGMENT}"
 
 ASS_ENDPOINT_RC_AUTO = "/rc.request"
 ASS_ENDPOINT_ISSUE_AUTO = "/qrcode.request"

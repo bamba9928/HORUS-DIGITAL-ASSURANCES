@@ -29,7 +29,10 @@ import django  # noqa: E402
 
 django.setup()
 
+from django.conf import settings  # noqa: E402
+
 from integrations.ass.client import AssClient  # noqa: E402
+from integrations.ass.constants import ASS_SANDBOX_BASE_URL  # noqa: E402
 from integrations.ass.exceptions import AssApiError  # noqa: E402
 
 
@@ -310,6 +313,28 @@ PROBES = {
 
 SIMULATION_PROBES = [name for name in PROBES if name != "issue-mono"]
 
+# Sondes qui consomment un QR reel. Depuis la bascule sur le compte de production
+# (2026-08-20), le .env peut pointer sur manager.ass-assurances.sn : "issue-mono"
+# y emettrait une VRAIE police facturee, et l'annulation ne restitue PAS le QR.
+ISSUING_PROBES = {"issue-mono"}
+
+
+def _assert_issuing_allowed():
+    """Refuse les sondes emettrices hors sandbox, sauf accord explicite."""
+    base_url = (settings.ASS_BASE_URL or "").rstrip("/")
+    if base_url == ASS_SANDBOX_BASE_URL:
+        return
+    if os.environ.get("ASS_PROBE_ALLOW_PRODUCTION") == "1":
+        print(f"!! Sonde emettrice hors sandbox ({base_url}) : QR REEL consomme, non restituable.")
+        return
+    raise SystemExit(
+        f"Refus : ASS_BASE_URL={base_url or '(vide)'} n'est pas la sandbox "
+        f"({ASS_SANDBOX_BASE_URL})." "\n"
+        "La sonde 'issue-mono' emet une police reelle et consomme un QR que "
+        "l'annulation ne restitue pas.\n"
+        "Pour l'assumer sciemment : ASS_PROBE_ALLOW_PRODUCTION=1"
+    )
+
 
 def main():
     names = sys.argv[1:]
@@ -320,6 +345,9 @@ def main():
 
     if "all" in names:
         names = SIMULATION_PROBES
+
+    if ISSUING_PROBES.intersection(names):
+        _assert_issuing_allowed()
 
     client = AssClient()
     for name in names:

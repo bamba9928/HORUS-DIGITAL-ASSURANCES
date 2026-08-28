@@ -27,7 +27,6 @@ from contracts.serializers import (
     ContractListSerializer,
     validate_fleet_coverage_for_quote,
 )
-from commissions.services import CommissionNotConfiguredError
 from integrations.ass.exceptions import AssIntegrationError
 from payments.models import Payment
 from contracts.services import (
@@ -447,7 +446,7 @@ class ContractIssueView(AuthenticatedContractMixin, APIView):
 
         try:
             result = issue_contract(contract)
-        except (ContractIssueError, CommissionNotConfiguredError, ValidationError) as exc:
+        except (ContractIssueError, ValidationError) as exc:
             return Response({"detail": str(exc)}, status=400)
         except AssIntegrationError as exc:
             # La reservation d'emission a deja ete liberee par issue_contract.

@@ -6,9 +6,8 @@ from django.utils import timezone
 from contracts.models import Contract
 from integrations.orange_money.client import OmClient
 from integrations.orange_money.constants import (
-    OM_STATUS_EXPIRED,
-    OM_STATUS_FAILED,
     OM_STATUS_SUCCESS,
+    OM_TERMINAL_FAILURE_STATUSES,
 )
 from payments.models import Payment
 
@@ -18,6 +17,18 @@ class PaymentConfirmationError(ValueError):
 
 
 def expected_payment_amount(contract):
+    """Net a verser : ce que l'apporteur paie via Orange Money avant emission.
+
+    Regle du 2026-08-28 : `TTC - cout de police`. L'apporteur retient le cout de
+    police a la source — c'est sa remuneration, uniforme sur tous les comptes —
+    et ne verse que le solde. Horus y preleve ensuite sa commission d'apport et
+    reverse le reste a ASS hors plateforme (voir commissions.services).
+    """
+    return max(0, _contract_ttc(contract) - contract.cout_police_ass)
+
+
+def _contract_ttc(contract):
+    """Prime totale TTC facturee par ASS pour ce contrat."""
     response_payload = contract.ass_response_payload
     if isinstance(response_payload, dict):
         # Format API reelle (valide en sandbox 2026-06-11) : PrimeTotale a la
@@ -35,8 +46,8 @@ def expected_payment_amount(contract):
     # Repli — notamment FLOTTE : la reponse rc.flotte n'expose pas de PrimeTotale
     # (elle est imbriquee sous "flotte"/"remorques"). ATTENTION : ce repli ne couvre
     # que RC + cout de police, SANS taxes/FGA/CEDEAO. A revoir des que le format reel
-    # de tarification flotte sera connu (rc.flotte.request bloque cote ASS au
-    # 2026-06-11 : bug serveur ga_def_recours).
+    # de tarification flotte sera connu (rc.flotte.request bloque cote ASS : bug
+    # serveur ga_def_recours, reproduit en production le 2026-08-28).
     return contract.prime_rc_ass + contract.cout_police_ass
 
 
@@ -93,7 +104,11 @@ def confirm_manual_payment(*, contract, amount=None, external_reference="", crea
         ) from exc
 
     contract.internal_status = Contract.InternalStatus.PAID
-    contract.ttc_ass = amount
+    # ttc_ass porte la prime totale ASS, PAS le montant encaisse : depuis la
+    # regle du 28/08/2026 l'apporteur ne verse que TTC - cout de police. Le
+    # confondre avec le montant du paiement retrancherait deux fois le cout de
+    # police dans le calcul de commission.
+    contract.ttc_ass = _contract_ttc(contract)
     contract.save(update_fields=["internal_status", "ttc_ass", "updated_at"])
     return payment
 
@@ -219,11 +234,16 @@ def check_om_payment(*, payment, client=None):
                     ) from exc
 
                 contract.internal_status = Contract.InternalStatus.PAID
-                contract.ttc_ass = payment.amount
+                # Prime totale ASS, pas le montant encaisse : voir
+                # confirm_manual_payment.
+                contract.ttc_ass = _contract_ttc(contract)
                 contract.save(update_fields=["internal_status", "ttc_ass", "updated_at"])
                 # Rafraîchit la relation en cache pour que l'appelant voie le nouvel état.
                 payment.contract = contract
-        elif txn_status in {OM_STATUS_FAILED, OM_STATUS_EXPIRED}:
+        elif txn_status in OM_TERMINAL_FAILURE_STATUSES:
+            # CANCELLED / FAILED / REJECTED sont definitifs cote OM. Les statuts
+            # transitoires (ACCEPTED, INITIATED, PENDING, PRE_INITIATED) laissent
+            # le paiement en attente : OM garantit un statut final sous 24 h.
             payment.status = Payment.Status.FAILED
             payment.om_transaction_id = txn.get("transactionId") or ""
             payment.save(update_fields=["status", "om_transaction_id", "updated_at"])

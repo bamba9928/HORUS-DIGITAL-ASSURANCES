@@ -268,58 +268,56 @@ def filter_subcategories(category=None, contract_type=None):
     return results
 
 
-# ─── Reduction sur la prime nette ────────────────────────────────────────────
-# Taux confirmes par ASS (2026-08-06). C'est ASS qui applique le taux et renvoie
-# le montant calcule (champ "Reduction" de la reponse) : on transmet donc le
-# TAUX dans "remise_rc", pas une somme en francs.
+# ─── Remise RC accordee au client via ASS ────────────────────────────
+# "remise_rc" declare la part de la commission d'apport que Horus reverse au
+# client sous forme de remise. ASS l'applique sur la prime BRUTE et renvoie le
+# montant dans "Reduction" ; la "PrimeRC" de la reponse est alors DEJA nette de
+# cette remise. Verifie le 2026-08-28 sur quatre genres (moto, bus ecole, garage,
+# auto) : Reduction = 20 % de (PrimeRC + Reduction), et la sonde bus de juin sans
+# remise renvoyait bien 17982, la brute reconstituee aujourd'hui a partir de
+# 14386 + 3596.
 #
-# Verifie le 2026-06-11 : avec remise_rc=0 la reponse porte Reduction=0. ASS
-# n'applique donc aucun taux par defaut — c'est bien a nous de l'envoyer.
+# Depuis la regle de commissionnement du 2026-08-28, Horus GARDE sa commission
+# au lieu de la reverser au client : aucune remise n'est donc accordee. Envoyer
+# autre chose que 0 offrirait deux fois la meme commission — une fois au client
+# via ASS, une fois retenue sur le versement a ASS.
+ASS_REMISE_RC_SENT = 0
 
-ASS_REDUCTION_RATE_DEFAULT = 20
-ASS_REDUCTION_RATE_TPC = 40
-ASS_REDUCTION_RATE_TPV = 8
 
-# Plafond impose par l'API, verifie contre la sandbox le 2026-08-06 : envoyer 40
-# fait echouer l'appel avec un 400 explicite, sur TOUS les genres y compris TPC —
-#   "Erreur (8OO) : la remise RC doit etre compris entre 0 et 20%."
-# ASS a pourtant annonce 40 % pour les TPC : leur API dit le contraire, et c'est
-# elle qui fait foi. On borne donc le taux plutot que de garder un appel voue a
-# l'echec. Le jour ou ils relevent le plafond, seule cette constante bouge.
-ASS_REDUCTION_RATE_MAX = 20
+# ─── Commission d'apport reversee par ASS a Horus ─────────────────────────
+# Reglee HORS PLATEFORME : Horus verse a ASS `TTC - cout de police - commission`.
+# Elle ne transite jamais par l'API, donc le plafond a 20 % que l'API impose sur
+# "remise_rc" ne s'y applique pas — c'est ce qui permet d'honorer le 40 % TPC
+# annonce par ASS et que leur API refusait (400 "la remise RC doit etre compris
+# entre 0 et 20%").
+HORUS_COMMISSION_RATE_DEFAULT = 20
+HORUS_COMMISSION_RATE_TPC = 40
 
 # Perimetre volontairement strict, adosse a la categorie et non au libelle :
 # neuf genres composites contiennent "TPC" tout en appartenant a d'autres
 # categories (C7 auto-ecole, C8 location, C10 engins/tracteurs). Ils gardent le
 # taux par defaut tant qu'ASS n'a pas tranche leur cas.
-REDUCTION_GENRES_TPC = frozenset(
+COMMISSION_GENRES_TPC = frozenset(
     item["value"] for item in VEHICLE_SUBCATEGORIES if item["category"] == "C2"
 )
-REDUCTION_GENRES_TPV = frozenset(
-    item["value"] for item in VEHICLE_SUBCATEGORIES if item["category"] == "C4"
-)
 
 
-def reduction_rate_for_genre(genre):
-    """Taux de reduction (en %) applicable a un genre ASS, borne au plafond API."""
-    if genre in REDUCTION_GENRES_TPC:
-        rate = ASS_REDUCTION_RATE_TPC
-    elif genre in REDUCTION_GENRES_TPV:
-        rate = ASS_REDUCTION_RATE_TPV
-    else:
-        rate = ASS_REDUCTION_RATE_DEFAULT
-    return min(rate, ASS_REDUCTION_RATE_MAX)
+def commission_rate_for_genre(genre):
+    """Taux de commission d'apport Horus (en %) applicable a un genre ASS."""
+    if genre in COMMISSION_GENRES_TPC:
+        return HORUS_COMMISSION_RATE_TPC
+    return HORUS_COMMISSION_RATE_DEFAULT
 
 
-def reduction_rate_for_genres(genres):
+def commission_rate_for_genres(genres):
     """Taux commun a un lot de vehicules (flotte).
 
-    Le payload flotte n'expose qu'un seul "remise_rc" a la racine alors que
-    chaque vehicule porte son propre genre. On ne retient un taux specifique
-    que si tous les vehicules le partagent, sinon on retombe sur le taux par
-    defaut : jamais 40 % applique a un vehicule qui n'y a pas droit.
+    Un contrat flotte porte une seule commission alors que chaque vehicule a son
+    propre genre. On ne retient le taux TPC que si TOUS les vehicules y ont
+    droit, sinon on retombe sur le taux par defaut : jamais 40 % applique a un
+    vehicule qui n'y a pas droit.
     """
-    rates = {reduction_rate_for_genre(genre) for genre in genres if genre}
+    rates = {commission_rate_for_genre(genre) for genre in genres if genre}
     if len(rates) == 1:
         return rates.pop()
-    return ASS_REDUCTION_RATE_DEFAULT
+    return HORUS_COMMISSION_RATE_DEFAULT

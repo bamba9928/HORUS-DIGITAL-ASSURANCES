@@ -112,7 +112,7 @@ DRAFT → QUOTE_READY → PAYMENT_PENDING → PAID → ISSUING → ISSUED
 - `BUS_SCHOOL` — Bus scolaire
 - `GARAGE` — Responsabilité civile garage
 
-## Intégration A.A.S
+## Intégration A.S.S
 
 L'intégration avec le partenaire assureur se fait via une API REST.
 Un **mode mock** est disponible (`ASS_MOCK_ENABLED=True`) pour le développement et les tests

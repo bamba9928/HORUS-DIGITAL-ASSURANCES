@@ -7,11 +7,14 @@ from django.conf import settings
 
 from integrations.orange_money.constants import (
     OM_CURRENCY,
+    OM_ENDPOINT_MERCHANT_CALLBACK,
     OM_ENDPOINT_OAUTH_TOKEN,
     OM_ENDPOINT_QRCODE,
+    OM_ENDPOINT_TRANSACTION_STATUS,
     OM_ENDPOINT_TRANSACTIONS,
     OM_STATUS_PENDING,
     OM_STATUS_SUCCESS,
+    OM_TRANSACTION_TYPE_MERCHANT_PAYMENT,
 )
 from integrations.orange_money.exceptions import (
     OmApiError,
@@ -49,15 +52,52 @@ class OmClient:
         if settings.OM_MOCK_ENABLED:
             return self._mock_qrcode_response(amount=amount, reference=reference)
 
+        if not settings.OM_MERCHANT_CODE:
+            raise OmConfigurationError("OM_MERCHANT_CODE manquant (voir .env).")
+
         payload = {
             "code": settings.OM_MERCHANT_CODE,
             "name": settings.OM_MERCHANT_NAME,
             "amount": {"unit": OM_CURRENCY, "value": int(amount)},
             "reference": reference,
-            "metadata": {"idClient": client_label} if client_label else {},
             "validity": settings.OM_QR_VALIDITY_SECONDS,
+            # Une prime ne se règle qu'une fois : un QR rejouable exposerait le
+            # client à un second débit sur le même contrat.
+            "restrictions": {"isSingleUse": True},
         }
-        return self._request("POST", OM_ENDPOINT_QRCODE, json=payload)
+        # metadata n'accepte que des valeurs chaînes (10 clés au maximum).
+        if client_label:
+            payload["metadata"] = {"idClient": str(client_label)}
+        if settings.OM_CALLBACK_SUCCESS_URL:
+            payload["callbackSuccessUrl"] = settings.OM_CALLBACK_SUCCESS_URL
+        if settings.OM_CALLBACK_CANCEL_URL:
+            payload["callbackCancelUrl"] = settings.OM_CALLBACK_CANCEL_URL
+
+        headers = {}
+        # Sans X-Callback-Url, OM utilise le callback enregistré pour le code
+        # marchand (POST /api/notification/v1/merchantcallback).
+        if settings.OM_CALLBACK_URL:
+            headers["X-Callback-Url"] = settings.OM_CALLBACK_URL
+
+        data = self._request("POST", OM_ENDPOINT_QRCODE, json=payload, headers=headers)
+        return self._normalize_qrcode(data)
+
+    @staticmethod
+    def _normalize_qrcode(data):
+        """Uniformise la réponse QR pour le front (data-URI + deepLinks).
+
+        L'API renvoie `qrCode` en base64 nu (PNG) et peut ne fournir que le
+        deeplink singulier `deepLink` : le front attend une source d'image
+        directement affichable et un dictionnaire de liens.
+        """
+        if not isinstance(data, dict):
+            return data
+        qr_code = data.get("qrCode") or ""
+        if qr_code and not qr_code.startswith("data:"):
+            data["qrCode"] = f"data:image/png;base64,{qr_code}"
+        if not data.get("deepLinks") and data.get("deepLink"):
+            data["deepLinks"] = {"MAXIT": data["deepLink"]}
+        return data
 
     # ── Statut de transaction (source de vérité, art. 4.1 du contrat) ────
 
@@ -65,13 +105,16 @@ class OmClient:
         """Cherche la transaction correspondant à notre référence marchande.
 
         Retourne un dict {status, transactionId, amount} ou None si introuvable.
-        L'endpoint réel ne filtre pas par référence : on interroge la fenêtre
-        temporelle depuis l'initiation puis on filtre côté client.
+        `reference` est filtrée côté serveur (paramètre supporté par l'API).
         """
         if settings.OM_MOCK_ENABLED:
             return self._mock_transaction_response(reference=reference)
 
-        params = {}
+        params = {
+            "reference": reference,
+            "type": OM_TRANSACTION_TYPE_MERCHANT_PAYMENT,
+            "size": 20,
+        }
         if since is not None:
             params["fromDateTime"] = since.strftime("%Y-%m-%dT%H:%M:%S")
         data = self._request("GET", OM_ENDPOINT_TRANSACTIONS, params=params)
@@ -79,8 +122,23 @@ class OmClient:
         for txn in transactions:
             if not isinstance(txn, dict):
                 continue
+            # Le filtre serveur est refait ici : une API qui élargirait la
+            # recherche ne doit jamais nous faire confirmer le mauvais contrat.
             if txn.get("reference") == reference:
                 return self._normalize_transaction(txn)
+        return None
+
+    def get_transaction_status(self, *, transaction_id):
+        """Statut courant d'une transaction connue (endpoint dédié, plus direct).
+
+        Retourne le statut brut OM (chaîne) ou None si indisponible.
+        """
+        if settings.OM_MOCK_ENABLED:
+            return OM_STATUS_SUCCESS if transaction_id else None
+        endpoint = OM_ENDPOINT_TRANSACTION_STATUS.format(transaction_id=transaction_id)
+        data = self._request("GET", endpoint)
+        if isinstance(data, dict):
+            return data.get("status")
         return None
 
     @staticmethod
@@ -93,6 +151,33 @@ class OmClient:
             "transactionId": txn.get("transactionId") or txn.get("id") or "",
             "amount": amount,
         }
+
+    # ── Enregistrement du webhook marchand ───────────────────────────────
+
+    def register_merchant_callback(self, *, callback_url, api_key="", name=""):
+        """Enregistre l'URL de notification pour notre code marchand.
+
+        À lancer une fois par environnement (sandbox puis prod). L'apiKey fournie
+        nous est renvoyée en `Authorization: Basic` sur chaque callback.
+        """
+        if not settings.OM_MERCHANT_CODE:
+            raise OmConfigurationError("OM_MERCHANT_CODE manquant (voir .env).")
+        payload = {
+            "code": settings.OM_MERCHANT_CODE,
+            "name": name or settings.OM_MERCHANT_NAME,
+            "callbackUrl": callback_url,
+        }
+        if api_key:
+            payload["apiKey"] = api_key
+        return self._request("POST", OM_ENDPOINT_MERCHANT_CALLBACK, json=payload)
+
+    def list_merchant_callbacks(self):
+        """Callbacks enregistrés pour notre code marchand (l'apiKey n'est jamais relue)."""
+        return self._request(
+            "GET",
+            OM_ENDPOINT_MERCHANT_CALLBACK,
+            params={"code": settings.OM_MERCHANT_CODE},
+        )
 
     # ── Mock ──────────────────────────────────────────────────────────────
 
@@ -186,20 +271,25 @@ class OmClient:
         _token_cache["expires_at"] = now + max(expires_in - 30, 30)
         return token
 
-    def _request(self, method, endpoint, *, json=None, params=None):
+    def _request(self, method, endpoint, *, json=None, params=None, headers=None):
         if not settings.OM_REAL_CALLS_ALLOWED:
             raise OmRealCallsDisabledError(
                 "Appels réels Orange Money désactivés (OM_REAL_CALLS_ALLOWED=False)."
             )
         token = self._get_token()
         url = f"{self.base_url}{endpoint}"
+        request_headers = {"Authorization": f"Bearer {token}"}
+        if settings.OM_API_KEY:
+            request_headers["X-Api-Key"] = settings.OM_API_KEY
+        if headers:
+            request_headers.update(headers)
         try:
             response = self.session.request(
                 method,
                 url,
                 json=json,
                 params=params,
-                headers={"Authorization": f"Bearer {token}"},
+                headers=request_headers,
                 timeout=30,
             )
         except requests.RequestException as exc:

@@ -1,96 +1,108 @@
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
-from django.conf import settings
 from django.core.exceptions import ValidationError
 
 from integrations.ass.constants import ASS_POLICY_FEE
-
-
-class CommissionNotConfiguredError(ValueError):
-    pass
+from integrations.ass.referentials import HORUS_COMMISSION_RATE_DEFAULT
 
 
 def _round_half_up(value):
     return int(Decimal(value).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
+def net_a_verser(*, ttc_ass, cout_police_ass=ASS_POLICY_FEE):
+    """Montant que l'apporteur paie via Orange Money avant emission.
+
+    L'apporteur retient le cout de police a la source : il ne verse que le
+    reste. C'est le seul montant qui transite reellement par la plateforme.
+    """
+    return int(ttc_ass) - int(cout_police_ass)
+
+
 def calculate_commission_amounts(
     *,
-    prime_rc_ass,
+    prime_nette,
     ttc_ass,
-    commission_percent_on_prime_rc,
-    commission_fixed_on_policy_fee,
     cout_police_ass=ASS_POLICY_FEE,
-    ass_partner_commission_rate=None,
+    ass_partner_commission_rate=HORUS_COMMISSION_RATE_DEFAULT,
 ):
-    if commission_percent_on_prime_rc is None or commission_fixed_on_policy_fee is None:
-        raise CommissionNotConfiguredError("Commission non configuree pour cet apporteur.")
+    """Ventile un contrat entre l'apporteur, Horus et ASS.
 
-    if prime_rc_ass < 0 or ttc_ass < 0 or cout_police_ass < 0:
+    Regle du 2026-08-28, uniforme sur TOUS les comptes :
+
+    - l'apporteur retient le cout de police A LA SOURCE. Il ne verse que
+      `TTC - cout de police` (le "net a verser", encaisse par Orange Money avant
+      emission), et sa remuneration est donc exactement le cout de police —
+      acquis sans aucun mouvement de fonds en retour ;
+    - Horus garde la commission d'apport ASS : `prime nette x taux` (20 %, 40 %
+      sur les genres TPC) ;
+    - le solde part a ASS, reglement HORS PLATEFORME :
+      `TTC - cout de police - commission`.
+
+    Il n'y a plus de taux par apporteur : les champs `commission_*` du compte
+    utilisateur ne participent plus au calcul. Les cles `commission_*` renvoyees
+    ici decrivent la retenue de l'apporteur, conservee sous les noms historiques
+    du modele CommissionSnapshot.
+    """
+    prime_nette = int(prime_nette)
+    ttc_ass = int(ttc_ass)
+    cout_police_ass = int(cout_police_ass)
+
+    if prime_nette < 0 or ttc_ass < 0 or cout_police_ass < 0:
         raise ValidationError("Les montants ASS ne peuvent pas etre negatifs.")
 
-    percent = Decimal(str(commission_percent_on_prime_rc))
-    if percent < 0:
-        raise ValidationError("Le pourcentage de commission ne peut pas etre negatif.")
+    rate = Decimal(str(ass_partner_commission_rate))
+    if rate < 0:
+        raise ValidationError("Le taux de commission d'apport ne peut pas etre negatif.")
 
-    fixed_policy_fee = int(commission_fixed_on_policy_fee)
-    if fixed_policy_fee < 0:
-        raise ValidationError("La commission fixe ne peut pas etre negative.")
-    if fixed_policy_fee > cout_police_ass:
+    if cout_police_ass > ttc_ass:
         raise ValidationError(
-            f"La commission fixe sur cout de police ne peut pas depasser {cout_police_ass} FCFA."
+            "Le cout de police ne peut pas depasser le TTC : le net a verser serait negatif."
         )
 
-    # Commission apporteur (versee par Horus a l'apporteur).
-    commission_prime_rc_amount = _round_half_up(Decimal(prime_rc_ass) * percent / Decimal("100"))
-    commission_policy_fee_amount = fixed_policy_fee
-    commission_total = commission_prime_rc_amount + commission_policy_fee_amount
+    # Retenue a la source de l'apporteur = la totalite du cout de police.
+    commission_apporteur = cout_police_ass
+    montant_encaisse = net_a_verser(ttc_ass=ttc_ass, cout_police_ass=cout_police_ass)
 
-    if commission_total > int(ttc_ass):
-        raise ValidationError("La commission totale ne peut pas depasser le TTC ASS.")
+    # Revenu de Horus : la commission d'apport ASS sur la prime nette.
+    ass_partner_commission = _round_half_up(Decimal(prime_nette) * rate / Decimal("100"))
 
-    # Revenu de Horus = frais de police + commission d'apport reversee par ASS sur
-    # la PrimeRC (taux du contrat ASS ; 0 par defaut tant qu'il n'est pas confirme).
-    # Le reste du TTC encaisse est reverse a ASS (prime assureur + taxes/fonds).
-    if ass_partner_commission_rate is None:
-        ass_partner_commission_rate = settings.ASS_PARTNER_COMMISSION_RATE
-    ass_rate = Decimal(str(ass_partner_commission_rate))
-    if ass_rate < 0:
-        raise ValidationError("Le taux de commission d'apport ASS ne peut pas etre negatif.")
-    ass_partner_commission = _round_half_up(Decimal(prime_rc_ass) * ass_rate / Decimal("100"))
-
-    horus_gross_revenue = int(cout_police_ass) + ass_partner_commission
-    montant_reverse_ass = int(ttc_ass) - horus_gross_revenue
+    montant_reverse_ass = montant_encaisse - ass_partner_commission
     if montant_reverse_ass < 0:
         raise ValidationError(
-            "Le revenu Horus (frais de police + commission d'apport ASS) "
-            "ne peut pas depasser le TTC encaisse."
+            "La commission d'apport depasse le montant encaisse : "
+            f"{ass_partner_commission} FCFA pour un net a verser de {montant_encaisse} FCFA."
         )
-    # Marge nette Horus. Peut etre negative si la commission apporteur depasse le
-    # revenu Horus (signal d'un parametrage commission a revoir) : on l'enregistre
-    # telle quelle plutot que de masquer le probleme.
-    marge_horus = horus_gross_revenue - commission_total
 
     return {
-        "prime_rc_ass": int(prime_rc_ass),
-        "cout_police_ass": int(cout_police_ass),
-        "ttc_ass": int(ttc_ass),
-        "commission_percent_used": percent,
-        "commission_fixed_policy_fee_used": fixed_policy_fee,
-        "commission_prime_rc_amount": commission_prime_rc_amount,
-        "commission_policy_fee_amount": commission_policy_fee_amount,
-        "commission_total": commission_total,
+        "prime_rc_ass": prime_nette,
+        "cout_police_ass": cout_police_ass,
+        "ttc_ass": ttc_ass,
+        # Retenue apporteur : forfaitaire, plus aucune part proportionnelle.
+        "commission_percent_used": Decimal("0"),
+        "commission_fixed_policy_fee_used": commission_apporteur,
+        "commission_prime_rc_amount": 0,
+        "commission_policy_fee_amount": commission_apporteur,
+        "commission_total": commission_apporteur,
+        "ass_partner_commission_rate_used": rate,
         "ass_partner_commission": ass_partner_commission,
         "montant_reverse_ass": montant_reverse_ass,
-        "marge_horus": marge_horus,
+        # Horus ne touche que la commission d'apport : le cout de police est
+        # integralement retenu par l'apporteur.
+        "marge_horus": ass_partner_commission,
     }
 
 
-def build_commission_snapshot_values(*, contributor, prime_rc_ass, ttc_ass, cout_police_ass=ASS_POLICY_FEE):
+def build_commission_snapshot_values(
+    *,
+    prime_nette,
+    ttc_ass,
+    cout_police_ass=ASS_POLICY_FEE,
+    ass_partner_commission_rate=HORUS_COMMISSION_RATE_DEFAULT,
+):
     return calculate_commission_amounts(
-        prime_rc_ass=prime_rc_ass,
+        prime_nette=prime_nette,
         ttc_ass=ttc_ass,
         cout_police_ass=cout_police_ass,
-        commission_percent_on_prime_rc=contributor.commission_percent_on_prime_rc,
-        commission_fixed_on_policy_fee=contributor.commission_fixed_on_policy_fee,
+        ass_partner_commission_rate=ass_partner_commission_rate,
     )

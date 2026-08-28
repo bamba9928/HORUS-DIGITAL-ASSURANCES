@@ -110,16 +110,17 @@ def test_extract_prime_rc_sends_data_even_when_it_looks_wrong(response):
 @pytest.mark.parametrize(
     ("response", "expected"),
     [
-        (REAL_RC_GARAGE_RESPONSE, 68_831 + 300),
-        (REAL_RC_BUS_RESPONSE, 16_899 + 300),
+        (REAL_RC_GARAGE_RESPONSE, 68_831),
+        (REAL_RC_BUS_RESPONSE, 16_899),
     ],
 )
 def test_commission_basis_ignores_data_when_it_diverges(response, expected):
     """La commission ne se calcule pas sur `data`.
 
     Sur ces deux reponses reelles, `data` depasse la prime totale encaissee :
-    commissionner dessus paierait l'apporteur sur plus que ce que le client a
-    paye. L'assiette repart de la ventilation, PrimeRC + CEDEAO.
+    commissionner dessus paierait Horus sur plus que ce que le client a paye.
+    L'assiette repart de la ventilation : la PrimeRC seule, hors CEDEAO, taxes
+    et fonds de garantie.
     """
     contract = Contract(prime_rc_ass=int(response["data"]), ass_response_payload=response)
 
@@ -177,7 +178,7 @@ def test_extract_rc_breakdown_still_supports_mock_data_dict_format():
     assert "prime_rc_ass" not in breakdown
 
 
-def test_expected_payment_amount_reads_real_root_prime_totale():
+def test_expected_payment_amount_is_ttc_minus_policy_fee():
     contract = Contract(
         contract_type=Contract.ContractType.AUTO_MONO,
         prime_rc_ass=4769,
@@ -185,7 +186,8 @@ def test_expected_payment_amount_reads_real_root_prime_totale():
         ass_response_payload=REAL_RC_RESPONSE,
     )
 
-    assert expected_payment_amount(contract) == 8927
+    # PrimeTotale 8927 - cout de police 3000 : l'apporteur retient la police.
+    assert expected_payment_amount(contract) == 5927
 
 
 def test_expected_payment_amount_falls_back_without_breakdown():
@@ -196,7 +198,8 @@ def test_expected_payment_amount_falls_back_without_breakdown():
         ass_response_payload={"operationStatus": "SUCCESS", "data": "4769"},
     )
 
-    assert expected_payment_amount(contract) == 7769
+    # Repli 4769 + 3000 = 7769, moins le cout de police retenu a la source.
+    assert expected_payment_amount(contract) == 4769
 
 
 @pytest.mark.parametrize(

@@ -622,7 +622,8 @@ def test_finance_cannot_confirm_incorrect_payment_amount():
 
     contract.refresh_from_db()
     assert response.status_code == 400
-    assert "exactement de 27000 FCFA" in response.data["detail"]
+    # Net a verser = TTC 27 000 - cout de police 3 000.
+    assert "exactement de 24000 FCFA" in response.data["detail"]
     assert contract.internal_status == Contract.InternalStatus.QUOTE_READY
     assert Payment.objects.filter(contract=contract).exists() is False
 
@@ -648,12 +649,12 @@ def test_finance_payment_uses_ass_prime_totale_when_available():
     )
     correct_response = client.post(
         f"/api/contracts/{contract.id}/payments/confirm/",
-        {"amount": 31_980, "external_reference": "PAY-WITH-TAXES"},
+        {"amount": 28_980, "external_reference": "PAY-WITH-TAXES"},
         format="json",
     )
 
     assert incorrect_response.status_code == 400
-    assert "exactement de 31980 FCFA" in incorrect_response.data["detail"]
+    assert "exactement de 28980 FCFA" in incorrect_response.data["detail"]
     assert correct_response.status_code == 200
     contract.refresh_from_db()
     assert contract.ttc_ass == 31_980
@@ -671,7 +672,7 @@ def test_manual_payment_confirmation_cannot_be_duplicated():
     )
     client.force_authenticate(finance)
     url = f"/api/contracts/{contract.id}/payments/confirm/"
-    payload = {"amount": 27_000, "external_reference": "PAY-ONCE"}
+    payload = {"amount": 24_000, "external_reference": "PAY-ONCE"}
 
     first_response = client.post(url, payload, format="json")
     second_response = client.post(url, payload, format="json")
@@ -1795,7 +1796,7 @@ def test_issue_is_blocked_without_policyholder_and_insured():
     client.force_authenticate(finance)
     client.post(
         f"/api/contracts/{contract_id}/payments/confirm/",
-        {"amount": 31_980, "external_reference": "PAY-NO-PERSON"},
+        {"amount": 28_980, "external_reference": "PAY-NO-PERSON"},
         format="json",
     )
     client.force_authenticate(contributor)
@@ -1842,7 +1843,7 @@ def test_can_confirm_payment_then_issue_mock_contract():
 
     payment_response = client.post(
         f"/api/contracts/{contract_id}/payments/confirm/",
-        {"amount": 31_980, "external_reference": "PAY-TEST"},
+        {"amount": 28_980, "external_reference": "PAY-TEST"},
         format="json",
     )
     client.force_authenticate(contributor)
@@ -1866,7 +1867,13 @@ def test_can_confirm_payment_then_issue_mock_contract():
 
 @pytest.mark.django_db
 @override_settings(DEBUG=True, ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
-def test_issue_is_blocked_when_contributor_commission_is_not_configured():
+def test_issue_is_not_blocked_by_missing_contributor_commission_config():
+    """Regle du 28/08/2026 : bareme uniforme, plus de configuration par compte.
+
+    Un apporteur dont les champs `commission_*` sont vides doit pouvoir emettre.
+    Ce contrat est bien rejete, mais pour une toute autre raison (souscripteur
+    manquant) : la preuve que l'emission ne s'arrete plus sur la commission.
+    """
     organization = Organization.objects.create(name="Groupe Test", code="TEST-COM")
     contributor = User.objects.create_user(
         username="apporteur-no-commission",
@@ -1895,16 +1902,19 @@ def test_issue_is_blocked_when_contributor_commission_is_not_configured():
     )
     Payment.objects.create(
         contract=contract,
-        amount=27_000,
+        amount=24_000,
         status=Payment.Status.CONFIRMED,
     )
     client = APIClient()
     client.force_authenticate(contributor)
+    assert contributor.has_configured_commission is False
 
     response = client.post(f"/api/contracts/{contract.id}/issue/")
 
     assert response.status_code == 400
-    assert "Commission non configuree" in response.data["detail"]
+    detail = str(response.data["detail"])
+    assert "ommission" not in detail
+    assert "Souscripteur" in detail
 
 
 @pytest.mark.django_db

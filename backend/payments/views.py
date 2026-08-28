@@ -1,5 +1,7 @@
+import hmac
 import logging
 
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -7,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from common.pagination import PaginationError, paginate_queryset
+from integrations.orange_money.callbacks import OmSignatureError, verify_signature
 from integrations.orange_money.exceptions import OmIntegrationError
 from payments.models import Payment
 from payments.serializers import PaymentSerializer
@@ -149,15 +152,56 @@ class OmStatusView(APIView):
 class OmCallbackView(APIView):
     """Webhook de notification Orange Money.
 
-    Public (pas de session), mais le corps n'est JAMAIS cru sur parole :
-    la référence sert uniquement à retrouver le paiement, le statut est
-    revalidé via l'API transactions (source de vérité contractuelle).
+    Public (pas de session), mais le corps n'est JAMAIS cru sur parole : la
+    référence sert uniquement à retrouver le paiement, le statut est revalidé
+    via l'API transactions (source de vérité contractuelle).
+
+    Deux garde-fous en amont quand ils sont configurés :
+      - `X-Sonatel-Signature` (HMAC-SHA256 du corps brut) ;
+      - `Authorization: Basic <apiKey>` renvoyée par OM depuis l'enregistrement
+        du callback marchand.
+    Un rejet renvoie 400 : la spec traite tout 4xx comme définitif (pas de
+    réémission), ce qui est le comportement voulu pour une requête non authentique.
+
+    Pas de déduplication sur `X-Sonatel-Idempotency-Key` : les notifications
+    sont livrées « au moins une fois », mais `check_om_payment` re-interroge OM
+    sous verrou de ligne et court-circuite sur CONFIRMED — un rejeu est donc
+    déjà sans effet de bord.
     """
 
     authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):
+        # Le corps BRUT doit être lu avant tout parsing : la signature porte sur
+        # les octets reçus, pas sur un JSON re-sérialisé.
+        raw_body = request.body
+
+        if settings.OM_CALLBACK_SIGNING_SECRET:
+            try:
+                verify_signature(
+                    header=request.headers.get("X-Sonatel-Signature", ""),
+                    raw_body=raw_body,
+                    secret=settings.OM_CALLBACK_SIGNING_SECRET,
+                )
+            except OmSignatureError as exc:
+                logger.warning("Callback OM refuse (signature): %s", exc)
+                return Response(
+                    {"detail": "signature invalide"}, status=status.HTTP_400_BAD_REQUEST
+                )
+
+        if settings.OM_CALLBACK_API_KEY:
+            # Comparaison sur des octets : compare_digest lève TypeError sur une
+            # chaîne non-ASCII, ce qu'un en-tête hostile suffirait à provoquer.
+            expected = f"Basic {settings.OM_CALLBACK_API_KEY}".encode("utf-8")
+            provided = request.headers.get("Authorization", "").encode("utf-8")
+            if not hmac.compare_digest(provided, expected):
+                logger.warning("Callback OM refuse (Authorization).")
+                return Response(
+                    {"detail": "authentification invalide"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         body = request.data if isinstance(request.data, dict) else {}
         nested = body.get("transaction")
         reference = (
@@ -165,28 +209,47 @@ class OmCallbackView(APIView):
             or body.get("merchantReference")
             or (nested.get("reference") if isinstance(nested, dict) else None)
         )
-        if not reference:
-            logger.warning("Callback OM sans reference: %s", str(body)[:300])
-            return Response({"detail": "reference manquante"}, status=status.HTTP_200_OK)
-
-        payment = (
-            Payment.objects.select_related("contract")
-            .filter(
-                external_reference=reference,
-                method=Payment.Method.ORANGE_MONEY,
-            )
-            .order_by("-created_at")
-            .first()
+        transaction_id = body.get("transactionId") or (
+            nested.get("transactionId") if isinstance(nested, dict) else None
         )
+
+        payment = None
+        if reference:
+            payment = (
+                Payment.objects.select_related("contract")
+                .filter(
+                    external_reference=reference,
+                    method=Payment.Method.ORANGE_MONEY,
+                )
+                .order_by("-created_at")
+                .first()
+            )
+        # Repli sur le transactionId OM : utile si un paiement a déjà été
+        # rapproché par le sondage et que la notification arrive après coup.
+        if payment is None and transaction_id:
+            payment = (
+                Payment.objects.select_related("contract")
+                .filter(
+                    om_transaction_id=transaction_id,
+                    method=Payment.Method.ORANGE_MONEY,
+                )
+                .order_by("-created_at")
+                .first()
+            )
+
         if payment is None:
-            logger.warning("Callback OM reference inconnue: %s", reference)
-            return Response({"detail": "ok"}, status=status.HTTP_200_OK)
+            logger.warning(
+                "Callback OM sans paiement correspondant (reference=%s, transactionId=%s)",
+                reference,
+                transaction_id,
+            )
+            return Response(status=status.HTTP_202_ACCEPTED)
 
         try:
             check_om_payment(payment=payment)
         except (PaymentConfirmationError, OmIntegrationError) as exc:
-            # 200 quand même : OM n'a pas à rejouer indéfiniment, le polling
+            # 2xx quand même : OM n'a pas à rejouer indéfiniment, le polling
             # côté app et la page de statut rattraperont.
             logger.error("Callback OM erreur pour %s: %s", reference, exc)
 
-        return Response({"detail": "ok"}, status=status.HTTP_200_OK)
+        return Response(status=status.HTTP_202_ACCEPTED)

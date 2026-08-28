@@ -264,25 +264,49 @@ if SENTRY_DSN:
 OM_BASE_URL = config("OM_BASE_URL", default="https://api.sandbox.orange-sonatel.com")
 OM_CLIENT_ID = config("OM_CLIENT_ID", default="")
 OM_CLIENT_SECRET = config("OM_CLIENT_SECRET", default="")
+# Code marchand a 6 chiffres attribue par Sonatel (HORUS GLOBAL SERVICE API).
 OM_MERCHANT_CODE = config("OM_MERCHANT_CODE", default="")
 OM_MERCHANT_NAME = config("OM_MERCHANT_NAME", default="HORUS ASSUR")
+# Cle marchande optionnelle (en-tete X-Api-Key), uniquement si le contrat en fournit une.
+OM_API_KEY = config("OM_API_KEY", default="")
 OM_QR_VALIDITY_SECONDS = config("OM_QR_VALIDITY_SECONDS", default=300, cast=int)
 OM_MOCK_ENABLED = config("OM_MOCK_ENABLED", default=True, cast=bool)
 OM_REAL_CALLS_ALLOWED = config("OM_REAL_CALLS_ALLOWED", default=False, cast=bool)
+
+# Webhook OM. OM_CALLBACK_URL est envoye en X-Callback-Url a chaque QR ; laisse
+# vide, OM utilise le callback enregistre pour le code marchand. HTTPS obligatoire.
+OM_CALLBACK_URL = config("OM_CALLBACK_URL", default="")
+# Secret de l'endpoint partenaire : sert a verifier X-Sonatel-Signature (HMAC-SHA256).
+# Tant qu'il est vide, la signature n'est pas exigee (mode mock / sandbox initiale) —
+# le callback ne confirme de toute facon jamais sans revalidation via l'API OM.
+OM_CALLBACK_SIGNING_SECRET = config("OM_CALLBACK_SIGNING_SECRET", default="")
+# apiKey declaree a l'enregistrement du callback : OM nous la renvoie en
+# "Authorization: Basic <apiKey>" sur chaque notification.
+OM_CALLBACK_API_KEY = config("OM_CALLBACK_API_KEY", default="")
+# Pages de retour du parcours MAX IT / Orange Money (facultatives).
+OM_CALLBACK_SUCCESS_URL = config("OM_CALLBACK_SUCCESS_URL", default="")
+OM_CALLBACK_CANCEL_URL = config("OM_CALLBACK_CANCEL_URL", default="")
 # Mock uniquement : délai avant que le paiement simulé passe à SUCCESS.
 OM_MOCK_CONFIRM_DELAY_SECONDS = config("OM_MOCK_CONFIRM_DELAY_SECONDS", default=15, cast=int)
 
 
 # ─── Intégration ASS ──────────────────────────────────────────────────────────
 
+# Sandbox : ASS_SANDBOX_BASE_URL. Production : ASS_PRODUCTION_BASE_URL
+# (https://manager.ass-assurances.sn). Le defaut reste la sandbox : basculer en
+# prod est une decision de deploiement, jamais un effet de bord du code.
 ASS_BASE_URL = config("ASS_BASE_URL", default=ASS_SANDBOX_BASE_URL)
+# Nom de partenaire attribue par ASS, injecte dans /api/v1/{partner}/... — voir
+# le commentaire de ASS_API_PARTNER_SEGMENT dans integrations/ass/constants.py.
+# Le compte nominatif Horus est "bambadieng" ; le laisser au defaut "partner"
+# fait repondre 404 a toutes les routes.
 ASS_API_PARTNER_SEGMENT = config(
     "ASS_API_PARTNER_SEGMENT",
     default=DEFAULT_ASS_API_PARTNER_SEGMENT,
 )
 ASS_USERNAME = config("ASS_USERNAME", default="")
 ASS_PASSWORD = config("ASS_PASSWORD", default="")
-# CONTOURNEMENT TEMPORAIRE — a retirer des qu'ASS a corrige sa configuration.
+# CONTOURNEMENT TEMPORAIRE, SANDBOX UNIQUEMENT — laisser VIDE en production.
 # Depuis la restauration de leur instance (constate le 2026-08-12), leur Odoo ne
 # resout plus de base de donnees pour une requete en Basic Auth seul : toutes les
 # routes /api/v1/partner/* repondent 404. Verifie sur stock.qr :

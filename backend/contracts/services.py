@@ -9,13 +9,14 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from commissions.models import CommissionSnapshot
-from commissions.services import CommissionNotConfiguredError, build_commission_snapshot_values
+from commissions.services import build_commission_snapshot_values
 from contracts.models import Contract
 from integrations.ass.client import AssClient, extract_available_qr
 from integrations.ass.constants import ASS_CANCEL_METHODS, ASS_POLICY_FEE, ASS_SUCCESS_STATUS
 from integrations.ass.referentials import (
-    reduction_rate_for_genre,
-    reduction_rate_for_genres,
+    ASS_REMISE_RC_SENT,
+    commission_rate_for_genre,
+    commission_rate_for_genres,
 )
 from integrations.ass.exceptions import AssIntegrationError
 from payments.services import has_confirmed_payment
@@ -238,8 +239,6 @@ def reserve_contract_issue(contract_id):
         raise ContractIssueError("Aucun paiement confirme pour ce contrat.")
     if contract.prime_rc_ass is None or contract.ttc_ass is None:
         raise ContractIssueError("Le devis et le montant paye sont requis avant emission.")
-    if not contract.contributor.has_configured_commission:
-        raise CommissionNotConfiguredError("Commission non configuree pour cet apporteur.")
 
     if not contract.reference_trx_partner:
         contract.reference_trx_partner = build_reference_trx_partner(contract)
@@ -334,10 +333,10 @@ def finalize_contract_issue(*, contract_id, request_payload, ass_response, issue
 
     # Assiette de commission != montant envoye a ASS : voir contract_commission_basis.
     snapshot_values = build_commission_snapshot_values(
-        contributor=contract.contributor,
-        prime_rc_ass=contract_commission_basis(contract),
+        prime_nette=contract_commission_basis(contract),
         cout_police_ass=contract.cout_police_ass,
         ttc_ass=contract.ttc_ass,
+        ass_partner_commission_rate=contract_commission_rate(contract),
     )
     CommissionSnapshot.objects.get_or_create(
         contract=contract,
@@ -477,7 +476,7 @@ def build_auto_rc_payload(vehicle, guarantees=None, guarantee_options=None):
         "garanties": normalize_guarantees(guarantees),
         **guarantee_options_for_payload(guarantees, guarantee_options),
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": reduction_rate_for_genre(vehicle.get("subcategory")),
+        "remise_rc": ASS_REMISE_RC_SENT,
     }
 
 
@@ -498,7 +497,7 @@ def build_auto_issue_payload(contract, reference):
         "garanties": selected_guarantees(contract.draft_payload),
         **guarantee_options,
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": reduction_rate_for_genre(vehicle.get("subcategory")),
+        "remise_rc": ASS_REMISE_RC_SENT,
         "souscripteur": policyholder,
         "assure": insured,
         "vehicule": build_issue_vehicle_payload(vehicle),
@@ -516,7 +515,7 @@ def build_moto_rc_payload(vehicle, guarantees=None, guarantee_options=None):
         "usage": normalize_moto_usage(vehicle.get("motoUsage")),
         "nombrePlace": to_int(vehicle.get("seats"), default=1),
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": reduction_rate_for_genre(vehicle.get("subcategory")),
+        "remise_rc": ASS_REMISE_RC_SENT,
         "garanties": normalize_guarantees(guarantees),
         **guarantee_options_for_payload(guarantees, guarantee_options),
     }
@@ -545,7 +544,7 @@ def build_moto_issue_payload(contract, reference):
         "garanties": selected_guarantees(contract.draft_payload),
         **guarantee_options,
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": reduction_rate_for_genre(vehicle.get("subcategory")),
+        "remise_rc": ASS_REMISE_RC_SENT,
         "souscripteur": policyholder,
         "assure": insured,
         "vehicule": build_moto_issue_vehicle_payload(vehicle),
@@ -590,9 +589,7 @@ def build_fleet_rc_payload(draft_payload):
         "duree": to_int(fleet_duration or first_value(vehicles, "duration"), default=1),
         "dateEffet": fleet.get("effectDate") or first_value(vehicles, "effectDate") or "",
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": reduction_rate_for_genres(
-            vehicle.get("subcategory") for vehicle in vehicles
-        ),
+        "remise_rc": ASS_REMISE_RC_SENT,
         # Pas de "duree" par vehicule : absent de la collection Postman et la
         # couverture flotte impose de toute facon une duree unique a la racine.
         "requests": [
@@ -637,9 +634,7 @@ def build_fleet_issue_payload(contract, reference):
         ),
         "police": f"HORUS-FLEET-POL-{contract.id}",
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": reduction_rate_for_genres(
-            vehicle.get("subcategory") for vehicle in vehicles
-        ),
+        "remise_rc": ASS_REMISE_RC_SENT,
         "souscripteur": policyholder,
         "items": [
             {
@@ -837,7 +832,7 @@ def build_bus_rc_payload(vehicle):
         "valeurActuelle": to_int(vehicle.get("currentValue"), default=0),
         "garanties": [],
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": reduction_rate_for_genre(vehicle.get("subcategory")),
+        "remise_rc": ASS_REMISE_RC_SENT,
     }
 
 
@@ -856,7 +851,7 @@ def build_bus_issue_payload(contract, reference):
         "police": f"HORUS-BUS-{contract.id}",
         "referenceTrxPartner": reference,
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": reduction_rate_for_genre(vehicle.get("subcategory")),
+        "remise_rc": ASS_REMISE_RC_SENT,
         # Assiette de tarification repetee a la racine comme dans la collection
         # Postman : mêmes valeurs qu'a l'appel bus.ecole.rc, sinon ASS pourrait
         # retarifer autrement que le devis deja encaisse.
@@ -879,7 +874,7 @@ def build_garage_rc_payload(garage):
         "valeurActuelle": 0,
         "garanties": [],
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": reduction_rate_for_genre(garage.get("subcategory")),
+        "remise_rc": ASS_REMISE_RC_SENT,
     }
 
 
@@ -901,7 +896,7 @@ def build_garage_issue_payload(contract, reference):
         "police": f"HORUS-GARAGE-{contract.id}",
         "referenceTrxPartner": reference,
         "cout_police": ASS_POLICY_FEE,
-        "remise_rc": reduction_rate_for_genre(garage.get("subcategory")),
+        "remise_rc": ASS_REMISE_RC_SENT,
         # Idem bus : valeurs repetees a l'identique de rc.garage (le tarif garage
         # depend du nombre de cartes, pas d'une valeur vehicule — d'ou les zeros).
         "valeurNeuve": 0,
@@ -948,26 +943,48 @@ def extract_prime_rc(ass_response):
 
 
 def contract_commission_basis(contract):
-    """Assiette de la commission apporteur = PrimeRC + CEDEAO.
+    """Prime nette du contrat = assiette de la commission d'apport Horus.
 
-    Volontairement distincte de `contract.prime_rc_ass`, qui porte le `data` d'ASS
-    parce que c'est la seule valeur qu'ils acceptent a l'emission (voir
+    C'est la `PrimeRC` de la ventilation ASS, hors CEDEAO, taxes et fonds de
+    garantie : la commission porte sur la prime elle-meme, pas sur les
+    accessoires ni sur les prelevements reglementaires.
+
+    Depuis le passage de `remise_rc` a 0 (voir ASS_REMISE_RC_SENT), cette
+    `PrimeRC` est la prime BRUTE : ASS n'applique plus aucune remise, donc la
+    valeur renvoyee est directement l'assiette, sans reconstitution. Avant ce
+    changement elle etait nette de la remise, et commissionner dessus aurait
+    sous-estime l'assiette de 20 %.
+
+    Volontairement distincte de `contract.prime_rc_ass`, qui porte le `data`
+    d'ASS parce que c'est la seule valeur qu'ils acceptent a l'emission (voir
     extract_prime_rc). Or `data` a derive et ne represente plus une RC : sur
-    rc.garage il vaut 164 183 pour une prime totale de 83 908, sur bus.ecole.rc
-    241 718 pour 23 407. Commissionner la-dessus paierait l'apporteur sur un
-    montant superieur a ce que le client a paye.
+    bus.ecole.rc il vaut 205 803 pour une PrimeTotale de 20 480. Commissionner
+    la-dessus paierait Horus sur plus que ce que le client a paye.
 
-    On repart donc de la ventilation, juste au franc pres sur toutes les sondes.
-    Repli sur prime_rc_ass quand elle est absente : flotte (reponse en items),
-    remorque, et formats historiques.
-
-    Decision metier du 2026-06-11, reconduite le 2026-08-12 : l'assiette inclut
-    la CEDEAO (PrimeRC + 300) et non la PrimeRC pure.
+    Repli sur prime_rc_ass quand la ventilation est absente : flotte (reponse en
+    items), remorque, et formats historiques.
     """
     breakdown = extract_rc_breakdown(contract.ass_response_payload or {})
     if breakdown and breakdown.get("prime_rc_ass"):
-        return breakdown["prime_rc_ass"] + breakdown.get("cedeao", 0)
+        return breakdown["prime_rc_ass"]
     return contract.prime_rc_ass
+
+
+def contract_commission_rate(contract):
+    """Taux de commission d'apport Horus (en %) applicable au contrat.
+
+    40 % pour les genres TPC (categorie C2), 20 % partout ailleurs. Un contrat
+    flotte porte un seul taux pour tout le lot : voir commission_rate_for_genres.
+    """
+    draft = contract.draft_payload or {}
+    if contract.contract_type == Contract.ContractType.FLEET:
+        vehicles = (draft.get("fleet") or {}).get("vehicles") or []
+        return commission_rate_for_genres(
+            vehicle.get("subcategory") for vehicle in vehicles
+        )
+    if contract.contract_type == Contract.ContractType.GARAGE:
+        return commission_rate_for_genre((draft.get("garage") or {}).get("subcategory"))
+    return commission_rate_for_genre((draft.get("vehicle") or {}).get("subcategory"))
 
 
 def extract_rc_breakdown(ass_response):

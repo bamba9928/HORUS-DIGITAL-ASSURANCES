@@ -20,8 +20,8 @@ from contracts.services import (
     extract_prime_rc,
 )
 from integrations.ass.referentials import (
-    reduction_rate_for_genre,
-    reduction_rate_for_genres,
+    commission_rate_for_genre,
+    commission_rate_for_genres,
 )
 from organizations.models import Organization
 
@@ -497,8 +497,8 @@ def test_fleet_issue_payload_reuses_rc_amounts_returned_by_ass_quote():
     assert payload["souscripteur"]["nom"] == "DIOP"
     assert payload["items"][0]["assure"]["nom"] == "NDIAYE"
     assert payload["cout_police"] == 3_000
-    # Flotte homogene de VP : taux par defaut.
-    assert payload["remise_rc"] == 20
+    # Plus aucune remise accordee au client : Horus garde sa commission.
+    assert payload["remise_rc"] == 0
 
 
 def test_trailer_issue_payload_uses_issued_vehicle_reference_and_pdf_expiration_date():
@@ -585,7 +585,7 @@ def test_trailer_issue_payload_uses_issued_vehicle_reference_and_pdf_expiration_
     assert payloads[1]["referenceTrxPartner"] == "REF-FLEET-REM-1-2"
 
 
-# ─── Reduction sur la prime nette (taux confirmes par ASS le 2026-08-06) ──────
+# ─── Commission d'apport Horus (reglee hors plateforme) ──────────────────
 
 
 @pytest.mark.parametrize(
@@ -595,15 +595,15 @@ def test_trailer_issue_payload_uses_issued_vehicle_reference_and_pdf_expiration_
         ("VP", 20),
         ("TPM3T500", 20),
         ("2RMOT", 20),
-        # Utilitaires C2 : ASS annonce 40 %, mais son API plafonne a 20 % et
-        # rejette 40 avec un 400 (verifie en sandbox le 2026-08-06). On envoie
-        # donc la valeur bornee, seule acceptee.
-        ("TPC", 20),
-        ("TPC3T500", 20),
-        ("TPC3T500P", 20),
-        # Transport de personnes C4 : 8 %.
-        ("TPV8", 8),
-        ("TPV9", 8),
+        # Utilitaires C2 : 40 %. Ce taux ne transite jamais par l'API — il ne
+        # sert qu'au reglement hors plateforme — donc le plafond a 20 % que
+        # l'API impose sur "remise_rc" ne s'y applique pas.
+        ("TPC", 40),
+        ("TPC3T500", 40),
+        ("TPC3T500P", 40),
+        # Transport de personnes C4 : rien de specifique, taux par defaut.
+        ("TPV8", 20),
+        ("TPV9", 20),
         # Garde-fou : ces genres contiennent "TPC" mais relevent d'autres
         # categories (auto-ecole, location, engins). Ils ne doivent PAS heriter
         # des 40 % tant qu'ASS n'a pas tranche leur cas.
@@ -619,8 +619,8 @@ def test_trailer_issue_payload_uses_issued_vehicle_reference_and_pdf_expiration_
         ("GENRE-INEXISTANT", 20),
     ],
 )
-def test_reduction_rate_for_genre(genre, expected):
-    assert reduction_rate_for_genre(genre) == expected
+def test_commission_rate_for_genre(genre, expected):
+    assert commission_rate_for_genre(genre) == expected
 
 
 @pytest.mark.parametrize(
@@ -628,10 +628,9 @@ def test_reduction_rate_for_genre(genre, expected):
     [
         # Flotte homogene : le taux du lot s'applique.
         (["VP", "VP"], 20),
-        (["TPC", "TPC3T500"], 20),
-        (["TPV8", "TPV9"], 8),
-        # Flotte mixte : repli sur le taux par defaut (remise_rc est unique a la
-        # racine du payload flotte, il ne peut pas suivre chaque vehicule).
+        (["TPC", "TPC3T500"], 40),
+        # Flotte mixte : repli sur le taux par defaut. Un contrat flotte porte
+        # une seule commission, jamais 40 % sur un vehicule qui n'y a pas droit.
         (["VP", "TPC3T500"], 20),
         (["TPC", "TPV8"], 20),
         # Lot vide ou genres manquants.
@@ -639,26 +638,36 @@ def test_reduction_rate_for_genre(genre, expected):
         ([None, ""], 20),
     ],
 )
-def test_reduction_rate_for_genres(genres, expected):
-    assert reduction_rate_for_genres(genres) == expected
+def test_commission_rate_for_genres(genres, expected):
+    assert commission_rate_for_genres(genres) == expected
 
 
-def test_auto_rc_payload_carries_the_genre_reduction_rate():
+def test_rc_payloads_grant_no_remise_to_the_client():
+    """Regle du 2026-08-28 : Horus garde sa commission au lieu de la reverser.
+
+    Envoyer un remise_rc non nul la donnerait une premiere fois au client via
+    ASS, alors qu'elle est deja retenue sur le versement a ASS.
+    """
     vp = build_auto_rc_payload({"subcategory": "VP", "fiscalPower": "8"})
     utilitaire = build_auto_rc_payload({"subcategory": "TPC3T500", "fiscalPower": "8"})
+    moto = build_moto_rc_payload({"subcategory": "2RMOT", "cylinder": "300"})
 
-    assert vp["remise_rc"] == 20
-    assert utilitaire["remise_rc"] == 20
+    assert vp["remise_rc"] == 0
+    assert utilitaire["remise_rc"] == 0
+    assert moto["remise_rc"] == 0
     assert vp["cout_police"] == 3_000
 
 
 def test_no_genre_can_produce_a_rate_the_ass_api_would_reject():
     """Garde-fou : l'API rejette tout remise_rc > 20 avec un 400 (2026-08-06).
 
-    Aucun genre du referentiel ne doit pouvoir generer un appel voue a l'echec.
+    Le taux de commission, lui, peut valoir 40 : il ne part jamais chez ASS.
+    Ce test verifie donc le payload, pas le bareme.
     """
     from integrations.ass.referentials import VEHICLE_SUBCATEGORIES
 
     for item in VEHICLE_SUBCATEGORIES:
-        rate = reduction_rate_for_genre(item["value"])
-        assert 0 <= rate <= 20, f"{item['value']} produit remise_rc={rate}, refuse par ASS"
+        payload = build_auto_rc_payload({"subcategory": item["value"], "fiscalPower": "8"})
+        assert payload["remise_rc"] == 0, (
+            f"{item['value']} produit remise_rc={payload['remise_rc']}"
+        )

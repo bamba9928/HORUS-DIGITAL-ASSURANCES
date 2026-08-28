@@ -10,6 +10,7 @@ class CommissionSnapshotSerializer(serializers.ModelSerializer):
     organization = serializers.IntegerField(source="contract.organization_id", read_only=True)
     organization_name = serializers.CharField(source="contract.organization.name", read_only=True)
     paid_by_username = serializers.CharField(source="paid_by.username", read_only=True, default=None)
+    net_a_verser = serializers.IntegerField(read_only=True)
 
     def get_contributor_full_name(self, obj):
         user = obj.contributor
@@ -35,6 +36,8 @@ class CommissionSnapshotSerializer(serializers.ModelSerializer):
             "commission_prime_rc_amount",
             "commission_policy_fee_amount",
             "commission_total",
+            "net_a_verser",
+            "ass_partner_commission_rate_used",
             "ass_partner_commission",
             "montant_reverse_ass",
             "marge_horus",
