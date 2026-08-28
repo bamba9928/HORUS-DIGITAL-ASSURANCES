@@ -147,9 +147,18 @@ def test_status_confirmation_is_idempotent(settings):
     )
 
 
-def test_callback_confirms_payment_without_auth(settings):
+def test_callback_refuses_when_no_secret_is_configured(settings):
+    """Echec FERME : sans secret, le webhook se ferme au lieu de s'ouvrir.
+
+    Le callback fait basculer un contrat en PAYE. Tant que les garde-fous
+    n'etaient appliques que s'ils etaient configures, un deploiement sans cle
+    Orange Money exposait un webhook anonyme capable de declencher ce
+    basculement — verifie en production le 2026-08-28, il repondait 202.
+    """
     settings.OM_MOCK_ENABLED = True
     settings.OM_MOCK_CONFIRM_DELAY_SECONDS = 0
+    settings.OM_CALLBACK_SIGNING_SECRET = ""
+    settings.OM_CALLBACK_API_KEY = ""
     client, contributor = make_contributor()
     contract = create_quote_ready_contract(contributor)
     reference = initiate(client, contract).data["payment"]["external_reference"]
@@ -159,6 +168,31 @@ def test_callback_confirms_payment_without_auth(settings):
         "/api/payments/om/callback/",
         {"reference": reference, "status": "SUCCESS"},
         format="json",
+    )
+
+    assert response.status_code == 503
+    payment = Payment.objects.get(external_reference=reference)
+    assert payment.status == Payment.Status.PENDING
+    contract.refresh_from_db()
+    assert contract.internal_status != Contract.InternalStatus.PAID
+
+
+def test_callback_confirms_payment_when_signature_is_valid(settings):
+    settings.OM_MOCK_ENABLED = True
+    settings.OM_MOCK_CONFIRM_DELAY_SECONDS = 0
+    settings.OM_CALLBACK_SIGNING_SECRET = "secret-partenaire"
+    client, contributor = make_contributor()
+    contract = create_quote_ready_contract(contributor)
+    reference = initiate(client, contract).data["payment"]["external_reference"]
+
+    raw_body = json.dumps({"reference": reference, "status": "SUCCESS"}).encode()
+    ts, digest = _sign("secret-partenaire", raw_body)
+    anonymous = APIClient()
+    response = anonymous.post(
+        "/api/payments/om/callback/",
+        data=raw_body,
+        content_type="application/json",
+        HTTP_X_SONATEL_SIGNATURE=f"t={ts},v1={digest}",
     )
 
     assert response.status_code == 202
@@ -173,6 +207,7 @@ def test_callback_does_not_trust_body_status(settings):
     doit être SUCCESS côté API OM (ici mock encore PENDING)."""
     settings.OM_MOCK_ENABLED = True
     settings.OM_MOCK_CONFIRM_DELAY_SECONDS = 3600
+    settings.OM_CALLBACK_API_KEY = "cle-callback"
     client, contributor = make_contributor()
     contract = create_quote_ready_contract(contributor)
     reference = initiate(client, contract).data["payment"]["external_reference"]
@@ -182,6 +217,7 @@ def test_callback_does_not_trust_body_status(settings):
         "/api/payments/om/callback/",
         {"reference": reference, "status": "SUCCESS"},
         format="json",
+        HTTP_AUTHORIZATION="Basic cle-callback",
     )
 
     assert response.status_code == 202
@@ -437,6 +473,7 @@ def test_callback_matches_payment_by_transaction_id(settings):
     """Notification arrivee apres le sondage : on retrouve le paiement par txn id."""
     settings.OM_MOCK_ENABLED = True
     settings.OM_MOCK_CONFIRM_DELAY_SECONDS = 0
+    settings.OM_CALLBACK_API_KEY = "cle-callback"
     client, contributor = make_contributor(username="om-bytxn", org_code="OM-BYTXN")
     contract = create_quote_ready_contract(contributor)
     payment_id = initiate(client, contract).data["payment"]["id"]
@@ -449,6 +486,7 @@ def test_callback_matches_payment_by_transaction_id(settings):
         "/api/payments/om/callback/",
         {"transactionId": payment.om_transaction_id, "status": "SUCCESS"},
         format="json",
+        HTTP_AUTHORIZATION="Basic cle-callback",
     )
 
     assert response.status_code == 202

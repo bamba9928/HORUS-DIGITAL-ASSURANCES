@@ -1,5 +1,5 @@
 # Fichier de compatibilite pip. La source de verite est pyproject.toml.
-django==6.0.6
+django==6.0.8
 django-unfold==0.104.1
 djangorestframework==3.17.1
 django-cors-headers==4.9.0
@@ -11,6 +11,8 @@ psycopg2-binary==2.9.12
 dj-database-url==3.1.2
 sentry-sdk[django]==2.42.1
 reportlab==4.4.5
+# Transitive de Django, epinglee explicitement : 0.5.5 porte 4 CVE.
+sqlparse>=0.6.0
 
 # Groupe dev de pyproject.toml
 djangorestframework-stubs==3.17.0

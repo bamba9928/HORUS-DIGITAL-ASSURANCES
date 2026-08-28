@@ -1,5 +1,6 @@
 import uuid
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -15,6 +16,29 @@ from payments.models import Payment
 
 class PaymentConfirmationError(ValueError):
     pass
+
+
+def assert_om_mock_allowed():
+    """Refuse les parcours Orange Money simules hors developpement.
+
+    Le mock fait passer un paiement a SUCCESS apres quelques secondes, sans
+    qu'un franc ne bouge. En production cela suffisait a n'importe quel porteur
+    de compte pour marquer son contrat PAYE, puis declencher une emission ASS
+    reelle : une vraie police, un QR preleve sur le stock, et aucun encaissement
+    en face.
+
+    La confirmation manuelle (`confirm_manual_payment`) reste ouverte : elle est
+    reservee aux profils finance/admin et constitue une decision tracee, pas un
+    encaissement automatique declenche par l'apporteur lui-meme.
+    """
+    if not settings.OM_MOCK_ENABLED:
+        return
+    if settings.DEBUG or settings.OM_ALLOW_MOCK_IN_PRODUCTION:
+        return
+    raise PaymentConfirmationError(
+        "Paiement Orange Money indisponible : l'integration est en mode simule, "
+        "refuse hors developpement. Configurer les acces Orange Money reels."
+    )
 
 
 def expected_payment_amount(contract):
@@ -138,6 +162,7 @@ def initiate_om_payment(*, contract, created_by=None, client=None):
     Retourne (payment, qr_data). Les initiations précédentes non confirmées
     du même contrat sont annulées (une seule demande active à la fois).
     """
+    assert_om_mock_allowed()
     contract = Contract.objects.select_for_update().get(pk=contract.pk)
     _validate_payable_contract(contract)
 
@@ -176,6 +201,7 @@ def check_om_payment(*, payment, client=None):
     Confirmations idempotentes : rejouable sans effet de bord (callback + polling
     peuvent arriver en concurrence, le verrou de ligne sérialise).
     """
+    assert_om_mock_allowed()
     client = client or OmClient()
     mismatch_message = None
 

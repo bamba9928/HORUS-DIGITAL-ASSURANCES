@@ -123,7 +123,10 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
     },
     {
+        # 12 caracteres : le defaut Django (8) est trop court pour une
+        # plateforme qui porte des contrats d'assurance et des paiements.
         'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'OPTIONS': {'min_length': 12},
     },
     {
         'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
@@ -140,6 +143,15 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    # SANS ce reglage, DRF prend TOUT l'en-tete X-Forwarded-For comme identite
+    # de l'appelant. Or nginx fait `$proxy_add_x_forwarded_for`, qui AJOUTE la
+    # vraie IP derriere ce que le client a envoye : n'importe qui obtenait donc
+    # un compteur neuf a chaque requete en variant l'en-tete, ce qui annulait la
+    # limitation anti-force-brute et le plafond impose par les CGU ASS.
+    # 1 = un seul proxy de confiance (nginx) ; DRF retient alors la derniere
+    # adresse de la chaine, celle que nginx a ajoutee et que le client ne
+    # controle pas. A relever si un CDN s'intercale devant nginx.
+    'NUM_PROXIES': config('NUM_PROXIES', default=1, cast=int),
     'DEFAULT_THROTTLE_RATES': {
         'auth_login': config('AUTH_LOGIN_THROTTLE_RATE', default='10/min'),
         # Les CGU ASS imposent une frequence limite : borne les appels sandbox/prod par utilisateur.
@@ -287,6 +299,13 @@ OM_CALLBACK_SUCCESS_URL = config("OM_CALLBACK_SUCCESS_URL", default="")
 OM_CALLBACK_CANCEL_URL = config("OM_CALLBACK_CANCEL_URL", default="")
 # Mock uniquement : délai avant que le paiement simulé passe à SUCCESS.
 OM_MOCK_CONFIRM_DELAY_SECONDS = config("OM_MOCK_CONFIRM_DELAY_SECONDS", default=15, cast=int)
+# Le mock CONFIRME un paiement sans qu'un franc ne bouge. Hors developpement,
+# c'est un contrat payable gratuitement, donc une attestation ASS reelle emise
+# et un QR consomme. Les parcours Orange Money simules sont donc refuses quand
+# DEBUG=False, sauf a l'assumer explicitement par ce drapeau (recette sur un
+# environnement de type production, par exemple). Ne JAMAIS le poser sur
+# l'instance qui sert de vrais clients.
+OM_ALLOW_MOCK_IN_PRODUCTION = config("OM_ALLOW_MOCK_IN_PRODUCTION", default=False, cast=bool)
 
 
 # ─── Intégration ASS ──────────────────────────────────────────────────────────

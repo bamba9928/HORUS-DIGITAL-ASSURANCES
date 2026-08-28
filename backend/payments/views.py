@@ -156,12 +156,17 @@ class OmCallbackView(APIView):
     référence sert uniquement à retrouver le paiement, le statut est revalidé
     via l'API transactions (source de vérité contractuelle).
 
-    Deux garde-fous en amont quand ils sont configurés :
+    Deux garde-fous en amont :
       - `X-Sonatel-Signature` (HMAC-SHA256 du corps brut) ;
       - `Authorization: Basic <apiKey>` renvoyée par OM depuis l'enregistrement
         du callback marchand.
     Un rejet renvoie 400 : la spec traite tout 4xx comme définitif (pas de
     réémission), ce qui est le comportement voulu pour une requête non authentique.
+
+    ÉCHEC FERMÉ : hors DEBUG, l'absence des deux secrets fait refuser l'endpoint
+    au lieu de l'ouvrir. Auparavant chaque garde-fou était conditionné à sa
+    propre configuration, si bien qu'un déploiement sans clé OM exposait un
+    webhook totalement anonyme capable de faire basculer un contrat en PAYÉ.
 
     Pas de déduplication sur `X-Sonatel-Idempotency-Key` : les notifications
     sont livrées « au moins une fois », mais `check_om_payment` re-interroge OM
@@ -173,6 +178,18 @@ class OmCallbackView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        if not settings.DEBUG and not (
+            settings.OM_CALLBACK_SIGNING_SECRET or settings.OM_CALLBACK_API_KEY
+        ):
+            logger.error(
+                "Callback OM refuse : ni OM_CALLBACK_SIGNING_SECRET ni "
+                "OM_CALLBACK_API_KEY ne sont configures."
+            )
+            return Response(
+                {"detail": "callback non configure"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
         # Le corps BRUT doit être lu avant tout parsing : la signature porte sur
         # les octets reçus, pas sur un JSON re-sérialisé.
         raw_body = request.body
