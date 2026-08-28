@@ -11,7 +11,7 @@ from django.utils.dateparse import parse_datetime
 from commissions.models import CommissionSnapshot
 from commissions.services import build_commission_snapshot_values
 from contracts.models import Contract
-from integrations.ass.client import AssClient, extract_available_qr
+from integrations.ass.client import AssClient, extract_available_qr, parse_ass_amount
 from integrations.ass.constants import ASS_CANCEL_METHODS, ASS_POLICY_FEE, ASS_SUCCESS_STATUS
 from integrations.ass.referentials import (
     ASS_REMISE_RC_SENT,
@@ -936,10 +936,12 @@ def extract_prime_rc(ass_response):
             return int(data["responsabiliteCivile"])
         except (KeyError, TypeError, ValueError) as exc:
             raise QuoteCalculationError("Reponse ASS invalide : 'responsabiliteCivile' manquant.") from exc
-    try:
-        return int(data)
-    except (TypeError, ValueError) as exc:
-        raise QuoteCalculationError("Reponse ASS invalide pour la Prime RC.") from exc
+    # ASS renvoie `data` tantot en entier ("205803"), tantot en flottant
+    # ("51378.0") selon l'endpoint : voir parse_ass_amount.
+    prime_rc = parse_ass_amount(data)
+    if prime_rc is None:
+        raise QuoteCalculationError("Reponse ASS invalide pour la Prime RC.")
+    return prime_rc
 
 
 def contract_commission_basis(contract):
@@ -1033,10 +1035,12 @@ def extract_rc_breakdown(ass_response):
 
 
 def _safe_int(value, default=0):
-    try:
-        return int(value) if value is not None else default
-    except (TypeError, ValueError):
-        return default
+    """Montant de ventilation ASS -> entier, tolerant au formatage flottant.
+
+    Un `int()` direct retournait silencieusement `default` sur "51078.0", ce qui
+    mettait la PrimeRC — donc l'assiette de commission — a zero sans rien signaler.
+    """
+    return parse_ass_amount(value, default)
 
 
 def extract_fleet_items(ass_response):
@@ -1045,10 +1049,9 @@ def extract_fleet_items(ass_response):
 
     items = []
     for item in ass_response.get("items", []):
-        try:
-            prime_rc_ass = int(item["responsabiliteCivile"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise QuoteCalculationError("Reponse ASS flotte invalide.") from exc
+        prime_rc_ass = parse_ass_amount(item.get("responsabiliteCivile"))
+        if prime_rc_ass is None:
+            raise QuoteCalculationError("Reponse ASS flotte invalide.")
         items.append(
             {
                 "request_id": item.get("requestId"),

@@ -37,6 +37,65 @@ REAL_RC_RESPONSE = {
     "PrimeTotale": "8927",
 }
 
+# rc.request — VP, puissance 8, 12 mois, PRODUCTION (manager.ass-assurances.sn),
+# capturee le 2026-08-28. Montants melanges : `data`, `PrimeRC` et `PrimeTotale`
+# arrivent en FLOTTANTS, `Taxe`, `Fga`, `Cedeao` et `Reduction` en entiers. Ce
+# formatage ne depend pas de `remise_rc` (identique avec 0 et avec 20).
+REAL_RC_VP_PRODUCTION_RESPONSE = {
+    "code": "2000",
+    "operationStatus": "SUCCESS",
+    "operationMessage": "Opération effectuée avec succès.",
+    "data": "51378.0",
+    "PrimeRC": "51078.0",
+    "Reduction": "0",
+    "CoutPolice": "3000",
+    "PrimeAG": "0",
+    "Taxe": "7571",
+    "Fga": "1277",
+    "Cedeao": "300",
+    "PrimeTotale": "63226.0",
+    "ga_def_recours": "0",
+}
+
+
+def test_float_formatted_amounts_do_not_break_the_quote():
+    """Regression : `int("51378.0")` levait et cassait TOUT devis auto en production."""
+    assert extract_prime_rc(REAL_RC_VP_PRODUCTION_RESPONSE) == 51_378
+
+
+def test_float_formatted_breakdown_is_not_silently_zeroed():
+    """Regression : `_safe_int` retournait 0 sur "51078.0", mettant l'assiette a zero."""
+    breakdown = extract_rc_breakdown(REAL_RC_VP_PRODUCTION_RESPONSE)
+
+    assert breakdown["prime_rc_ass"] == 51_078
+    assert breakdown["prime_totale"] == 63_226
+    assert breakdown["taxe"] == 7_571
+    assert breakdown["cedeao"] == 300
+    # Ventilation juste au franc pres, malgre le melange de formats.
+    assert (
+        breakdown["prime_rc_ass"]
+        + breakdown["cout_police"]
+        + breakdown["prime_ag"]
+        + breakdown["taxe"]
+        + breakdown["fonds_garantie"]
+        + breakdown["cedeao"]
+    ) == breakdown["prime_totale"]
+
+
+def test_float_formatted_response_drives_net_a_verser_and_commission_basis():
+    contract = Contract(
+        contract_type=Contract.ContractType.AUTO_MONO,
+        prime_rc_ass=51_378,
+        cout_police_ass=3_000,
+        ass_response_payload=REAL_RC_VP_PRODUCTION_RESPONSE,
+    )
+
+    # Net a verser = PrimeTotale - cout de police.
+    assert expected_payment_amount(contract) == 60_226
+    # Assiette = PrimeRC seule, jamais `data` (51 378 inclut la CEDEAO).
+    assert contract_commission_basis(contract) == 51_078
+
+
 # Sondes reelles du 2026-08-12 : `data` a derive et ne vaut plus PrimeRC + Cedeao.
 # Reponses sandbox exactes, conservees telles quelles.
 REAL_RC_GARAGE_RESPONSE = {

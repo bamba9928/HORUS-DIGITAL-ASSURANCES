@@ -1,5 +1,6 @@
 import logging
 import time
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from urllib.parse import urlsplit
 
 import requests
@@ -520,19 +521,32 @@ def extract_available_qr(ass_response):
     return None
 
 
-def _coerce_stock_int(value):
-    if isinstance(value, bool):
-        return None
+def parse_ass_amount(value, default=None):
+    """Convertit un montant ASS en entier de francs, quel que soit son formatage.
+
+    ASS formate ses montants de facon INCONSTANTE, y compris au sein d'une meme
+    reponse. Releve en production le 2026-08-28 sur `rc.request` (VP) :
+        "data": "51378.0", "PrimeRC": "51078.0", "PrimeTotale": "63226.0"
+        "Taxe": "7571", "Fga": "1277", "Reduction": "0"
+    — flottants et entiers melanges. `rc.moto`, `bus.ecole.rc` et `rc.garage`
+    renvoient tout en entiers, `stock.qr` renvoie "113.0".
+
+    `int("51378.0")` leve : tout parseur naif casse le devis, ou pire retombe
+    silencieusement sur 0 et fausse l'assiette de commission. Ce formatage ne
+    depend PAS de `remise_rc` (verifie avec 0 et 20 sur la meme requete).
+    """
+    if value is None or isinstance(value, bool) or value == "":
+        return default
     if isinstance(value, int):
         return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(float(value))
-        except ValueError:
-            return None
-    return None
+    try:
+        return int(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    except (InvalidOperation, ArithmeticError, TypeError, ValueError):
+        return default
+
+
+def _coerce_stock_int(value):
+    return parse_ass_amount(value)
 
 
 def _build_rc_breakdown(prime_rc):

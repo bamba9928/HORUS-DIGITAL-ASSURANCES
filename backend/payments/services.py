@@ -4,6 +4,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from contracts.models import Contract
+from integrations.ass.client import parse_ass_amount
 from integrations.orange_money.client import OmClient
 from integrations.orange_money.constants import (
     OM_STATUS_SUCCESS,
@@ -52,10 +53,8 @@ def _contract_ttc(contract):
 
 
 def _parse_amount(value):
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
+    """Montant ASS -> entier. "63226.0" est un format reel : voir parse_ass_amount."""
+    return parse_ass_amount(value, 0)
 
 
 @transaction.atomic
