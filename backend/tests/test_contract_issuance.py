@@ -26,8 +26,6 @@ def create_paid_contract():
         password="test",
         role=User.Role.CONTRIBUTOR,
         organization=organization,
-        commission_percent_on_prime_rc=0,
-        commission_fixed_on_policy_fee=0,
     )
     contract = Contract.objects.create(
         organization=organization,
@@ -203,8 +201,6 @@ def create_paid_fleet_contract():
         password="test",
         role=User.Role.CONTRIBUTOR,
         organization=organization,
-        commission_percent_on_prime_rc=0,
-        commission_fixed_on_policy_fee=0,
     )
     return Contract.objects.create(
         organization=organization,

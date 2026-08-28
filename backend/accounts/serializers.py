@@ -1,10 +1,8 @@
-from django.conf import settings
 from django.contrib.auth.password_validation import validate_password as django_validate_password
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
-from django.utils import timezone
 from rest_framework import serializers
 import re
 
@@ -73,7 +71,6 @@ class AccountIdentityValidationMixin:
 
 class UserReadSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source="organization.name", read_only=True)
-    has_configured_commission = serializers.BooleanField(read_only=True)
     role = serializers.SerializerMethodField()
 
     def get_role(self, user):
@@ -95,9 +92,6 @@ class UserReadSerializer(serializers.ModelSerializer):
             "role",
             "organization",
             "organization_name",
-            "commission_percent_on_prime_rc",
-            "commission_fixed_on_policy_fee",
-            "has_configured_commission",
             "is_active",
             "date_joined",
         ]
@@ -131,17 +125,8 @@ class UserCreateSerializer(AccountIdentityValidationMixin, serializers.ModelSeri
             "matricule",
             "role",
             "organization",
-            "commission_percent_on_prime_rc",
-            "commission_fixed_on_policy_fee",
         ]
         read_only_fields = ["id", "matricule"]
-
-    def validate_commission_fixed_on_policy_fee(self, value):
-        if value is not None and value > settings.ASS_POLICY_FEE:
-            raise serializers.ValidationError(
-                f"La commission fixe sur cout de police ne peut pas depasser {settings.ASS_POLICY_FEE} FCFA."
-            )
-        return value
 
     def validate(self, attrs):
         actor = self.context["request"].user
@@ -171,17 +156,6 @@ class UserCreateSerializer(AccountIdentityValidationMixin, serializers.ModelSeri
         # Erreurs accumulees : un formulaire incomplet doit tout remonter d'un
         # coup plutot que de faire corriger l'utilisateur en plusieurs passes.
         errors = {}
-
-        # La commission est exigee des la creation d'un apporteur : sans elle le
-        # compte parait operationnel (saisie, encaissement) mais toute emission
-        # echoue sur CommissionNotConfiguredError, au dernier clic.
-        if role == User.Role.CONTRIBUTOR:
-            for field in (
-                "commission_percent_on_prime_rc",
-                "commission_fixed_on_policy_fee",
-            ):
-                if attrs.get(field) is None:
-                    errors[field] = "La commission est requise pour un apporteur (les deux valeurs)."
 
         try:
             self._validate_password_strength(attrs)
@@ -214,9 +188,6 @@ class UserCreateSerializer(AccountIdentityValidationMixin, serializers.ModelSeri
         password = validated_data.pop("password")
         user = User(**validated_data)
         user.set_password(password)
-        if user.has_configured_commission:
-            user.commission_configured_by = self.context["request"].user
-            user.commission_configured_at = timezone.now()
         user.full_clean()
         user.save()
         return user
@@ -351,51 +322,3 @@ class AcceptInvitationSerializer(serializers.Serializer):
         return attrs
 
 
-class UserCommissionSerializer(serializers.ModelSerializer):
-    has_configured_commission = serializers.BooleanField(read_only=True)
-
-    class Meta:
-        model = User
-        fields = [
-            "id",
-            "username",
-            "commission_percent_on_prime_rc",
-            "commission_fixed_on_policy_fee",
-            "has_configured_commission",
-            "commission_configured_by",
-            "commission_configured_at",
-        ]
-        read_only_fields = [
-            "id",
-            "username",
-            "has_configured_commission",
-            "commission_configured_by",
-            "commission_configured_at",
-        ]
-
-    def validate_commission_fixed_on_policy_fee(self, value):
-        if value is not None and value > settings.ASS_POLICY_FEE:
-            raise serializers.ValidationError(
-                f"La commission fixe sur cout de police ne peut pas depasser {settings.ASS_POLICY_FEE} FCFA."
-            )
-        return value
-
-    def update(self, instance, validated_data):
-        actor = self.context["request"].user
-        for field, value in validated_data.items():
-            setattr(instance, field, value)
-        instance.commission_configured_by = actor
-        instance.commission_configured_at = timezone.now()
-        try:
-            instance.full_clean(exclude=["password"])
-        except DjangoValidationError as exc:
-            raise serializers.ValidationError(exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
-        instance.save(
-            update_fields=[
-                "commission_percent_on_prime_rc",
-                "commission_fixed_on_policy_fee",
-                "commission_configured_by",
-                "commission_configured_at",
-            ]
-        )
-        return instance

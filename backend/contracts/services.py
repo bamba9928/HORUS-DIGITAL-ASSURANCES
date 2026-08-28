@@ -947,9 +947,9 @@ def extract_prime_rc(ass_response):
 def contract_commission_basis(contract):
     """Prime nette du contrat = assiette de la commission d'apport Horus.
 
-    C'est la `PrimeRC` de la ventilation ASS, hors CEDEAO, taxes et fonds de
-    garantie : la commission porte sur la prime elle-meme, pas sur les
-    accessoires ni sur les prelevements reglementaires.
+    C'est la `PrimeRC` de la ventilation ASS **plus la CEDEAO**, hors taxes et
+    fonds de garantie. Decision metier du 2026-06-11, reconduite le 2026-08-28 :
+    la CEDEAO fait partie de l'assiette, pas les prelevements fiscaux.
 
     Depuis le passage de `remise_rc` a 0 (voir ASS_REMISE_RC_SENT), cette
     `PrimeRC` est la prime BRUTE : ASS n'applique plus aucune remise, donc la
@@ -968,7 +968,7 @@ def contract_commission_basis(contract):
     """
     breakdown = extract_rc_breakdown(contract.ass_response_payload or {})
     if breakdown and breakdown.get("prime_rc_ass"):
-        return breakdown["prime_rc_ass"]
+        return breakdown["prime_rc_ass"] + breakdown.get("cedeao", 0)
     return contract.prime_rc_ass
 
 

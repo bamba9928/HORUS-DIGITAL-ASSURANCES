@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Percent, RefreshCw, UserPlus, Users, X } from "lucide-react";
+import { Pencil, RefreshCw, UserPlus, Users, X } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
@@ -18,7 +18,6 @@ import {
   listOrganizations,
   listUsers,
   updateUser,
-  updateUserCommission,
   type ManagedUser,
   type OrganizationOption,
   type UpdateUserPayload,
@@ -96,10 +95,6 @@ export default function UsersPage() {
     };
   }, [authLoading, auth?.authenticated, auth?.user]);
 
-  const configuredContributors = users.filter(
-    (u) => u.role === "CONTRIBUTOR" && u.has_configured_commission,
-  ).length;
-
   return (
     <AppShell
       actions={
@@ -121,7 +116,7 @@ export default function UsersPage() {
           </button>
         </div>
       }
-      description="Comptes, rôles et paramètres de commission"
+      description="Comptes, rôles et rattachements"
       title="Utilisateurs"
     >
       <div className="space-y-5">
@@ -133,13 +128,6 @@ export default function UsersPage() {
             label="Apporteurs"
             tone="primary"
             value={users.filter((u) => u.role === "CONTRIBUTOR").length}
-          />
-          <MetricCard
-            detail="Apporteurs prêts pour l'émission"
-            icon={Percent}
-            label="Commissions configurées"
-            tone="success"
-            value={configuredContributors}
           />
         </div>
 
@@ -162,8 +150,6 @@ export default function UsersPage() {
                     <th>Utilisateur</th>
                     <th>Rôle</th>
                     <th>Groupe</th>
-                    <th>Prime RC</th>
-                    <th>Police</th>
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -178,7 +164,6 @@ export default function UsersPage() {
                       }
                       key={user.id}
                       onEdit={setEditTarget}
-                      onSaved={refresh}
                       user={user}
                     />
                   ))}
@@ -218,35 +203,12 @@ export default function UsersPage() {
 function UserRow({
   canEdit,
   user,
-  onSaved,
   onEdit,
 }: {
   canEdit: boolean;
   user: ManagedUser;
-  onSaved: () => Promise<void>;
   onEdit: (user: ManagedUser) => void;
 }) {
-  const [percent, setPercent] = useState(user.commission_percent_on_prime_rc ?? "");
-  const [fixed, setFixed] = useState(user.commission_fixed_on_policy_fee?.toString() ?? "");
-  const [error, setError] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
-
-  async function saveCommission() {
-    setError("");
-    setIsSaving(true);
-    try {
-      await updateUserCommission(user.id, {
-        commission_percent_on_prime_rc: percent === "" ? null : percent,
-        commission_fixed_on_policy_fee: fixed === "" ? null : Number(fixed),
-      });
-      await onSaved();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Mise à jour impossible.");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
   return (
     <tr className={!user.is_active ? "opacity-55" : ""}>
       <td className="row-head" data-label="Utilisateur">
@@ -269,7 +231,6 @@ function UserRow({
             {user.username}
             {user.matricule ? ` · ${user.matricule}` : ""}
           </p>
-          {error ? <p className="mt-2 text-xs font-bold text-red-700">{error}</p> : null}
         </div>
       </td>
       <td data-label="Rôle">
@@ -277,31 +238,6 @@ function UserRow({
       </td>
       <td data-label="Groupe">
         <span className="cell-main">{user.organization_name ?? "—"}</span>
-      </td>
-      <td data-label="Prime RC">
-        <div className="relative">
-          <input
-            aria-label={`Commission Prime RC de ${user.username}`}
-            className="app-field h-10 min-h-10 w-28 pr-8"
-            disabled={user.role !== "CONTRIBUTOR"}
-            onChange={(e) => setPercent(e.target.value)}
-            type="number"
-            value={percent}
-          />
-          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-black/40">
-            %
-          </span>
-        </div>
-      </td>
-      <td data-label="Police">
-        <input
-          aria-label={`Commission fixe de ${user.username}`}
-          className="app-field h-10 min-h-10 w-28"
-          disabled={user.role !== "CONTRIBUTOR"}
-          onChange={(e) => setFixed(e.target.value)}
-          type="number"
-          value={fixed}
-        />
       </td>
       <td data-label="Action">
         <div className="flex gap-2">
@@ -313,14 +249,6 @@ function UserRow({
           >
             <Pencil size={13} />
             Modifier
-          </button>
-          <button
-            className="h-10 rounded-md bg-gradient-to-br from-primary to-[var(--primary-strong)] px-3 text-xs font-extrabold text-white shadow-sm shadow-primary/30 hover:brightness-105 disabled:opacity-40"
-            disabled={user.role !== "CONTRIBUTOR" || isSaving}
-            onClick={saveCommission}
-            type="button"
-          >
-            {isSaving ? "..." : "Enregistrer"}
           </button>
         </div>
       </td>

@@ -21,34 +21,18 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):
         "matricule",
         "display_role",
         "organization",
-        "display_commission",
         "is_active",
     ]
     list_filter = ["role", "is_active", "organization"]
     search_fields = ["username", "matricule", "first_name", "last_name", "email", "phone"]
     ordering = ["username"]
     autocomplete_fields = ["organization"]
-    readonly_fields = ["matricule", "commission_configured_by", "commission_configured_at", "last_login", "date_joined"]
+    readonly_fields = ["matricule", "last_login", "date_joined"]
 
     fieldsets = [
         (None, {"fields": ["username", "password"]}),
         ("Identite", {"fields": ["matricule", "first_name", "last_name", "email", "phone", "address"]}),
         ("Role et rattachement", {"fields": ["role", "organization"]}),
-        (
-            "Commission apporteur",
-            {
-                "fields": [
-                    "commission_percent_on_prime_rc",
-                    "commission_fixed_on_policy_fee",
-                    "commission_configured_by",
-                    "commission_configured_at",
-                ],
-                "description": (
-                    "Sans ces deux valeurs, l'emission est refusee pour cet apporteur "
-                    "(CommissionNotConfiguredError)."
-                ),
-            },
-        ),
         ("Permissions", {"fields": ["is_active", "is_staff", "is_superuser", "groups", "user_permissions"]}),
         ("Dates", {"fields": ["last_login", "date_joined"]}),
     ]
@@ -74,8 +58,3 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):
     def display_role(self, obj):
         return obj.role
 
-    @display(description="Commission")
-    def display_commission(self, obj):
-        if obj.commission_percent_on_prime_rc is None or obj.commission_fixed_on_policy_fee is None:
-            return "— non configuree"
-        return f"{obj.commission_percent_on_prime_rc} % + {obj.commission_fixed_on_policy_fee} FCFA"

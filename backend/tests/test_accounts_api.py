@@ -125,114 +125,10 @@ def test_auth_login_keeps_username_payload_backward_compatible():
 
 
 @pytest.mark.django_db
-def test_contributor_creation_requires_both_commission_values():
-    """Un apporteur sans commission encaisserait sans jamais pouvoir emettre."""
-    organization = Organization.objects.create(name="Groupe Dakar", code="DKR")
-    admin = User.objects.create_user(
-        username="admin-general-api",
-        password="test-pass-123",
-        role=User.Role.ADMIN_GENERAL,
-    )
-    client = APIClient()
-    client.force_authenticate(admin)
-
-    response = client.post(
-        "/api/accounts/users/",
-        {
-            "username": "apporteur-api",
-            "password": "test-pass-123",
-            "role": User.Role.CONTRIBUTOR,
-            "organization": organization.id,
-        },
-        format="json",
-    )
-
-    assert response.status_code == 400
-    assert "commission_percent_on_prime_rc" in response.data
-    assert "commission_fixed_on_policy_fee" in response.data
-    assert not User.objects.filter(username="apporteur-api").exists()
-
-    # Le fixe seul ne suffit pas : les deux valeurs sont requises ensemble.
-    response = client.post(
-        "/api/accounts/users/",
-        {
-            "username": "apporteur-api",
-            "password": "test-pass-123",
-            "role": User.Role.CONTRIBUTOR,
-            "organization": organization.id,
-            "commission_fixed_on_policy_fee": 1000,
-        },
-        format="json",
-    )
-
-    assert response.status_code == 400
-    assert "commission_percent_on_prime_rc" in response.data
-
-
 @pytest.mark.django_db
-def test_contributor_creation_stores_commission_and_its_author():
-    organization = Organization.objects.create(name="Groupe Thies", code="THS")
-    admin = User.objects.create_user(
-        username="admin-general-comm",
-        password="test-pass-123",
-        role=User.Role.ADMIN_GENERAL,
-    )
-    client = APIClient()
-    client.force_authenticate(admin)
-
-    response = client.post(
-        "/api/accounts/users/",
-        {
-            "username": "apporteur-comm",
-            "password": "test-pass-123",
-            "role": User.Role.CONTRIBUTOR,
-            "organization": organization.id,
-            "commission_percent_on_prime_rc": "10.00",
-            "commission_fixed_on_policy_fee": 1000,
-        },
-        format="json",
-    )
-
-    assert response.status_code == 201
-    contributor = User.objects.get(username="apporteur-comm")
-    assert contributor.commission_percent_on_prime_rc == Decimal("10.00")
-    assert contributor.commission_fixed_on_policy_fee == 1000
-    assert contributor.has_configured_commission is True
-    assert contributor.commission_configured_by == admin
-    assert contributor.commission_configured_at is not None
-    assert response.data["has_configured_commission"] is True
-
-
 @pytest.mark.django_db
-def test_contributor_creation_rejects_fixed_commission_above_policy_fee():
-    organization = Organization.objects.create(name="Groupe Kaolack", code="KLK")
-    admin = User.objects.create_user(
-        username="admin-general-plafond",
-        password="test-pass-123",
-        role=User.Role.ADMIN_GENERAL,
-    )
-    client = APIClient()
-    client.force_authenticate(admin)
-
-    response = client.post(
-        "/api/accounts/users/",
-        {
-            "username": "apporteur-plafond",
-            "password": "test-pass-123",
-            "role": User.Role.CONTRIBUTOR,
-            "organization": organization.id,
-            "commission_percent_on_prime_rc": "10.00",
-            "commission_fixed_on_policy_fee": ASS_POLICY_FEE + 1,
-        },
-        format="json",
-    )
-
-    assert response.status_code == 400
-    assert "commission_fixed_on_policy_fee" in response.data
-
-
 @pytest.mark.django_db
-def test_non_contributor_creation_does_not_require_commission():
+def test_finance_user_creation_succeeds():
     organization = Organization.objects.create(name="Groupe Louga", code="LGA")
     admin = User.objects.create_user(
         username="admin-general-finance",
@@ -254,7 +150,7 @@ def test_non_contributor_creation_does_not_require_commission():
     )
 
     assert response.status_code == 201
-    assert User.objects.get(username="compta-louga").has_configured_commission is False
+    assert User.objects.get(username="compta-louga").role == User.Role.FINANCE
 
 
 @pytest.mark.django_db
@@ -281,8 +177,6 @@ def test_user_creation_adds_personal_fields_and_generated_read_only_matricule():
             "matricule": "MATRICULE-IMPOSE",
             "role": User.Role.CONTRIBUTOR,
             "organization": organization.id,
-            "commission_percent_on_prime_rc": "10.00",
-            "commission_fixed_on_policy_fee": 1000,
         },
         format="json",
     )
@@ -293,8 +187,6 @@ def test_user_creation_adds_personal_fields_and_generated_read_only_matricule():
             "password": "Strong!Pass2026-B",
             "role": User.Role.CONTRIBUTOR,
             "organization": organization.id,
-            "commission_percent_on_prime_rc": "10.00",
-            "commission_fixed_on_policy_fee": 1000,
         },
         format="json",
     )
@@ -494,8 +386,6 @@ def test_django_superuser_is_treated_as_general_admin():
             "password": "test-pass-123",
             "role": User.Role.CONTRIBUTOR,
             "organization": organization.id,
-            "commission_percent_on_prime_rc": "10.00",
-            "commission_fixed_on_policy_fee": 1000,
         },
         format="json",
     )
@@ -539,8 +429,6 @@ def test_admin_group_creates_user_only_in_own_group():
             "username": "apporteur-own-group",
             "password": "test-pass-123",
             "role": User.Role.CONTRIBUTOR,
-            "commission_percent_on_prime_rc": "10.00",
-            "commission_fixed_on_policy_fee": 1000,
         },
         format="json",
     )
@@ -551,8 +439,6 @@ def test_admin_group_creates_user_only_in_own_group():
             "password": "test-pass-123",
             "role": User.Role.CONTRIBUTOR,
             "organization": other_group.id,
-            "commission_percent_on_prime_rc": "10.00",
-            "commission_fixed_on_policy_fee": 1000,
         },
         format="json",
     )
@@ -564,162 +450,10 @@ def test_admin_group_creates_user_only_in_own_group():
 
 
 @pytest.mark.django_db
-def test_admin_general_can_configure_contributor_commission():
-    organization = Organization.objects.create(name="Groupe Kaolack", code="KLK")
-    admin = User.objects.create_user(
-        username="admin-general-commission",
-        password="test-pass-123",
-        role=User.Role.ADMIN_GENERAL,
-    )
-    contributor = User.objects.create_user(
-        username="apporteur-commission",
-        password="test-pass-123",
-        role=User.Role.CONTRIBUTOR,
-        organization=organization,
-    )
-    client = APIClient()
-    client.force_authenticate(admin)
-
-    response = client.patch(
-        f"/api/accounts/users/{contributor.id}/commission/",
-        {
-            "commission_percent_on_prime_rc": "18.00",
-            "commission_fixed_on_policy_fee": 2_000,
-        },
-        format="json",
-    )
-
-    assert response.status_code == 200
-    contributor.refresh_from_db()
-    assert contributor.commission_percent_on_prime_rc == Decimal("18.00")
-    assert contributor.commission_fixed_on_policy_fee == 2_000
-    assert contributor.has_configured_commission is True
-    assert contributor.commission_configured_by == admin
-
-
 @pytest.mark.django_db
-def test_admin_group_cannot_configure_commission_in_another_group():
-    own_group = Organization.objects.create(name="Groupe Ziguinchor", code="ZIG")
-    other_group = Organization.objects.create(name="Groupe Matam", code="MTM")
-    admin_group = User.objects.create_user(
-        username="admin-group-commission",
-        password="test-pass-123",
-        role=User.Role.ADMIN_GROUP,
-        organization=own_group,
-    )
-    other_contributor = User.objects.create_user(
-        username="apporteur-other-commission",
-        password="test-pass-123",
-        role=User.Role.CONTRIBUTOR,
-        organization=other_group,
-    )
-    client = APIClient()
-    client.force_authenticate(admin_group)
-
-    response = client.patch(
-        f"/api/accounts/users/{other_contributor.id}/commission/",
-        {
-            "commission_percent_on_prime_rc": "18.00",
-            "commission_fixed_on_policy_fee": 2_000,
-        },
-        format="json",
-    )
-
-    assert response.status_code == 403
-    other_contributor.refresh_from_db()
-    assert other_contributor.commission_percent_on_prime_rc is None
-    assert other_contributor.commission_fixed_on_policy_fee is None
-
-
 @pytest.mark.django_db
-def test_contributor_cannot_modify_own_commission():
-    organization = Organization.objects.create(name="Groupe Fatick", code="FTK")
-    contributor = User.objects.create_user(
-        username="apporteur-self-commission",
-        password="test-pass-123",
-        role=User.Role.CONTRIBUTOR,
-        organization=organization,
-    )
-    client = APIClient()
-    client.force_authenticate(contributor)
-
-    response = client.patch(
-        f"/api/accounts/users/{contributor.id}/commission/",
-        {
-            "commission_percent_on_prime_rc": "18.00",
-            "commission_fixed_on_policy_fee": 2_000,
-        },
-        format="json",
-    )
-
-    assert response.status_code == 403
-    contributor.refresh_from_db()
-    assert contributor.has_configured_commission is False
-
-
 @pytest.mark.django_db
-def test_rejects_fixed_policy_fee_commission_above_ass_policy_fee_via_api():
-    organization = Organization.objects.create(name="Groupe Saint-Louis", code="STL")
-    admin = User.objects.create_user(
-        username="admin-fixed-policy-fee",
-        password="test-pass-123",
-        role=User.Role.ADMIN_GENERAL,
-    )
-    contributor = User.objects.create_user(
-        username="apporteur-fixed-policy-fee",
-        password="test-pass-123",
-        role=User.Role.CONTRIBUTOR,
-        organization=organization,
-    )
-    client = APIClient()
-    client.force_authenticate(admin)
-
-    response = client.patch(
-        f"/api/accounts/users/{contributor.id}/commission/",
-        {
-            "commission_percent_on_prime_rc": "10.00",
-            "commission_fixed_on_policy_fee": ASS_POLICY_FEE + 1,
-        },
-        format="json",
-    )
-
-    assert response.status_code == 400
-    assert "commission_fixed_on_policy_fee" in response.data
-
-
 @pytest.mark.django_db
-def test_zero_commission_is_configured_via_api():
-    organization = Organization.objects.create(name="Groupe Tambacounda", code="TMB")
-    admin = User.objects.create_user(
-        username="admin-zero-commission",
-        password="test-pass-123",
-        role=User.Role.ADMIN_GENERAL,
-    )
-    contributor = User.objects.create_user(
-        username="apporteur-zero-commission",
-        password="test-pass-123",
-        role=User.Role.CONTRIBUTOR,
-        organization=organization,
-    )
-    client = APIClient()
-    client.force_authenticate(admin)
-
-    response = client.patch(
-        f"/api/accounts/users/{contributor.id}/commission/",
-        {
-            "commission_percent_on_prime_rc": "0.00",
-            "commission_fixed_on_policy_fee": 0,
-        },
-        format="json",
-    )
-
-    assert response.status_code == 200
-    contributor.refresh_from_db()
-    assert contributor.commission_percent_on_prime_rc == Decimal("0.00")
-    assert contributor.commission_fixed_on_policy_fee == 0
-    assert contributor.has_configured_commission is True
-
-
 @pytest.mark.django_db
 def test_contributor_can_list_only_own_commission_snapshots():
     own_group = Organization.objects.create(name="Groupe Rufisque", code="RFS")

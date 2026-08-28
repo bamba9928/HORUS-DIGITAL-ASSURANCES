@@ -70,8 +70,6 @@ def test_admin_detail_pages_render_with_real_rows(admin_client):
         password="test",
         role=User.Role.CONTRIBUTOR,
         organization=organization,
-        commission_percent_on_prime_rc=10,
-        commission_fixed_on_policy_fee=1_000,
     )
     contract = Contract.objects.create(
         organization=organization,

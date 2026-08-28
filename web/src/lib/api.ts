@@ -132,7 +132,6 @@ export type AuthUser = {
   role: "ADMIN_GENERAL" | "ADMIN_GROUP" | "CONTRIBUTOR" | "FINANCE";
   organization: number | null;
   organization_name: string | null;
-  has_configured_commission: boolean;
   is_active: boolean;
   date_joined: string;
 };
@@ -172,10 +171,7 @@ export async function acceptInvitation(payload: {
   });
 }
 
-export type ManagedUser = AuthUser & {
-  commission_percent_on_prime_rc: string | null;
-  commission_fixed_on_policy_fee: number | null;
-};
+export type ManagedUser = AuthUser;
 
 export type CreateUserPayload = {
   username: string;
@@ -187,8 +183,6 @@ export type CreateUserPayload = {
   address?: string;
   role: AuthUser["role"];
   organization?: number | null;
-  commission_percent_on_prime_rc?: string;
-  commission_fixed_on_policy_fee?: number;
 };
 
 export async function listUsers() {
@@ -336,19 +330,6 @@ export async function createOrganization(payload: CreateOrganizationPayload) {
 
 export async function updateOrganization(orgId: number, payload: UpdateOrganizationPayload) {
   return fetchApi<Organization>(`/organizations/${orgId}/`, {
-    method: "PATCH",
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function updateUserCommission(
-  userId: number,
-  payload: {
-    commission_percent_on_prime_rc: string | null;
-    commission_fixed_on_policy_fee: number | null;
-  },
-) {
-  return fetchApi<ManagedUser>(`/accounts/users/${userId}/commission/`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });

@@ -22,8 +22,6 @@ def make_contributor(username="export-user", org_code="EXPORT-TEST"):
         password="test",
         role=User.Role.CONTRIBUTOR,
         organization=organization,
-        commission_percent_on_prime_rc=0,
-        commission_fixed_on_policy_fee=0,
     )
     client = APIClient()
     client.force_authenticate(user)

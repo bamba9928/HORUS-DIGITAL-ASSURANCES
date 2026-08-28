@@ -9,7 +9,6 @@ import {
   ExternalLink,
   FileText,
   Mail,
-  Percent,
   Phone,
   Send,
   ShieldCheck,
@@ -35,7 +34,6 @@ import {
   type ContractSummary,
   type ManagedUser,
 } from "@/lib/api";
-import { canManageUsers } from "@/lib/permissions";
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN_GENERAL: "Admin général",
@@ -322,62 +320,6 @@ export default function UserDetailPage() {
 
               {/* Sidebar */}
               <aside className="space-y-5">
-                {/* Commission (apporteurs uniquement) */}
-                {user.role === "CONTRIBUTOR" ? (
-                  <section className="app-surface overflow-hidden">
-                    <div className="border-b border-border px-4 py-3.5">
-                      <h2 className="text-[13.5px] font-extrabold">Commission</h2>
-                    </div>
-                    <div className="divide-y divide-border">
-                      <CommissionRow
-                        icon={Percent}
-                        label="% Prime RC"
-                        value={
-                          user.commission_percent_on_prime_rc !== null
-                            ? `${user.commission_percent_on_prime_rc} %`
-                            : null
-                        }
-                      />
-                      <CommissionRow
-                        icon={Banknote}
-                        label="Fixe Police ASS"
-                        value={
-                          user.commission_fixed_on_policy_fee !== null
-                            ? formatMoney(user.commission_fixed_on_policy_fee)
-                            : null
-                        }
-                      />
-                      <div className="px-4 py-3">
-                        <p className="text-[10px] font-black uppercase tracking-wide text-black/38">
-                          Statut
-                        </p>
-                        <div className="mt-1">
-                          {user.has_configured_commission ? (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700">
-                              <CheckCircle2 size={11} />
-                              Configurée
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700">
-                              Non configurée
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    {canManageUsers(auth?.user) ? (
-                      <div className="border-t border-border px-4 py-3">
-                        <Link
-                          className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-white text-xs font-bold transition hover:bg-muted"
-                          href={`/users?edit=${user.id}`}
-                        >
-                          Modifier la commission
-                        </Link>
-                      </div>
-                    ) : null}
-                  </section>
-                ) : null}
-
                 {/* Infos compte */}
                 <section className="app-surface overflow-hidden">
                   <div className="border-b border-border px-4 py-3.5">
@@ -446,32 +388,6 @@ export default function UserDetailPage() {
 }
 
 /* ── Sub-components ───────────────────────────────────────────────── */
-
-function CommissionRow({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof Percent;
-  label: string;
-  value: string | null;
-}) {
-  return (
-    <div className="flex items-center justify-between px-4 py-3">
-      <div className="flex items-center gap-2 text-xs font-bold text-black/50">
-        <Icon size={12} />
-        {label}
-      </div>
-      <span
-        className={`text-sm font-extrabold tabular-nums ${
-          value ? "text-primary" : "text-black/28"
-        }`}
-      >
-        {value ?? "—"}
-      </span>
-    </div>
-  );
-}
 
 function InfoRow({
   label,

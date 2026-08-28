@@ -44,9 +44,3 @@ def can_view_user(actor, target_user):
     if not actor.is_authenticated:
         return False
     return actor.can_view_user(target_user)
-
-
-def can_manage_commission(actor, target_user):
-    if not actor.is_authenticated:
-        return False
-    return actor.can_manage_commission(target_user)

@@ -11,7 +11,6 @@ from rest_framework.views import APIView
 
 from accounts.models import User
 from accounts.permissions import (
-    can_manage_commission,
     can_manage_personal_info,
     can_manage_user,
     can_view_user,
@@ -20,7 +19,6 @@ from accounts.serializers import (
     AcceptInvitationSerializer,
     AuthLoginSerializer,
     ChangePasswordSerializer,
-    UserCommissionSerializer,
     UserCreateSerializer,
     UserReadSerializer,
     UserUpdateSerializer,
@@ -205,20 +203,3 @@ class ChangePasswordView(APIView):
         return Response({"detail": "Mot de passe mis à jour avec succès."})
 
 
-class UserCommissionView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, pk):
-        target = get_object_or_404(User.objects.select_related("organization"), pk=pk)
-        if request.user.id != target.id and not can_manage_commission(request.user, target):
-            return Response({"detail": "Permission refusee."}, status=status.HTTP_403_FORBIDDEN)
-        return Response(UserCommissionSerializer(target).data)
-
-    def patch(self, request, pk):
-        target = get_object_or_404(User.objects.select_related("organization"), pk=pk)
-        if not can_manage_commission(request.user, target):
-            return Response({"detail": "Permission refusee."}, status=status.HTTP_403_FORBIDDEN)
-        serializer = UserCommissionSerializer(target, data=request.data, partial=True, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
-        return Response(UserCommissionSerializer(user).data)

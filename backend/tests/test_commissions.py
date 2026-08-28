@@ -95,7 +95,7 @@ def test_rejects_negative_rate():
 
 @pytest.mark.django_db
 def test_snapshot_does_not_depend_on_contributor_commission_fields():
-    """La regle est uniforme : un apporteur sans bareme configure est commissionne."""
+    """La regle est uniforme : aucun bareme par compte n'existe plus."""
     organization = Organization.objects.create(name="Groupe Thies", code="THS")
     contributor = User.objects.create_user(
         username="apporteur-thies",
@@ -103,8 +103,6 @@ def test_snapshot_does_not_depend_on_contributor_commission_fields():
         role=User.Role.CONTRIBUTOR,
         organization=organization,
     )
-    assert contributor.has_configured_commission is False
-
     contract = Contract.objects.create(
         organization=organization,
         contributor=contributor,

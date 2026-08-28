@@ -92,8 +92,9 @@ def test_float_formatted_response_drives_net_a_verser_and_commission_basis():
 
     # Net a verser = PrimeTotale - cout de police.
     assert expected_payment_amount(contract) == 60_226
-    # Assiette = PrimeRC seule, jamais `data` (51 378 inclut la CEDEAO).
-    assert contract_commission_basis(contract) == 51_078
+    # Assiette = PrimeRC + CEDEAO. Ici elle rejoint `data` (51 078 + 300), mais
+    # c'est fortuit : sur garage et bus ecole, `data` a derive loin au-dessus.
+    assert contract_commission_basis(contract) == 51_378
 
 
 # Sondes reelles du 2026-08-12 : `data` a derive et ne vaut plus PrimeRC + Cedeao.
@@ -169,8 +170,8 @@ def test_extract_prime_rc_sends_data_even_when_it_looks_wrong(response):
 @pytest.mark.parametrize(
     ("response", "expected"),
     [
-        (REAL_RC_GARAGE_RESPONSE, 68_831),
-        (REAL_RC_BUS_RESPONSE, 16_899),
+        (REAL_RC_GARAGE_RESPONSE, 68_831 + 300),
+        (REAL_RC_BUS_RESPONSE, 16_899 + 300),
     ],
 )
 def test_commission_basis_ignores_data_when_it_diverges(response, expected):
@@ -178,8 +179,8 @@ def test_commission_basis_ignores_data_when_it_diverges(response, expected):
 
     Sur ces deux reponses reelles, `data` depasse la prime totale encaissee :
     commissionner dessus paierait Horus sur plus que ce que le client a paye.
-    L'assiette repart de la ventilation : la PrimeRC seule, hors CEDEAO, taxes
-    et fonds de garantie.
+    L'assiette repart de la ventilation : PrimeRC + CEDEAO, hors taxes et fonds
+    de garantie.
     """
     contract = Contract(prime_rc_ass=int(response["data"]), ass_response_payload=response)
 

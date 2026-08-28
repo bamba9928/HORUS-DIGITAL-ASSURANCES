@@ -36,8 +36,6 @@ def make_authenticated_contract_client(
         password="test",
         role=role,
         organization=organization,
-        commission_percent_on_prime_rc=0,
-        commission_fixed_on_policy_fee=0,
     )
     client = APIClient()
     client.force_authenticate(user)
@@ -710,8 +708,6 @@ def test_contributor_sees_only_own_contracts_payments():
         password="test",
         role=User.Role.CONTRIBUTOR,
         organization=contributor.organization,
-        commission_percent_on_prime_rc=0,
-        commission_fixed_on_policy_fee=0,
     )
     own_contract = create_quote_ready_contract(contributor)
     other_contract = create_quote_ready_contract(other)
@@ -844,8 +840,6 @@ def test_financial_summary_aggregates_scoped_and_excludes_cancelled():
         password="test",
         role=User.Role.CONTRIBUTOR,
         organization=organization,
-        commission_percent_on_prime_rc=0,
-        commission_fixed_on_policy_fee=0,
     )
     own = _issued_with_snapshot(contributor, commission_total=2_400, marge_horus=600)
     Payment.objects.create(
@@ -1907,7 +1901,6 @@ def test_issue_is_not_blocked_by_missing_contributor_commission_config():
     )
     client = APIClient()
     client.force_authenticate(contributor)
-    assert contributor.has_configured_commission is False
 
     response = client.post(f"/api/contracts/{contract.id}/issue/")
 
