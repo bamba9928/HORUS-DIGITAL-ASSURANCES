@@ -1,4 +1,3 @@
-from decimal import Decimal
 from pathlib import Path
 
 import dj_database_url
@@ -319,11 +318,9 @@ ASS_PASSWORD = config("ASS_PASSWORD", default="")
 # se remettent a repondre 401, c'est qu'il est perime.
 ASS_SESSION_ID = config("ASS_SESSION_ID", default="")
 ASS_POLICY_FEE = config("ASS_POLICY_FEE", default=3000, cast=int)
-# Commission d'apport reversee par ASS a Horus sur la PrimeRC (en %). Constitue,
-# avec les frais de police, le revenu de Horus servant a payer la commission
-# apporteur. Defaut 0 tant que le taux du contrat ASS n'est pas confirme :
-# la marge Horus se reduit alors aux frais de police moins la commission apporteur.
-ASS_PARTNER_COMMISSION_RATE = config("ASS_PARTNER_COMMISSION_RATE", default="0", cast=Decimal)
+# Le taux de commission d'apport n'est PAS un reglage d'environnement : il depend
+# du genre du vehicule (20 %, 40 % sur les genres TPC). Voir
+# integrations/ass/referentials.commission_rate_for_genre.
 ASS_MOCK_ENABLED = config("ASS_MOCK_ENABLED", default=True, cast=bool)
 ASS_REAL_CALLS_ALLOWED = config("ASS_REAL_CALLS_ALLOWED", default=False, cast=bool)
 # Annulation : endpoint primaire = /qrcode.mono.cancel (PDF officiel). La collection

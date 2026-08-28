@@ -138,18 +138,25 @@ Regles :
 
 Formule :
 
-```text
-commission_prime_rc_amount = prime_rc_ass * commission_percent_on_prime_rc / 100
-commission_policy_fee_amount = commission_fixed_on_policy_fee
-commission_total = commission_prime_rc_amount + commission_policy_fee_amount
+Regle en vigueur depuis le 2026-08-28, uniforme sur tous les comptes (l'ancien
+bareme par apporteur, `x % de la PrimeRC + montant fixe`, a ete supprime) :
 
-# Revenu Horus = frais de police + commission d'apport ASS sur la PrimeRC
-# (ASS_PARTNER_COMMISSION_RATE ; 0 par defaut tant que le contrat ASS ne l'a pas confirme)
-ass_partner_commission = prime_rc_ass * ASS_PARTNER_COMMISSION_RATE / 100
-horus_gross_revenue    = cout_police_ass + ass_partner_commission
-montant_reverse_ass    = ttc_ass - horus_gross_revenue   # reverse a ASS (prime assureur + taxes/FGA/CEDEAO)
-marge_horus            = horus_gross_revenue - commission_total   # peut etre negative
+```text
+# L'apporteur retient le cout de police A LA SOURCE : il ne verse que le solde.
+net_a_verser  = ttc_ass - cout_police_ass          # encaisse par Orange Money avant emission
+commission_total = cout_police_ass                 # remuneration de l'apporteur
+
+# Revenu Horus = la seule commission d'apport ASS, sur la prime nette.
+# Taux fonction du genre : 20 %, 40 % sur les genres TPC (categorie C2).
+# Voir integrations/ass/referentials.commission_rate_for_genre — ce n'est PAS
+# un reglage d'environnement.
+prime_nette            = PrimeRC + Cedeao          # jamais `data`, qui a derive
+ass_partner_commission = prime_nette * taux / 100
+montant_reverse_ass    = net_a_verser - ass_partner_commission   # reglement HORS PLATEFORME
+marge_horus            = ass_partner_commission
 ```
+
+Controle : `commission_total + ass_partner_commission + montant_reverse_ass == ttc_ass`.
 
 Point comptable — resolu le 2026-06-25 :
 
@@ -737,8 +744,8 @@ flutter test
 - Tant que les appels reels ASS sont risqués, utiliser le mock.
 - Tant que Bus ecole/Garage ne sont pas prioritaires, les afficher en "A venir" ou les livrer apres Auto/Moto/Flotte.
 - Marge Horus (ex-`net_to_horus`) : resolu le 2026-06-25 — decomposition `montant_reverse_ass` /
-  `ass_partner_commission` / `marge_horus`, taux d'apport ASS configurable (defaut 0). Reste a
-  renseigner le vrai taux `ASS_PARTNER_COMMISSION_RATE` une fois confirme par le contrat ASS.
+  `ass_partner_commission` / `marge_horus`. Taux d'apport confirme le 2026-08-28 (20 %, 40 % TPC) :
+  il depend du genre, il est donc porte par le referentiel et non par un reglage d'environnement.
 
 ## Definition de termine pour une phase
 
