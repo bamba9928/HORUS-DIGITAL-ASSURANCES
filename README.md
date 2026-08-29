@@ -8,8 +8,9 @@ Plateforme B2B de gestion de contrats d'assurance automobile pour le marché sé
 |--------|-------------|
 | Backend | Django 6 · Django REST Framework 3.17 · Python 3.14 |
 | Frontend | Next.js 16 · React 19 · TypeScript · Tailwind CSS 4 |
+| Mobile | Expo SDK 57 · React Native 0.86 · expo-router |
 | Base de données | SQLite (développement) · PostgreSQL (production) |
-| Auth | Session Django + CSRF · CORS configuré |
+| Auth | Session Django + CSRF (web) · JWT rotatif (mobile) |
 | Déploiement | Gunicorn · WhiteNoise · Docker (standalone Next.js) |
 
 ## Structure du projet
@@ -30,6 +31,10 @@ HorusAssurancesDigital/
 │       ├── app/      # Pages (App Router)
 │       ├── components/
 │       └── lib/      # API client, permissions
+├── mobile/           # Application Expo (iOS / Android)
+│   └── src/
+│       ├── app/      # Écrans (expo-router)
+│       └── lib/      # API client, jetons, thème
 └── docs/             # Documentation API A.S.S et roadmap
 ```
 
@@ -78,6 +83,21 @@ npm install
 npm run dev
 # → Application disponible sur http://localhost:3000
 ```
+
+### Mobile
+
+```bash
+cd mobile
+
+# Pointer vers le backend local (sinon l'application vise la production)
+cp .env.example .env
+
+npm install
+npx expo start
+```
+
+Détails et pièges dans [`mobile/README.md`](mobile/README.md) — notamment le
+fait que `localhost` depuis un téléphone physique désigne le téléphone.
 
 ## Rôles utilisateurs
 
