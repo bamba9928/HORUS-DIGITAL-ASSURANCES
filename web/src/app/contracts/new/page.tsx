@@ -919,14 +919,7 @@ function NewContractPageContent() {
 
   return (
       <AppShell
-      actions={(
-        <div className="flex items-center gap-3">
-          <AutoSaveIndicator draftId={savedDraftId} state={autoSaveState} />
-          <span className="hidden sm:inline-flex">
-            <StatusBadge status="MODE TEST" />
-          </span>
-        </div>
-      )}
+      actions={<AutoSaveIndicator draftId={savedDraftId} state={autoSaveState} />}
       description={isEditingDraft ? `Reprise du brouillon ${savedDraftId}` : "Souscription et émission ASS"}
       title="Nouveau contrat"
     >
@@ -2400,7 +2393,7 @@ function IssuePanel({ issueResult }: { issueResult: IssueResult }) {
         <div>
           <h3 className="font-extrabold text-emerald-800">Contrat émis</h3>
           <p className="text-xs font-medium text-emerald-700">
-            Émission mode test. <StatusBadge status={issueResult.ass_status} />
+            <StatusBadge status={issueResult.ass_status} />
           </p>
         </div>
       </div>

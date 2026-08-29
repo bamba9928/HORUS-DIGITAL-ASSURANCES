@@ -263,7 +263,7 @@ export function AppShell({
             className={`mt-2 flex items-center rounded-lg py-2 ${
               sidebarCollapsed ? "justify-center px-0" : "gap-2.5 px-2.5"
             }`}
-            title={sidebarCollapsed ? "Horus Assurances — Mode test" : undefined}
+            title={sidebarCollapsed ? "Horus Assurances" : undefined}
           >
             <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white shadow-lg shadow-black/25">
               <Image
@@ -276,10 +276,6 @@ export function AppShell({
             {sidebarCollapsed ? null : (
               <div className="min-w-0">
                 <p className="truncate text-xs font-bold text-white/80">Horus Assurances</p>
-                <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">
-                  <span className="size-1.5 rounded-full bg-amber-400" />
-                  Mode test
-                </span>
               </div>
             )}
           </div>
