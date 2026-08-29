@@ -1,13 +1,15 @@
 import { Stack, useLocalSearchParams } from "expo-router";
 import { Children, useEffect, useState, type ReactNode } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { fetchContract, type ContractDetail } from "@/lib/api";
-import { formatDate, formatFcfa, statusStyle } from "@/lib/format";
+import { contractTypeLabel, formatDate, formatFcfa, statusStyle } from "@/lib/format";
 import { colors, radius, spacing } from "@/lib/theme";
 
 export default function ContractScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const insets = useSafeAreaInsets();
   const [contract, setContract] = useState<ContractDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,7 +59,12 @@ export default function ContractScreen() {
   return (
     <>
       <Stack.Screen options={{ title: contract.immatriculation || "Contrat" }} />
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingBottom: insets.bottom + spacing.xl },
+        ]}
+      >
         <View style={styles.card}>
           <View style={styles.cardHead}>
             <Text style={styles.client}>{contract.client_name || "Client"}</Text>
@@ -72,7 +79,7 @@ export default function ContractScreen() {
 
         <Section title="Véhicule">
           <Row label="Immatriculation" value={contract.immatriculation || "—"} />
-          <Row label="Type de contrat" value={contract.contract_type} />
+          <Row label="Type de contrat" value={contractTypeLabel(contract.contract_type)} />
         </Section>
 
         <Section title="Montants">

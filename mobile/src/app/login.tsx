@@ -2,6 +2,7 @@ import { Redirect } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -63,7 +64,12 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.header}>
-          <Text style={styles.brand}>Horus Assurances</Text>
+          <Image
+            accessibilityLabel="Horus Assurances"
+            resizeMode="contain"
+            source={require("@/assets/images/horus-logo.png")}
+            style={styles.logo}
+          />
           <Text style={styles.subtitle}>Espace apporteur</Text>
         </View>
 
@@ -86,7 +92,7 @@ export default function LoginScreen() {
             editable={!submitting}
             onChangeText={setPassword}
             onSubmitEditing={handleSubmit}
-            placeholder="••••••••••••"
+            placeholder="Votre mot de passe"
             placeholderTextColor={colors.textFaint}
             returnKeyType="go"
             secureTextEntry
@@ -122,12 +128,6 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  brand: {
-    color: colors.textStrong,
-    fontSize: 26,
-    fontWeight: "900",
-    letterSpacing: -0.5,
-  },
   button: {
     alignItems: "center",
     backgroundColor: colors.primary,
@@ -162,7 +162,8 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   flex: { backgroundColor: colors.background, flex: 1 },
-  header: { marginBottom: spacing.xxl },
+  header: { alignItems: "center", marginBottom: spacing.xxl },
+  logo: { height: 64, width: 240 },
   input: {
     backgroundColor: colors.surfaceRaised,
     borderColor: colors.border,
@@ -177,5 +178,5 @@ const styles = StyleSheet.create({
   label: { color: colors.textBody, fontSize: 13, fontWeight: "700" },
   labelSpaced: { marginTop: spacing.lg },
   scroll: { flexGrow: 1, justifyContent: "center", padding: spacing.xl },
-  subtitle: { color: colors.textMuted, fontSize: 15, marginTop: spacing.xs },
+  subtitle: { color: colors.textMuted, fontSize: 15, marginTop: spacing.md },
 });

@@ -1,4 +1,5 @@
-import { Link } from "expo-router";
+import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -17,6 +18,9 @@ import { colors, radius, spacing } from "@/lib/theme";
 
 export default function ContractsScreen() {
   const { user, signOut } = useAuth();
+  // Sans cette marge, la barre de navigation systeme recouvre la derniere
+  // carte : elle reste tactile mais devient illisible.
+  const insets = useSafeAreaInsets();
   const [contracts, setContracts] = useState<ContractListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -58,7 +62,10 @@ export default function ContractsScreen() {
 
   return (
     <FlatList
-      contentContainerStyle={styles.list}
+      contentContainerStyle={[
+        styles.list,
+        { paddingBottom: insets.bottom + spacing.xl },
+      ]}
       data={contracts}
       keyExtractor={(item) => String(item.id)}
       ListEmptyComponent={
@@ -99,11 +106,16 @@ export default function ContractsScreen() {
 }
 
 function ContractRow({ contract }: { contract: ContractListItem }) {
+  const router = useRouter();
   const badge = statusStyle(contract.internal_status);
 
   return (
-    <Link asChild href={{ pathname: "/contracts/[id]", params: { id: contract.id } }}>
-      <Pressable style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}>
+    <Pressable
+      onPress={() =>
+        router.push({ pathname: "/contracts/[id]", params: { id: contract.id } })
+      }
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+    >
         <View style={styles.cardTop}>
           <Text numberOfLines={1} style={styles.client}>
             {contract.client_name || "Client non renseigné"}
@@ -124,8 +136,7 @@ function ContractRow({ contract }: { contract: ContractListItem }) {
           <Text style={styles.amount}>{formatFcfa(contract.ttc_ass)}</Text>
           <Text style={styles.date}>Effet {formatDate(contract.effect_date)}</Text>
         </View>
-      </Pressable>
-    </Link>
+    </Pressable>
   );
 }
 

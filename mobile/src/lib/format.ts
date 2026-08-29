@@ -63,6 +63,20 @@ export function statusStyle(status: ContractInternalStatus): StatusStyle {
   );
 }
 
+// Repris de `typeConfig` (web/src/components/ui.tsx) : sans cette table, la
+// fiche affichait la valeur brute de l'enum, du genre « BUS_SCHOOL ».
+const CONTRACT_TYPE_LABELS: Record<string, string> = {
+  AUTO_MONO: "Auto",
+  MOTO: "Moto",
+  FLEET: "Flotte",
+  BUS_SCHOOL: "Bus École",
+  GARAGE: "Garage",
+};
+
+export function contractTypeLabel(contractType: string) {
+  return CONTRACT_TYPE_LABELS[contractType] ?? contractType;
+}
+
 const ROLE_LABELS: Record<string, string> = {
   ADMIN_GENERAL: "Admin général",
   ADMIN_GROUP: "Admin groupe",
