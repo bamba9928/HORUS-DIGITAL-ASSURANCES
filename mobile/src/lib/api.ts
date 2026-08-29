@@ -279,12 +279,14 @@ type ApiListResponse<T> = {
 
 export async function listContracts(filters?: {
   status?: ContractInternalStatus | "";
+  expiration?: ExpirationWindow | "";
   search?: string;
   page?: number;
   page_size?: number;
 }) {
   const params = new URLSearchParams();
   if (filters?.status) params.set("status", filters.status);
+  if (filters?.expiration) params.set("expiration", filters.expiration);
   if (filters?.search) params.set("search", filters.search);
   if (filters?.page) params.set("page", String(filters.page));
   if (filters?.page_size) params.set("page_size", String(filters.page_size));
@@ -294,12 +296,25 @@ export async function listContracts(filters?: {
   );
 }
 
+export type PaymentStatus =
+  | "PENDING"
+  | "CONFIRMED"
+  | "FAILED"
+  | "CANCELLED"
+  | "REFUNDED";
+
 export type ContractPayment = {
   id: number;
   amount: number;
-  status: string;
+  status: PaymentStatus;
+  external_reference: string;
+  confirmed_at: string | null;
   created_at: string;
+  created_by_username: string | null;
 };
+
+/** Fenetres d'echeance calculees par le backend, en jours. */
+export type ExpirationWindow = "expired" | "30" | "60" | "90";
 
 export type ContractDetail = ContractListItem & {
   payments: ContractPayment[];

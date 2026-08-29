@@ -77,6 +77,24 @@ export function contractTypeLabel(contractType: string) {
   return CONTRACT_TYPE_LABELS[contractType] ?? contractType;
 }
 
+const PAYMENT_STATUS_STYLES: Record<string, StatusStyle> = {
+  PENDING: { label: "En attente", background: colors.muted, foreground: colors.textMuted },
+  CONFIRMED: { label: "Confirmé", background: colors.successBg, foreground: colors.success },
+  FAILED: { label: "Échoué", background: colors.dangerBg, foreground: colors.danger },
+  CANCELLED: { label: "Annulé", background: colors.dangerBg, foreground: colors.danger },
+  REFUNDED: { label: "Remboursé", background: colors.infoBg, foreground: colors.info },
+};
+
+export function paymentStatusStyle(status: string): StatusStyle {
+  return (
+    PAYMENT_STATUS_STYLES[status] ?? {
+      label: status,
+      background: colors.muted,
+      foreground: colors.textMuted,
+    }
+  );
+}
+
 const ROLE_LABELS: Record<string, string> = {
   ADMIN_GENERAL: "Admin général",
   ADMIN_GROUP: "Admin groupe",

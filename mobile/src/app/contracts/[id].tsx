@@ -1,10 +1,24 @@
 import { Stack, useLocalSearchParams } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { Children, useEffect, useState, type ReactNode } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
-import { fetchContract, type ContractDetail } from "@/lib/api";
-import { contractTypeLabel, formatDate, formatFcfa, statusStyle } from "@/lib/format";
+import { fetchContract, type ContractDetail, type ContractPayment } from "@/lib/api";
+import {
+  contractTypeLabel,
+  formatDate,
+  formatFcfa,
+  paymentStatusStyle,
+  statusStyle,
+} from "@/lib/format";
 import { colors, radius, spacing } from "@/lib/theme";
 
 export default function ContractScreen() {
@@ -95,6 +109,10 @@ export default function ContractScreen() {
           <Row label="Statut ASS" value={contract.ass_status || "—"} />
         </Section>
 
+        <AttestationSection contract={contract} />
+
+        <PaymentSection payments={contract.payments ?? []} />
+
         <Section title="Souscription">
           <Row label="Apporteur" value={contract.contributor_full_name || contract.contributor_username} />
           <Row label="Organisation" value={contract.organization_name || "—"} />
@@ -102,6 +120,87 @@ export default function ContractScreen() {
         </Section>
       </ScrollView>
     </>
+  );
+}
+
+/**
+ * Les attestations sont l'usage terrain le plus concret de l'application :
+ * l'apporteur sort le document du client depuis son telephone. Les liens
+ * arrivaient deja dans la reponse de l'API, ils n'etaient simplement pas
+ * affiches.
+ */
+function AttestationSection({ contract }: { contract: ContractDetail }) {
+  const links = [
+    { label: "Attestation digitale", url: contract.link_attestation_digitale },
+    { label: "Attestation CEDEAO", url: contract.link_attestation_cedeao },
+  ].filter((link) => Boolean(link.url));
+
+  if (links.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Attestations</Text>
+      <View style={styles.sectionBody}>
+        {links.map((link, index) => (
+          <Pressable
+            key={link.url}
+            // Navigateur systeme plutot qu'une WebView maison : l'attestation
+            // doit pouvoir etre partagee et imprimee par l'apporteur.
+            onPress={() => WebBrowser.openBrowserAsync(link.url)}
+            style={({ pressed }) => [
+              styles.link,
+              index > 0 && styles.divider,
+              pressed && styles.linkPressed,
+            ]}
+          >
+            <Text style={styles.linkLabel}>{link.label}</Text>
+            <Text style={styles.linkChevron}>Ouvrir ›</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function PaymentSection({ payments }: { payments: ContractPayment[] }) {
+  if (payments.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>
+        Paiements ({payments.length})
+      </Text>
+      <View style={styles.sectionBody}>
+        {payments.map((payment, index) => {
+          const badge = paymentStatusStyle(payment.status);
+          return (
+            <View
+              key={payment.id}
+              style={[styles.payment, index > 0 && styles.divider]}
+            >
+              <View style={styles.paymentText}>
+                <Text style={styles.paymentAmount}>{formatFcfa(payment.amount)}</Text>
+                <Text style={styles.paymentDate}>
+                  {formatDate(payment.confirmed_at ?? payment.created_at)}
+                  {payment.created_by_username?.trim()
+                    ? ` · ${payment.created_by_username.trim()}`
+                    : ""}
+                </Text>
+              </View>
+              <View style={[styles.badge, { backgroundColor: badge.background }]}>
+                <Text style={[styles.badgeLabel, { color: badge.foreground }]}>
+                  {badge.label}
+                </Text>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -181,6 +280,27 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: spacing.md,
   },
+  link: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginHorizontal: -spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+  },
+  linkChevron: { color: colors.primary, fontSize: 13, fontWeight: "800" },
+  linkLabel: { color: colors.textStrong, fontSize: 14, fontWeight: "700" },
+  linkPressed: { backgroundColor: colors.primarySubtle },
+  payment: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+    paddingVertical: spacing.md,
+  },
+  paymentAmount: { color: colors.textStrong, fontSize: 14, fontWeight: "800" },
+  paymentDate: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
+  paymentText: { flexShrink: 1 },
   rowLabel: { color: colors.textMuted, fontSize: 13, fontWeight: "600" },
   rowValue: {
     color: colors.textBody,
