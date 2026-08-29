@@ -17,6 +17,7 @@ dependencies = [
     "django-unfold>=0.104.1",
     # Transitive de Django, epinglee explicitement : 0.5.5 porte 4 CVE.
     "sqlparse>=0.6.0",
+    "djangorestframework-simplejwt==5.5.1",
 ]
 
 [dependency-groups]

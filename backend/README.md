@@ -86,12 +86,15 @@ vérifie que chaque écran s'ouvre encore (`manage.py check` ne le détecte pas)
 | `OM_CALLBACK_API_KEY` | Clé renvoyée par OM en `Authorization: Basic` | — |
 | `OM_MOCK_ENABLED` | Mode simulation Orange Money | `True` |
 | `OM_REAL_CALLS_ALLOWED` | Autoriser les appels réels | `False` |
+| `JWT_ACCESS_TOKEN_MINUTES` | Durée de vie de l'access token (clients mobiles) | `60` |
+| `JWT_REFRESH_TOKEN_DAYS` | Durée de vie du refresh token | `30` |
+| `AUTH_TOKEN_REFRESH_THROTTLE_RATE` | Limite sur `auth/token/refresh/` et `auth/token/revoke/` | `60/min` |
 
 ## Endpoints API
 
 | Préfixe | App | Description |
 |---------|-----|-------------|
-| `/api/accounts/` | accounts | Auth, utilisateurs, sessions |
+| `/api/accounts/` | accounts | Auth (session **et** jeton), utilisateurs, profil |
 | `/api/organizations/` | organizations | Groupes d'apporteurs |
 | `/api/contracts/` | contracts | CRUD contrats, devis, émission |
 | `/api/commissions/` | commissions | Snapshots de commissions |
@@ -107,7 +110,36 @@ Modèle `User` étendu (`AbstractUser`) avec :
 - Rôles : `ADMIN_GENERAL`, `ADMIN_GROUP`, `CONTRIBUTOR`, `FINANCE`
 - FK vers `Organization` (nullable)
 - Champs de commission : `commission_percent_on_prime_rc`, `commission_fixed_on_policy_fee`
-- Auth par session Django + CSRF
+
+**Deux parcours d'authentification, une seule règle.** Le front web utilise la
+session Django (cookie + CSRF) ; les clients sans cookie — application mobile —
+utilisent des jetons JWT. Les deux passent par `authenticate_by_identifier`
+(`accounts/services.py`) : username, email ou téléphone, refus d'un identifiant
+qui désigne plusieurs comptes, refus des comptes désactivés. Ne jamais
+réimplémenter cette résolution ailleurs.
+
+| Endpoint | Parcours | Description |
+|----------|----------|-------------|
+| `POST auth/login/` | session | Ouvre une session, pose le cookie (CSRF requis) |
+| `POST auth/logout/` | session | Ferme la session |
+| `POST auth/token/` | jeton | `{identifier, password}` → `{access, refresh, user}` |
+| `POST auth/token/refresh/` | jeton | `{refresh}` → nouveau couple (rotation) |
+| `POST auth/token/revoke/` | jeton | `{refresh}` → liste noire (déconnexion mobile) |
+| `GET auth/me/` | les deux | Session courante ou porteur du `Bearer` |
+
+Points à connaître avant de brancher un client :
+
+- `auth/token/` partage le compteur de throttling `auth_login` avec la connexion
+  par session : dix échecs sur l'un bloquent l'autre. C'est voulu — un compteur
+  distinct ferait de ce point d'entrée un contournement de la protection
+  anti-force-brute.
+- La rotation est active : un `refresh` consommé part en liste noire. Rejouer un
+  refresh déjà échangé répond `401`, ce qui rend un vol détectable.
+- L'`access` déjà émis n'est pas révocable (nature d'un JWT) — d'où sa durée de
+  vie courte. La révocation porte sur le `refresh`.
+- `JWTAuthentication` est en **premier** dans `DEFAULT_AUTHENTICATION_CLASSES` :
+  c'est ce qui fait répondre `401` (et non `403`) à un jeton expiré, le signal
+  qu'un client mobile attend pour déclencher un renouvellement.
 
 ### `organizations`
 Groupes d'apporteurs. Champs : `name`, `code` (unique), `is_active`.

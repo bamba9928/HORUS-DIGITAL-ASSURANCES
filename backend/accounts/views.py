@@ -1,5 +1,5 @@
-from django.contrib.auth import authenticate, login, logout
-from django.db.models import Q
+from django.contrib.auth import login, logout
+from django.contrib.auth.models import update_last_login
 from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
@@ -8,6 +8,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenBlacklistView, TokenRefreshView
 
 from accounts.models import User
 from accounts.permissions import (
@@ -23,6 +25,7 @@ from accounts.serializers import (
     UserReadSerializer,
     UserUpdateSerializer,
 )
+from accounts.services import authenticate_by_identifier
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
@@ -52,27 +55,12 @@ class AuthLoginView(APIView):
     def post(self, request):
         serializer = AuthLoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        identifier = serializer.validated_data["identifier"]
-        password = serializer.validated_data["password"]
-        candidates = User.objects.filter(
-            Q(username__iexact=identifier)
-            | Q(email__iexact=identifier)
-            | Q(phone=identifier)
-        )[:2]
-        candidate_list = list(candidates)
-        authentication_username = (
-            candidate_list[0].username
-            if len(candidate_list) == 1
-            else identifier
-        )
-        user = authenticate(
+        user = authenticate_by_identifier(
             request,
-            username=authentication_username,
-            password=password,
+            serializer.validated_data["identifier"],
+            serializer.validated_data["password"],
         )
-        if len(candidate_list) != 1:
-            user = None
-        if user is None or not user.is_active:
+        if user is None:
             return Response({"detail": "Identifiants invalides."}, status=status.HTTP_400_BAD_REQUEST)
         login(request, user)
         return Response(
@@ -81,6 +69,74 @@ class AuthLoginView(APIView):
                 "user": UserReadSerializer(user).data,
             }
         )
+
+
+class AuthTokenObtainView(APIView):
+    """Delivre un couple access/refresh aux clients sans cookie (mobile).
+
+    Pas de `csrf_protect` ici, contrairement a AuthLoginView : cette vue ne pose
+    aucun cookie de session et ne s'appuie sur aucune authentification ambiante.
+    Le CSRF protege le rejeu d'un cookie que le navigateur envoie tout seul ;
+    il n'y a rien a rejouer quand le jeton doit etre lu dans le corps de la
+    reponse puis pose a la main dans un en-tete.
+
+    Aucune session n'est ouverte : `login()` n'est volontairement pas appele.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    # MEME compteur que la connexion par session (scope `auth_login`) : un scope
+    # distinct ferait de ce point d'entree un contournement pur et simple de la
+    # limitation anti-force-brute — l'attaquant se contenterait de taper ici.
+    throttle_scope = "auth_login"
+
+    def post(self, request):
+        serializer = AuthLoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = authenticate_by_identifier(
+            request,
+            serializer.validated_data["identifier"],
+            serializer.validated_data["password"],
+        )
+        if user is None:
+            return Response({"detail": "Identifiants invalides."}, status=status.HTTP_400_BAD_REQUEST)
+        # `login()` s'en chargerait pour la session ; ici il faut le faire a la
+        # main, sinon les comptes exclusivement mobiles paraitraient inactifs
+        # depuis l'admin et les exports.
+        update_last_login(None, user)
+        refresh = RefreshToken.for_user(user)
+        return Response(
+            {
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user": UserReadSerializer(user).data,
+            }
+        )
+
+
+class AuthTokenRefreshView(TokenRefreshView):
+    """Echange un refresh valide contre un nouvel access (et un nouveau refresh).
+
+    La rotation est activee (SIMPLE_JWT) : le refresh consomme part en liste
+    noire. Un refresh rejoue une seconde fois est donc refuse — c'est ce qui
+    permet de detecter un jeton vole plutot que de le laisser vivre 30 jours.
+    """
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth_token_refresh"
+
+
+class AuthTokenRevokeView(TokenBlacklistView):
+    """Deconnexion des clients a jeton : met le refresh en liste noire.
+
+    L'access deja delivre reste valide jusqu'a son expiration (nature d'un JWT) —
+    c'est pourquoi sa duree de vie est courte. Le refresh, lui, est mort des cet
+    appel : le client ne peut plus se reprolonger.
+    """
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "auth_token_refresh"
 
 
 class AuthLogoutView(APIView):

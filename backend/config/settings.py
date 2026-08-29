@@ -1,3 +1,4 @@
+from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
@@ -49,6 +50,10 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'corsheaders',
     'rest_framework',
+    # Fournit la table de liste noire des refresh : sans cette app, la rotation
+    # emet bien un nouveau jeton mais l'ancien resterait valide jusqu'a son
+    # expiration, et la revocation (deconnexion mobile) n'existerait pas.
+    'rest_framework_simplejwt.token_blacklist',
     'accounts',
     'organizations',
     'contracts',
@@ -138,6 +143,16 @@ AUTH_PASSWORD_VALIDATORS = [
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        # JWT en PREMIER, et l'ordre n'est pas cosmetique : sur un echec
+        # d'authentification, DRF ne repond 401 que s'il peut construire un
+        # en-tete `WWW-Authenticate`, qu'il demande au PREMIER authentificateur
+        # de la liste. SessionAuthentication n'en fournit aucun — en tete de
+        # liste, elle fait repondre 403 a un jeton expire, et le client mobile
+        # perd le signal standard qui declenche le renouvellement.
+        # Le front web n'est pas affecte : sans en-tete `Authorization`,
+        # JWTAuthentication rend None et la main passe a la session, cookie et
+        # CSRF compris.
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
@@ -156,7 +171,36 @@ REST_FRAMEWORK = {
         'auth_login': config('AUTH_LOGIN_THROTTLE_RATE', default='10/min'),
         # Les CGU ASS imposent une frequence limite : borne les appels sandbox/prod par utilisateur.
         'ass_verify': config('ASS_VERIFY_THROTTLE_RATE', default='30/min'),
+        # Renouvellement et revocation de jeton : plus permissif que la
+        # connexion (aucun mot de passe n'y transite) mais borne quand meme.
+        'auth_token_refresh': config('AUTH_TOKEN_REFRESH_THROTTLE_RATE', default='60/min'),
     },
+}
+
+# ─── Jetons JWT (clients mobiles) ─────────────────────────────────────────────
+# Le front web reste sur la session par cookie : ces reglages ne le concernent
+# pas. Ils n'existent que pour les clients qui ne peuvent pas porter de cookie.
+#
+# Compromis retenu : access court (une heure) parce qu'un JWT deja emis ne se
+# revoque pas, refresh long (30 jours) pour ne pas faire re-saisir le mot de
+# passe a chaque ouverture de l'application. La rotation + liste noire ferme
+# l'ecart : un refresh vole cesse de valoir des que le vrai porteur s'en sert.
+#
+# Aucun SIGNING_KEY n'est defini : simplejwt signe alors avec SECRET_KEY. Faire
+# tourner la cle invalide donc tous les jetons en cours, ce qui est le
+# comportement voulu en cas de compromission. HS256 attend au moins 32 octets —
+# le garde-fou de la SECRET_KEY de dev (plus haut) et la cle de 64 caracteres du
+# VPS couvrent le cas.
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(
+        minutes=config('JWT_ACCESS_TOKEN_MINUTES', default=60, cast=int)
+    ),
+    'REFRESH_TOKEN_LIFETIME': timedelta(
+        days=config('JWT_REFRESH_TOKEN_DAYS', default=30, cast=int)
+    ),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
 # Sessions : 12 h par defaut (application financiere), ajustable par env.
