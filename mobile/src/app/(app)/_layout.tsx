@@ -5,9 +5,15 @@ import { colors } from "@/lib/theme";
 
 /**
  * Garde du tunnel authentifié. La vérification vit ici plutôt que dans chaque
- * écran : un écran ajouté demain hérite de la protection sans rien faire.
+ * écran : un écran ajouté demain sous `(app)/` hérite de la protection sans
+ * rien faire.
+ *
+ * La pile ne porte que la fiche contrat ; les trois écrans d'accueil vivent
+ * dans `(tabs)`. La fiche se pousse donc PAR-DESSUS la barre d'onglets, avec un
+ * bouton retour — c'est ce qu'on attend d'un détail, alors qu'un onglet doit
+ * rester atteignable en un geste.
  */
-export default function ContractsLayout() {
+export default function AppLayout() {
   const { status } = useAuth();
 
   if (status === "loading") {
@@ -26,8 +32,8 @@ export default function ContractsLayout() {
         contentStyle: { backgroundColor: colors.background },
       }}
     >
-      <Stack.Screen name="index" options={{ title: "Contrats" }} />
-      <Stack.Screen name="[id]" options={{ title: "Contrat" }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="contracts/[id]" options={{ title: "Contrat" }} />
     </Stack>
   );
 }

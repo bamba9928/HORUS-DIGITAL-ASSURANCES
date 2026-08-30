@@ -20,7 +20,7 @@ export default function Index() {
     );
   }
 
-  return <Redirect href={status === "authenticated" ? "/contracts" : "/login"} />;
+  return <Redirect href={status === "authenticated" ? "/dashboard" : "/login"} />;
 }
 
 const styles = StyleSheet.create({

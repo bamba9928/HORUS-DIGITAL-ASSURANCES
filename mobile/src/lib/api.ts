@@ -323,3 +323,101 @@ export type ContractDetail = ContractListItem & {
 export async function fetchContract(contractId: number) {
   return fetchApi<ContractDetail>(`/contracts/${contractId}/`);
 }
+
+/* ── Compteurs du tableau de bord ────────────────────────────────────────── */
+
+/**
+ * Compteurs de production, deja cloisonnes par role cote backend.
+ *
+ * `expired` / `expiring_30` / `expiring_60` sont CUMULATIFS : un contrat qui
+ * expire dans 20 jours est compte dans les deux fenetres. Les soustraire pour
+ * obtenir des tranches disjointes serait une invention du client — le backend
+ * ne promet pas ca.
+ */
+export type ContractSummary = {
+  drafts: number;
+  quotes_ready: number;
+  payment_pending: number;
+  issued: number;
+  total: number;
+  expired: number;
+  expiring_30: number;
+  expiring_60: number;
+};
+
+export async function fetchContractSummary() {
+  return fetchApi<ContractSummary>("/contracts/summary/");
+}
+
+export type FinancialPeriod = "month" | "year" | "all";
+
+export type FinancialSummary = {
+  period: FinancialPeriod;
+  ca_encaisse: number;
+  commissions_total: number;
+  marge_horus_total: number;
+  contrats_emis: number;
+};
+
+export async function fetchFinancialSummary(period: FinancialPeriod = "month") {
+  return fetchApi<FinancialSummary>(`/contracts/financial-summary/?period=${period}`);
+}
+
+/* ── Commissions ─────────────────────────────────────────────────────────── */
+
+export type CommissionStatus =
+  | "PENDING"
+  | "PAYABLE"
+  | "PAID"
+  | "CANCELLED"
+  | "DISPUTED";
+
+/**
+ * Instantane de commission, fige a l'emission du contrat.
+ *
+ * Les taux (`commission_percent_used`, `ass_partner_commission_rate_used`)
+ * arrivent en chaine : ce sont des `DecimalField` cote Django, et DRF les rend
+ * en texte pour ne pas perdre de precision au passage par le flottant. Ne pas
+ * les typer `number` sous pretexte qu'ils ressemblent a des nombres.
+ */
+export type CommissionSnapshot = {
+  id: number;
+  contract: number;
+  contributor: number;
+  contributor_username: string;
+  contributor_full_name: string;
+  organization: number;
+  organization_name: string;
+  status: CommissionStatus;
+  prime_rc_ass: number;
+  cout_police_ass: number;
+  ttc_ass: number;
+  commission_percent_used: string;
+  commission_fixed_policy_fee_used: number;
+  commission_prime_rc_amount: number;
+  commission_policy_fee_amount: number;
+  commission_total: number;
+  net_a_verser: number;
+  ass_partner_commission_rate_used: string;
+  ass_partner_commission: number;
+  montant_reverse_ass: number;
+  marge_horus: number;
+  paid_at: string | null;
+  paid_by: number | null;
+  paid_by_username: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function listCommissionSnapshots(filters?: {
+  page?: number;
+  page_size?: number;
+}) {
+  const params = new URLSearchParams();
+  if (filters?.page) params.set("page", String(filters.page));
+  if (filters?.page_size) params.set("page_size", String(filters.page_size));
+  const query = params.toString();
+  return fetchApi<ApiListResponse<CommissionSnapshot>>(
+    `/commissions/snapshots/${query ? `?${query}` : ""}`
+  );
+}

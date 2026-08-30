@@ -29,15 +29,40 @@ appareil réel. C'est la première cause de « API injoignable » au démarrage.
 
 ## Ce qui est implémenté
 
-La première tranche verticale — celle qui traverse toute la chaîne sans
-attaquer le morceau le plus lourd (l'assistant de souscription, 3 200 lignes
-côté web) :
+Tout le périmètre de **consultation** défini par la roadmap (`docs/ass/roadmap_horus_ass.md`,
+phase 10) : connexion, tableau de bord, contrats, commissions, attestations.
+Reste l'assistant de souscription — 3 200 lignes côté web, le gros morceau.
 
 | Écran | Route | Contenu |
 |-------|-------|---------|
 | Connexion | `/login` | Identifiant / email / téléphone + mot de passe |
-| Contrats | `/contracts` | Liste, tirer pour rafraîchir, statut, montant TTC |
-| Fiche | `/contracts/[id]` | Véhicule, montants, couverture, souscription |
+| Tableau de bord | `/dashboard` | Production, échéances, activité financière, derniers mouvements |
+| Contrats | `/contracts` | Liste, recherche, filtres statut / échéance, tirer pour rafraîchir |
+| Fiche | `/contracts/[id]` | Véhicule, montants, couverture, attestations, paiements |
+| Commissions | `/commissions` | Total, filtre par statut, commission et net à verser |
+
+## Navigation
+
+```
+/                     redirection selon la session
+/login
+(app)/                garde d'authentification — tout ce qui suit exige une session
+  (tabs)/             barre d'onglets : Accueil · Contrats · Commissions
+  contracts/[id]      poussée PAR-DESSUS les onglets, avec bouton retour
+```
+
+Les groupes `(app)` et `(tabs)` n'apparaissent pas dans les URL. La garde vit
+dans `(app)/_layout.tsx` : un écran ajouté dessous hérite de la protection sans
+rien faire.
+
+`Tabs` vient de `expo-router/js-tabs` — depuis le SDK 57, l'export `Tabs` de
+`expo-router` est déprécié et redirige vers ce module.
+
+⚠️ Les icônes s'importent **une par une** (`@expo/vector-icons/Feather`), jamais
+depuis le baril `@expo/vector-icons` : celui-ci embarque les polices des douze
+jeux d'icônes, soit 3 Mo de TTF dans le bundle contre 56 Ko pour Feather seul.
+Feather est le choix cohérent avec le web, qui utilise `lucide-react` — un fork
+de Feather.
 
 ## Authentification
 
@@ -79,3 +104,8 @@ pas.
 - Notifications push sur les échéances
 - Appareil photo pour la carte grise
 - Brouillons hors ligne
+
+Le changement de statut d'une commission n'est volontairement **pas** exposé :
+`_can_update_snapshot` le réserve à l'admin et à la finance, qui travaillent sur
+le web. Le bouton n'aurait rendu qu'un 403 à l'apporteur, seul utilisateur
+mobile.

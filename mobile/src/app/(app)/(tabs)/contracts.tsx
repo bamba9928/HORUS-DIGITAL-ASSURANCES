@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -19,8 +19,7 @@ import {
   type ContractListItem,
   type ExpirationWindow,
 } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
-import { formatDate, formatFcfa, roleLabel, statusStyle } from "@/lib/format";
+import { formatDate, formatFcfa, statusStyle } from "@/lib/format";
 import { colors, radius, spacing } from "@/lib/theme";
 
 const STATUS_FILTERS: { label: string; value: ContractInternalStatus | "" }[] = [
@@ -42,10 +41,26 @@ const EXPIRATION_FILTERS: { label: string; value: ExpirationWindow | "" }[] = [
   { label: "90 j", value: "90" },
 ];
 
+/**
+ * Un paramètre de route est une chaîne libre : un lien profond mal formé
+ * enverrait « ?expiration=demain » au backend, qui répondrait 400 et ferait
+ * croire à une panne. On ne retient que les fenêtres qu'il connaît.
+ */
+function isExpirationWindow(value: unknown): value is ExpirationWindow {
+  return (
+    value === "expired" || value === "30" || value === "60" || value === "90"
+  );
+}
+
 export default function ContractsScreen() {
-  const { user, signOut } = useAuth();
-  // Sans cette marge, la barre de navigation système recouvre la dernière
-  // carte : elle reste tactile mais devient illisible.
+  // Le tableau de bord renvoie ici avec une fenêtre d'échéance déjà choisie
+  // (« 4 expirés » → la liste des 4). Sans ce paramètre, il faudrait refaire le
+  // filtre à la main juste après l'avoir vu affiché.
+  const { expiration: expirationParam } = useLocalSearchParams<{
+    expiration?: string;
+  }>();
+  // Sans cette marge, la barre d'onglets recouvre la dernière carte : elle
+  // reste tactile mais devient illisible.
   const insets = useSafeAreaInsets();
 
   const [contracts, setContracts] = useState<ContractListItem[]>([]);
@@ -56,7 +71,22 @@ export default function ContractsScreen() {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<ContractInternalStatus | "">("");
-  const [expiration, setExpiration] = useState<ExpirationWindow | "">("");
+  const [expiration, setExpiration] = useState<ExpirationWindow | "">(
+    isExpirationWindow(expirationParam) ? expirationParam : ""
+  );
+
+  // Un onglet reste monté une fois visité : sans cette synchronisation, le
+  // deuxième aller-retour depuis le tableau de bord (« expirés », puis « 30 j »)
+  // rouvrirait la liste sur le filtre du premier. La valeur initiale ci-dessus
+  // ne couvre que la toute première visite.
+  //
+  // Ne dépend QUE du paramètre : un filtre choisi à la main sur cet écran ne
+  // déclenche rien et n'est donc jamais écrasé.
+  useEffect(() => {
+    if (isExpirationWindow(expirationParam)) {
+      setExpiration(expirationParam);
+    }
+  }, [expirationParam]);
 
   // La recherche part au repos de la frappe, pas à chaque caractère : sur un
   // réseau mobile, une requête par lettre sature la liaison et fait clignoter
@@ -102,7 +132,7 @@ export default function ContractsScreen() {
     <FlatList
       contentContainerStyle={[
         styles.list,
-        { paddingBottom: insets.bottom + spacing.xl },
+        { paddingTop: insets.top + spacing.lg, paddingBottom: spacing.xl },
       ]}
       data={contracts}
       keyExtractor={(item) => String(item.id)}
@@ -123,20 +153,7 @@ export default function ContractsScreen() {
       }
       ListHeaderComponent={
         <View>
-          <View style={styles.header}>
-            <View style={styles.headerText}>
-              <Text style={styles.headerName}>
-                {user?.first_name || user?.username || "Session"}
-              </Text>
-              <Text style={styles.headerRole}>
-                {user ? roleLabel(user.role) : ""}
-                {user?.organization_name ? ` · ${user.organization_name}` : ""}
-              </Text>
-            </View>
-            <Pressable onPress={signOut} style={styles.signOut}>
-              <Text style={styles.signOutLabel}>Déconnexion</Text>
-            </Pressable>
-          </View>
+          <Text style={styles.title}>Contrats</Text>
 
           <TextInput
             autoCapitalize="characters"
@@ -305,15 +322,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   emptyTitle: { color: colors.textStrong, fontSize: 16, fontWeight: "800" },
-  header: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: spacing.lg,
-  },
-  headerName: { color: colors.textStrong, fontSize: 17, fontWeight: "900" },
-  headerRole: { color: colors.textMuted, fontSize: 12, fontWeight: "600" },
-  headerText: { flexShrink: 1 },
   list: { padding: spacing.lg },
   search: {
     backgroundColor: colors.surface,
@@ -326,13 +334,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     paddingHorizontal: spacing.lg,
   },
-  signOut: {
-    backgroundColor: colors.muted,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  signOutLabel: { color: colors.textBody, fontSize: 12, fontWeight: "700" },
   spinner: { marginTop: spacing.xxl },
+  title: {
+    color: colors.textStrong,
+    fontSize: 22,
+    fontWeight: "900",
+    marginBottom: spacing.md,
+  },
   vehicle: { color: colors.textMuted, fontSize: 13, marginTop: spacing.xs },
 });

@@ -6,7 +6,7 @@
  * différemment selon l'écran sur lequel l'apporteur le lit.
  */
 import { colors } from "./theme";
-import type { ContractInternalStatus } from "./api";
+import type { CommissionStatus, ContractInternalStatus } from "./api";
 
 export function formatFcfa(value: number | null | undefined) {
   if (value === null || value === undefined) {
@@ -104,4 +104,53 @@ const ROLE_LABELS: Record<string, string> = {
 
 export function roleLabel(role: string) {
   return ROLE_LABELS[role] ?? role;
+}
+
+// Statuts de commission. Les libellés viennent de `CommissionSnapshot.Status`
+// (backend) et les couleurs de `StatusBadge` (web) : « Payable » est bleu des
+// deux côtés, « Versé » vert. Un apporteur qui compare son écran mobile à celui
+// de son admin doit lire la même chose.
+const COMMISSION_STATUS_STYLES: Record<CommissionStatus, StatusStyle> = {
+  PENDING: { label: "En attente", background: colors.muted, foreground: colors.textMuted },
+  PAYABLE: { label: "Payable", background: colors.infoBg, foreground: colors.info },
+  PAID: { label: "Versée", background: colors.successBg, foreground: colors.success },
+  CANCELLED: { label: "Annulée", background: colors.dangerBg, foreground: colors.danger },
+  DISPUTED: { label: "Contestée", background: colors.warningBg, foreground: colors.warning },
+};
+
+export function commissionStatusStyle(status: string): StatusStyle {
+  return (
+    COMMISSION_STATUS_STYLES[status as CommissionStatus] ?? {
+      label: status,
+      background: colors.muted,
+      foreground: colors.textMuted,
+    }
+  );
+}
+
+/**
+ * Taux rendu lisible. DRF sérialise les `DecimalField` en chaîne (« 12.50 »)
+ * pour ne pas perdre de précision : l'afficher tel quel donnerait « 12.50 % »
+ * avec un point décimal, là où le web montre « 12,5 % ».
+ */
+export function formatPercent(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return "—";
+  }
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (Number.isNaN(numeric)) {
+    return String(value);
+  }
+  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(numeric)} %`;
+}
+
+/**
+ * Compteurs : « 1 234 » plutôt que « 1234 ». Séparateur insécable côté fr-FR,
+ * comme sur le web.
+ */
+export function formatCount(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return "—";
+  }
+  return new Intl.NumberFormat("fr-FR").format(value);
 }
