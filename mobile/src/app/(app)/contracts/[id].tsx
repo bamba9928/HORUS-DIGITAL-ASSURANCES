@@ -94,7 +94,14 @@ export default function ContractScreen() {
         </View>
 
         <Section title="Véhicule">
-          <Row label="Immatriculation" value={contract.immatriculation || "—"} />
+          {/* L'immatriculation ne s'affiche que si le backend la porte. Elle
+              reste vide sur la plupart des dossiers — c'est `vehicle_label`,
+              déjà en tête de fiche, qui contient la plaque saisie. Un
+              « Immatriculation — » sous un titre qui affiche justement la
+              plaque se lit comme une contradiction. */}
+          {contract.immatriculation ? (
+            <Row label="Immatriculation" value={contract.immatriculation} />
+          ) : null}
           <Row label="Type de contrat" value={contractTypeLabel(contract.contract_type)} />
         </Section>
 

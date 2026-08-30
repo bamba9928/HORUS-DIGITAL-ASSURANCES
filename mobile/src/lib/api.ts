@@ -421,3 +421,139 @@ export async function listCommissionSnapshots(filters?: {
     `/commissions/snapshots/${query ? `?${query}` : ""}`
   );
 }
+
+/* ── Référentiels ────────────────────────────────────────────────────────── */
+
+/**
+ * Option de liste déroulante, telle que la sert le backend.
+ *
+ * `value` est tantôt une chaîne (« C1 », « ESSENCE »), tantôt un entier (les
+ * garanties). Le typer `string` obligerait à convertir dans les deux sens et
+ * ferait tôt ou tard partir un « 3 » là où ASS attend un 3.
+ */
+export type SelectOption = {
+  value: string | number;
+  label: string;
+  enabled?: boolean;
+  category?: string;
+  contract_types?: string[];
+  min_duration?: number;
+  max_duration?: number;
+};
+
+/**
+ * Une option de garantie ne s'affiche que si sa garantie déclenchante est
+ * cochée (`trigger_guarantee`). `null` signifie « toujours proposée ».
+ */
+export type GuaranteeOptionReferential = {
+  field: "garantiesOptPT" | "garantiesOptAR" | "garantiesOptAS";
+  label: string;
+  helper?: string;
+  trigger_guarantee: number | null;
+  enabled?: boolean;
+  options: SelectOption[];
+};
+
+async function fetchOptions(path: string) {
+  const data = await fetchApi<ApiListResponse<SelectOption>>(path);
+  return data.results;
+}
+
+export function fetchVehicleCategories(contractType: string) {
+  return fetchOptions(`/referentials/vehicle-categories/?contract_type=${contractType}`);
+}
+
+export function fetchVehicleSubcategories(category: string) {
+  return fetchOptions(`/referentials/vehicle-subcategories/?category=${category}`);
+}
+
+export function fetchEnergies() {
+  return fetchOptions("/referentials/energies/");
+}
+
+export function fetchPeriodicities() {
+  return fetchOptions("/referentials/periodicities/");
+}
+
+export function fetchMotoUsages() {
+  return fetchOptions("/referentials/moto-usages/");
+}
+
+export function fetchGuarantees() {
+  return fetchOptions("/referentials/guarantees/");
+}
+
+export async function fetchGuaranteeOptionReferentials() {
+  const data = await fetchApi<ApiListResponse<GuaranteeOptionReferential>>(
+    "/referentials/guarantee-options/"
+  );
+  return data.results;
+}
+
+/**
+ * Marques. La liste complète dépasse deux mille entrées : elle part au serveur,
+ * qui filtre, plutôt que de traverser le réseau en entier pour être filtrée
+ * ici.
+ */
+export function fetchVehicleBrands(search = "", limit = 40) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (search) {
+    params.set("search", search);
+  }
+  return fetchOptions(`/referentials/vehicle-brands/?${params.toString()}`);
+}
+
+/* ── Souscription ────────────────────────────────────────────────────────── */
+
+export type ContractDraftPayload = {
+  contract_type: string;
+  draft_payload: Record<string, unknown>;
+};
+
+export type ContractDraft = {
+  id: number;
+  contract_type: string;
+  internal_status: ContractInternalStatus;
+  draft_payload: Record<string, unknown>;
+};
+
+export async function createContractDraft(payload: ContractDraftPayload) {
+  return fetchApi<ContractDraft>("/contracts/drafts/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateContractDraft(draftId: number, payload: ContractDraftPayload) {
+  return fetchApi<ContractDraft>(`/contracts/drafts/${draftId}/`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Devis calculé par ASS. Le détail (taxe, CEDEAO, fonds de garantie…) n'arrive
+ * que de l'API réelle : en mock, seuls `prime_rc_ass` et `policy_fee_ass` sont
+ * garantis, d'où les champs optionnels.
+ */
+export type ContractQuote = {
+  type: string;
+  prime_rc_ass: number;
+  policy_fee_ass: number;
+  warnings: string[];
+  taxe?: number;
+  cedeao?: number;
+  reduction?: number;
+  prime_ag?: number;
+  fonds_garantie?: number;
+  cout_police?: number;
+  prime_totale?: number;
+};
+
+export async function calculateContractQuote(contractId: number) {
+  return fetchApi<{
+    contract_id: number;
+    internal_status: ContractInternalStatus;
+    quote: ContractQuote;
+  }>(`/contracts/${contractId}/quote/`, { method: "POST" });
+}

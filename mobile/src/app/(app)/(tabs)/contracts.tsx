@@ -1,3 +1,4 @@
+import Feather from "@expo/vector-icons/Feather";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -53,6 +54,7 @@ function isExpirationWindow(value: unknown): value is ExpirationWindow {
 }
 
 export default function ContractsScreen() {
+  const router = useRouter();
   // Le tableau de bord renvoie ici avec une fenêtre d'échéance déjà choisie
   // (« 4 expirés » → la liste des 4). Sans ce paramètre, il faudrait refaire le
   // filtre à la main juste après l'avoir vu affiché.
@@ -159,7 +161,21 @@ export default function ContractsScreen() {
       }
       ListHeaderComponent={
         <View>
-          <Text style={styles.title}>Contrats</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>Contrats</Text>
+            {/* Point d'entrée de la souscription. Il vit sur la liste et non sur
+                le tableau de bord : c'est là que l'apporteur constate qu'un
+                dossier manque. */}
+            <Pressable
+              accessibilityLabel="Nouveau contrat"
+              accessibilityRole="button"
+              onPress={() => router.push("/contracts/new")}
+              style={({ pressed }) => [styles.newButton, pressed && styles.newButtonPressed]}
+            >
+              <Feather color="#ffffff" name="plus" size={14} />
+              <Text style={styles.newButtonLabel}>Nouveau</Text>
+            </Pressable>
+          </View>
 
           <TextInput
             autoCapitalize="characters"
@@ -347,10 +363,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   spinner: { marginTop: spacing.xxl },
-  title: {
-    color: colors.textStrong,
-    fontSize: 22,
-    fontWeight: "900",
+  newButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: radius.pill,
+    flexDirection: "row",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  newButtonLabel: { color: "#ffffff", fontSize: 12, fontWeight: "800" },
+  newButtonPressed: { backgroundColor: colors.primaryStrong },
+  title: { color: colors.textStrong, flexShrink: 1, fontSize: 22, fontWeight: "900" },
+  titleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
     marginBottom: spacing.md,
   },
   vehicle: { color: colors.textMuted, fontSize: 13, marginTop: spacing.xs },
