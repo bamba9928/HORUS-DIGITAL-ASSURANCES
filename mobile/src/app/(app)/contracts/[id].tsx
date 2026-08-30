@@ -17,6 +17,7 @@ import {
   contractTypeLabel,
   formatDate,
   formatFcfa,
+  joinMeta,
   paymentStatusStyle,
   statusStyle,
 } from "@/lib/format";
@@ -186,10 +187,10 @@ function PaymentSection({ payments }: { payments: ContractPayment[] }) {
               <View style={styles.paymentText}>
                 <Text style={styles.paymentAmount}>{formatFcfa(payment.amount)}</Text>
                 <Text style={styles.paymentDate}>
-                  {formatDate(payment.confirmed_at ?? payment.created_at)}
-                  {payment.created_by_username?.trim()
-                    ? ` · ${payment.created_by_username.trim()}`
-                    : ""}
+                  {joinMeta([
+                    formatDate(payment.confirmed_at ?? payment.created_at),
+                    payment.created_by_username,
+                  ])}
                 </Text>
               </View>
               <View style={[styles.badge, { backgroundColor: badge.background }]}>
@@ -269,7 +270,13 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
   },
   client: { color: colors.textStrong, flexShrink: 1, fontSize: 17, fontWeight: "900" },
-  error: { color: colors.danger, fontSize: 14, fontWeight: "600", textAlign: "center" },
+  error: {
+    alignSelf: "stretch",
+    color: colors.danger,
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+  },
   divider: {
     borderTopColor: colors.border,
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -301,7 +308,7 @@ const styles = StyleSheet.create({
   },
   paymentAmount: { color: colors.textStrong, fontSize: 14, fontWeight: "800" },
   paymentDate: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
-  paymentText: { flexShrink: 1 },
+  paymentText: { flex: 1 },
   rowLabel: { color: colors.textMuted, fontSize: 13, fontWeight: "600" },
   rowValue: {
     color: colors.textBody,

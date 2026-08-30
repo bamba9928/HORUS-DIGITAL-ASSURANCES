@@ -26,7 +26,10 @@ export default function LoginScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   if (status === "authenticated") {
-    return <Redirect href="/contracts" />;
+    // Même destination que `index.tsx` : se connecter et rouvrir l'application
+    // doivent mener au même écran, sinon l'apporteur découvre deux « accueils »
+    // selon qu'il vient du login ou d'une session retrouvée.
+    return <Redirect href="/dashboard" />;
   }
 
   const canSubmit = identifier.trim().length > 0 && password.length > 0 && !submitting;
@@ -178,5 +181,17 @@ const styles = StyleSheet.create({
   label: { color: colors.textBody, fontSize: 13, fontWeight: "700" },
   labelSpaced: { marginTop: spacing.lg },
   scroll: { flexGrow: 1, justifyContent: "center", padding: spacing.xl },
-  subtitle: { color: colors.textMuted, fontSize: 15, marginTop: spacing.md },
+  // `alignSelf: "stretch"` + `textAlign` plutôt que de laisser le conteneur
+  // centré dimensionner ce texte sur son contenu : mesuré ainsi, Android le
+  // coupait après le premier mot — « Espace apporteur » s'affichait « Espace »
+  // (constaté sur SM-A156E le 30/08/2026), sans ellipse ni avertissement.
+  // Étiré, le texte dispose de toute la largeur et la mesure ne se joue plus au
+  // pixel près.
+  subtitle: {
+    alignSelf: "stretch",
+    color: colors.textMuted,
+    fontSize: 15,
+    marginTop: spacing.md,
+    textAlign: "center",
+  },
 });

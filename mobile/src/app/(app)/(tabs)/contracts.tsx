@@ -19,7 +19,7 @@ import {
   type ContractListItem,
   type ExpirationWindow,
 } from "@/lib/api";
-import { formatDate, formatFcfa, statusStyle } from "@/lib/format";
+import { formatDate, formatFcfa, joinMeta, statusStyle } from "@/lib/format";
 import { colors, radius, spacing } from "@/lib/theme";
 
 const STATUS_FILTERS: { label: string; value: ContractInternalStatus | "" }[] = [
@@ -56,8 +56,9 @@ export default function ContractsScreen() {
   // Le tableau de bord renvoie ici avec une fenêtre d'échéance déjà choisie
   // (« 4 expirés » → la liste des 4). Sans ce paramètre, il faudrait refaire le
   // filtre à la main juste après l'avoir vu affiché.
-  const { expiration: expirationParam } = useLocalSearchParams<{
+  const { expiration: expirationParam, ticket } = useLocalSearchParams<{
     expiration?: string;
+    ticket?: string;
   }>();
   // Sans cette marge, la barre d'onglets recouvre la dernière carte : elle
   // reste tactile mais devient illisible.
@@ -80,13 +81,18 @@ export default function ContractsScreen() {
   // rouvrirait la liste sur le filtre du premier. La valeur initiale ci-dessus
   // ne couvre que la toute première visite.
   //
-  // Ne dépend QUE du paramètre : un filtre choisi à la main sur cet écran ne
-  // déclenche rien et n'est donc jamais écrasé.
+  // `ticket` change à CHAQUE poussée du tableau de bord, même vers la même
+  // fenêtre. Sans lui, revenir deux fois de suite sur « D'ici 30 j » laissait la
+  // liste sur le filtre que l'utilisateur avait changé entre les deux : les
+  // paramètres étant identiques, l'effet ne se redéclenchait pas.
+  //
+  // Ne dépend QUE des paramètres de route : un filtre choisi à la main sur cet
+  // écran ne déclenche rien et n'est donc jamais écrasé.
   useEffect(() => {
     if (isExpirationWindow(expirationParam)) {
       setExpiration(expirationParam);
     }
-  }, [expirationParam]);
+  }, [expirationParam, ticket]);
 
   // La recherche part au repos de la frappe, pas à chaque caractère : sur un
   // réseau mobile, une requête par lettre sature la liaison et fait clignoter
@@ -249,8 +255,7 @@ function ContractRow({ contract }: { contract: ContractListItem }) {
       </View>
 
       <Text numberOfLines={1} style={styles.vehicle}>
-        {contract.immatriculation || "—"}
-        {contract.vehicle_label ? ` · ${contract.vehicle_label}` : ""}
+        {joinMeta([contract.immatriculation, contract.vehicle_label]) || "—"}
       </Text>
 
       <View style={styles.cardBottom}>
@@ -316,12 +321,19 @@ const styles = StyleSheet.create({
   date: { color: colors.textMuted, fontSize: 12, fontWeight: "600" },
   empty: { alignItems: "center", paddingTop: spacing.xxl },
   emptyText: {
+    alignSelf: "stretch",
     color: colors.textMuted,
     fontSize: 13,
     marginTop: spacing.sm,
     textAlign: "center",
   },
-  emptyTitle: { color: colors.textStrong, fontSize: 16, fontWeight: "800" },
+  emptyTitle: {
+    alignSelf: "stretch",
+    color: colors.textStrong,
+    fontSize: 16,
+    fontWeight: "800",
+    textAlign: "center",
+  },
   list: { padding: spacing.lg },
   search: {
     backgroundColor: colors.surface,

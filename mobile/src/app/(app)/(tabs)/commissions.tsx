@@ -23,6 +23,7 @@ import {
   formatDate,
   formatFcfa,
   formatPercent,
+  joinMeta,
 } from "@/lib/format";
 import { colors, radius, spacing } from "@/lib/theme";
 
@@ -121,7 +122,10 @@ export default function CommissionsScreen() {
           <Text style={styles.title}>Commissions</Text>
           <View style={styles.totalCard}>
             <Text style={styles.totalLabel}>
-              {status ? "Total filtré" : "Total"} · {visible.length} ligne(s)
+              {joinMeta([
+                status ? "Total filtré" : "Total",
+                `${visible.length} ligne(s)`,
+              ])}
             </Text>
             <Text style={styles.totalValue}>{formatFcfa(total)}</Text>
           </View>
@@ -191,8 +195,10 @@ function CommissionRow({ snapshot }: { snapshot: CommissionSnapshot }) {
       </View>
 
       <Text numberOfLines={1} style={styles.contributor}>
-        {snapshot.contributor_full_name || snapshot.contributor_username}
-        {snapshot.organization_name ? ` · ${snapshot.organization_name}` : ""}
+        {joinMeta([
+          snapshot.contributor_full_name || snapshot.contributor_username,
+          snapshot.organization_name,
+        ])}
       </Text>
 
       <View style={styles.amounts}>
@@ -214,9 +220,21 @@ function CommissionRow({ snapshot }: { snapshot: CommissionSnapshot }) {
         </View>
       </View>
 
-      <Text style={styles.footer}>
-        TTC {formatFcfa(snapshot.ttc_ass)} · Taux{" "}
-        {formatPercent(snapshot.commission_percent_used)} ·{" "}
+      {/* DEUX lignes explicites, pas une seule qui se replierait toute seule.
+          Android coupe le dernier mot d'un `<Text>` dont le contenu depasse la
+          largeur disponible de PEU : la mesure conclut « ca tient sur une
+          ligne », le rendu non, et le reste disparait sans ellipse. Constate le
+          30/08/2026 sur SM-A156E — « Creee le » s'affichait sans sa date, alors
+          que la MEME chaine allongee de cinq caracteres se repliait
+          correctement. Ni `numberOfLines` ni `textBreakStrategy` n'y changent
+          rien : seul le fait de ne plus dependre d'un repli limite fonctionne. */}
+      <Text numberOfLines={1} style={styles.footer}>
+        {joinMeta([
+          `TTC ${formatFcfa(snapshot.ttc_ass)}`,
+          `Taux ${formatPercent(snapshot.commission_percent_used)}`,
+        ])}
+      </Text>
+      <Text numberOfLines={1} style={styles.footerSecondary}>
         {snapshot.paid_at
           ? `Versée le ${formatDate(snapshot.paid_at)}`
           : `Créée le ${formatDate(snapshot.created_at)}`}
@@ -275,6 +293,7 @@ const styles = StyleSheet.create({
   contract: { color: colors.textStrong, flexShrink: 1, fontSize: 15, fontWeight: "800" },
   contributor: { color: colors.textMuted, fontSize: 12, marginTop: spacing.xs },
   footer: { color: colors.textFaint, fontSize: 11, marginTop: spacing.md },
+  footerSecondary: { color: colors.textFaint, fontSize: 11, marginTop: 2 },
   list: { padding: spacing.lg },
   spinner: { marginTop: spacing.xxl },
   title: { color: colors.textStrong, fontSize: 22, fontWeight: "900" },

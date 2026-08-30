@@ -26,6 +26,7 @@ import {
   formatCount,
   formatDate,
   formatFcfa,
+  joinMeta,
   roleLabel,
   statusStyle,
 } from "@/lib/format";
@@ -142,8 +143,7 @@ export default function DashboardScreen() {
             {user?.first_name || user?.username || "—"}
           </Text>
           <Text numberOfLines={1} style={styles.role}>
-            {user ? roleLabel(user.role) : ""}
-            {user?.organization_name ? ` · ${user.organization_name}` : ""}
+            {joinMeta([user && roleLabel(user.role), user?.organization_name])}
           </Text>
         </View>
         <Pressable
@@ -219,6 +219,7 @@ export default function DashboardScreen() {
           icon="dollar-sign"
           label="CA encaissé"
           loading={financialLoading}
+          span="full"
           tone="primary"
           value={formatFcfa(financial?.ca_encaisse ?? 0)}
         />
@@ -226,12 +227,14 @@ export default function DashboardScreen() {
           icon="percent"
           label="Commissions"
           loading={financialLoading}
+          span="full"
           value={formatFcfa(financial?.commissions_total ?? 0)}
         />
         <MetricCard
           icon="trending-up"
           label="Marge Horus"
           loading={financialLoading}
+          span="full"
           // Une marge négative est une anomalie de paramétrage, pas une
           // performance : elle doit sauter aux yeux, d'où le ton d'alerte.
           tone={(financial?.marge_horus_total ?? 0) < 0 ? "warning" : "success"}
@@ -241,6 +244,7 @@ export default function DashboardScreen() {
           icon="check-circle"
           label="Contrats émis"
           loading={financialLoading}
+          span="full"
           value={formatCount(financial?.contrats_emis ?? 0)}
         />
       </View>
@@ -249,6 +253,21 @@ export default function DashboardScreen() {
     </ScrollView>
   );
 }
+
+/**
+ * Compteur de navigations vers la liste.
+ *
+ * Un onglet reste monté : renvoyer DEUX FOIS vers la même fenêtre d'échéance
+ * pousse exactement les mêmes paramètres, l'effet qui les applique là-bas ne se
+ * redéclenche pas, et la liste garde le filtre que l'utilisateur avait changé
+ * entre-temps à la main. Constaté sur appareil le 30/08/2026 : « D'ici 30 j »,
+ * puis « Toutes » sur la liste, puis « D'ici 30 j » à nouveau — la liste restait
+ * sur « Toutes ».
+ *
+ * Ce compteur rend chaque poussée distincte. Hors état React exprès : il ne
+ * doit rien redessiner, seulement changer la valeur du paramètre.
+ */
+let navigationTicket = 0;
 
 /**
  * Échéances. Les trois compteurs du backend sont CUMULATIFS : un contrat qui
@@ -286,7 +305,10 @@ function ExpirationBlock({
             onPress={() =>
               router.push({
                 pathname: "/contracts",
-                params: { expiration: window.target },
+                params: {
+                  expiration: window.target,
+                  ticket: String((navigationTicket += 1)),
+                },
               })
             }
             // Une fenêtre vide n'a rien d'alarmant : pas de rouge sur un zéro.
@@ -347,8 +369,15 @@ function RecentContracts({
                 {contract.client_name || "Client non renseigné"}
               </Text>
               <Text numberOfLines={1} style={styles.recentMeta}>
-                {contract.immatriculation || "—"} · {formatFcfa(contract.ttc_ass)} ·{" "}
-                {formatDate(contract.updated_at)}
+                {/* Pas de tiret de remplacement pour une immatriculation
+                    absente : la ligne est déjà limitée à une ligne, et le
+                    « — » y coûtait la date, coupée en « 11/08/20… ». Le nom du
+                    client au-dessus dit déjà de quel dossier il s'agit. */}
+                {joinMeta([
+                  contract.immatriculation,
+                  formatFcfa(contract.ttc_ass),
+                  formatDate(contract.updated_at),
+                ])}
               </Text>
             </View>
             <StatusPill
@@ -417,7 +446,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: spacing.md,
   },
-  recentText: { flexShrink: 1 },
+  // `flex: 1` et non `flexShrink: 1` : sans base explicite, la colonne est
+  // dimensionnée sur son contenu, et la ligne de métadonnées se faisait
+  // tronquer (« 11/08/20… ») alors que la place restait libre à côté de la
+  // pastille. Ici, elle prend tout ce que la pastille ne prend pas.
+  recentText: { flex: 1 },
   role: { color: colors.textMuted, fontSize: 12, fontWeight: "600" },
   scroll: { padding: spacing.lg },
   sectionAction: { color: colors.primary, fontSize: 12, fontWeight: "800" },

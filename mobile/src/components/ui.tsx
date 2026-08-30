@@ -57,6 +57,7 @@ export function MetricCard({
   label,
   loading = false,
   onPress,
+  span = "half",
   tone = "neutral",
   value,
 }: {
@@ -66,21 +67,67 @@ export function MetricCard({
   loading?: boolean;
   /** Rend la tuile cliquable. Sans lui, elle reste un simple affichage. */
   onPress?: () => void;
+  /**
+   * Largeur dans la grille. `half` pour un compteur — deux ou trois chiffres
+   * tiennent partout. `full` pour un montant : « 12 500 000 FCFA » ne rentre
+   * pas dans une demi-tuile sur un écran de 320 dp, et le nombre y arrivait
+   * tronqué (« 16 216 … ») — c'est-à-dire faux à la lecture.
+   */
+  span?: "half" | "full";
   tone?: MetricTone;
   value: string | number;
 }) {
   const { tint, wash } = TONES[tone];
 
+  const badge = (
+    <View style={[styles.metricIcon, { backgroundColor: wash }]}>
+      <Feather color={tint} name={icon} size={14} />
+    </View>
+  );
+  const valueText = loading ? (
+    <ActivityIndicator color={colors.primary} />
+  ) : (
+    <Text numberOfLines={1} style={[styles.metricValueInline, { color: tint }]}>
+      {value}
+    </Text>
+  );
+
+  // Tuile large : icône et libellé à gauche, chiffre à droite. Empilée comme la
+  // demi-tuile, elle laisserait une bande vide sur toute la largeur, et les
+  // quatre tuiles financières rallongeraient le tableau de bord pour rien.
+  const wideBody = (
+    <>
+      <View style={styles.metricWideRow}>
+        <View style={styles.metricWideLabel}>
+          {badge}
+          <Text numberOfLines={2} style={styles.metricLabelInline}>
+            {label}
+          </Text>
+        </View>
+        {valueText}
+      </View>
+      {detail ? (
+        <Text numberOfLines={2} style={styles.metricDetail}>
+          {detail}
+        </Text>
+      ) : null}
+    </>
+  );
+
   const body = (
     <>
-      <View style={styles.metricHead}>
-        <View style={[styles.metricIcon, { backgroundColor: wash }]}>
-          <Feather color={tint} name={icon} size={14} />
-        </View>
-        <Text numberOfLines={1} style={styles.metricLabel}>
-          {label}
-        </Text>
+      {/* Icône au-dessus, libellé en dessous — et non côte à côte.
+          En rangée, l'icône et sa gouttière mangeaient 34 dp des ~103 dp de
+          contenu d'une tuile demi-largeur. Sur un téléphone en zoom d'affichage
+          (320 dp de large, cas réel constaté le 30/08/2026), « BROUILLONS »
+          s'affichait « BROUILLO… » : un mot unique ne se replie pas, la place
+          manquait, point. Empilé, le libellé dispose de toute la largeur. */}
+      <View style={[styles.metricIcon, { backgroundColor: wash }]}>
+        <Feather color={tint} name={icon} size={14} />
       </View>
+      <Text numberOfLines={2} style={styles.metricLabel}>
+        {label}
+      </Text>
       {loading ? (
         <ActivityIndicator color={colors.primary} style={styles.metricSpinner} />
       ) : (
@@ -89,7 +136,7 @@ export function MetricCard({
         </Text>
       )}
       {detail ? (
-        <Text numberOfLines={1} style={styles.metricDetail}>
+        <Text numberOfLines={2} style={styles.metricDetail}>
           {detail}
         </Text>
       ) : null}
@@ -103,17 +150,21 @@ export function MetricCard({
   //
   // Et pas d'alias `const Root = onPress ? Pressable : View` : seul Pressable
   // accepte une fonction de style, un View la recevrait telle quelle.
+  const wide = span === "full";
+  const width = wide ? styles.metricFull : styles.metricHalf;
+  const content = wide ? wideBody : body;
+
   if (onPress) {
     return (
       <Pressable
         onPress={onPress}
-        style={({ pressed }) => [styles.metric, pressed && styles.metricPressed]}
+        style={({ pressed }) => [styles.metric, width, pressed && styles.metricPressed]}
       >
-        {body}
+        {content}
       </Pressable>
     );
   }
-  return <View style={styles.metric}>{body}</View>;
+  return <View style={[styles.metric, width]}>{content}</View>;
 }
 
 /* ── Section en carte ────────────────────────────────────────────────────── */
@@ -201,12 +252,21 @@ const styles = StyleSheet.create({
     width: 46,
   },
   emptyMessage: {
+    alignSelf: "stretch",
     color: colors.textMuted,
     fontSize: 13,
     marginTop: spacing.xs,
     textAlign: "center",
   },
-  emptyTitle: { color: colors.textStrong, fontSize: 16, fontWeight: "800" },
+  // Voir le commentaire de `subtitle` dans `login.tsx` : dans un conteneur
+  // centré, un texte mesuré sur son contenu perd son dernier mot.
+  emptyTitle: {
+    alignSelf: "stretch",
+    color: colors.textStrong,
+    fontSize: 16,
+    fontWeight: "800",
+    textAlign: "center",
+  },
   errorBanner: {
     alignItems: "center",
     backgroundColor: colors.dangerBg,
@@ -238,14 +298,17 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.lg,
     borderWidth: 1,
-    flexGrow: 1,
-    // Deux tuiles par ligne : `flexBasis` en pourcentage laisse le `gap` du
-    // conteneur faire la gouttière, sans calcul de largeur en dur.
-    flexBasis: "47%",
+    // Pas de `flexGrow` : une rangée incomplète — les trois échéances — étirait
+    // sa dernière tuile sur toute la largeur, qui ne ressemblait plus aux deux
+    // du dessus et se lisait comme un bloc à part.
+    flexGrow: 0,
     padding: spacing.lg,
   },
+  // Deux tuiles par ligne : `flexBasis` en pourcentage laisse le `gap` du
+  // conteneur faire la gouttière, sans calcul de largeur en dur.
+  metricHalf: { flexBasis: "47%" },
+  metricFull: { flexBasis: "100%" },
   metricDetail: { color: colors.textFaint, fontSize: 11, marginTop: 2 },
-  metricHead: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
   metricIcon: {
     alignItems: "center",
     borderRadius: radius.sm,
@@ -253,7 +316,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 26,
   },
-  metricLabel: {
+  metricLabelInline: {
     color: colors.textMuted,
     flexShrink: 1,
     fontSize: 11,
@@ -261,9 +324,30 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     textTransform: "uppercase",
   },
+  metricLabel: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+    marginTop: spacing.sm,
+    textTransform: "uppercase",
+  },
   metricPressed: { backgroundColor: colors.primarySubtle },
   metricSpinner: { alignSelf: "flex-start", marginTop: spacing.md },
-  metricValue: { fontSize: 22, fontWeight: "900", marginTop: spacing.md },
+  metricValue: { fontSize: 22, fontWeight: "900", marginTop: spacing.sm },
+  metricValueInline: { fontSize: 22, fontWeight: "900" },
+  metricWideLabel: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexShrink: 1,
+    gap: spacing.sm,
+  },
+  metricWideRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+  },
   pill: { borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 3 },
   pillLabel: { fontSize: 11, fontWeight: "800" },
   section: {

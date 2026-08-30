@@ -33,6 +33,37 @@ export function formatDate(value: string | null | undefined) {
   }).format(date);
 }
 
+/**
+ * Assemble une ligne de metadonnees en UNE SEULE chaine.
+ *
+ * Deux raisons, et la seconde n'est pas cosmetique.
+ *
+ * 1. Les segments vides disparaissent avec leur separateur. Ecrire
+ *    `{date}{user ? ` · ${user}` : ""}` laissait « 11/08/2026 · » quand
+ *    l'utilisateur manquait.
+ *
+ * 2. Surtout : un `<Text>` compose de PLUSIEURS enfants perd son dernier
+ *    fragment quand celui-ci doit passer a la ligne. Constate sur appareil
+ *    (Android 16, Expo Go 57) le 30/08/2026 : la fiche affichait
+ *    « 11/08/2026 · » sans le nom, et les commissions « Creee le » sans la
+ *    date, alors que la meme chaine passee en enfant UNIQUE se coupait
+ *    correctement sur deux lignes. Le symptome depend de la largeur — il
+ *    n'apparait que sur certaines valeurs, ce qui le rend facile a manquer en
+ *    relecture et impossible a manquer sur telephone.
+ *
+ * D'ou la regle : on compose ici, en JavaScript, et le `<Text>` ne recoit
+ * qu'un enfant.
+ */
+export function joinMeta(
+  parts: (string | number | null | undefined | false)[],
+  separator = " · "
+) {
+  return parts
+    .map((part) => (typeof part === "string" ? part.trim() : part))
+    .filter((part): part is string | number => part !== null && part !== undefined && part !== false && part !== "")
+    .join(separator);
+}
+
 type StatusStyle = { label: string; background: string; foreground: string };
 
 const STATUS_STYLES: Record<ContractInternalStatus, StatusStyle> = {
