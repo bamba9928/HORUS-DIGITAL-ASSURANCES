@@ -13,6 +13,7 @@ import {
 
 import { fetchContract, type ContractDetail, type ContractPayment } from "@/lib/api";
 import {
+  assStatusLabel,
   contractTypeLabel,
   formatDate,
   formatFcfa,
@@ -106,7 +107,7 @@ export default function ContractScreen() {
           <Row label="Date d'effet" value={formatDate(contract.effect_date)} />
           <Row label="Expiration" value={formatDate(contract.date_expiration)} />
           <Row label="N° attestation" value={contract.attestation_number || "—"} />
-          <Row label="Statut ASS" value={contract.ass_status || "—"} />
+          <Row label="Statut ASS" value={assStatusLabel(contract.ass_status)} />
         </Section>
 
         <AttestationSection contract={contract} />

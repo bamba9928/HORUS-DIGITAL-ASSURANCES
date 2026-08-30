@@ -41,6 +41,30 @@ Reste l'assistant de souscription — 3 200 lignes côté web, le gros morceau.
 | Fiche | `/contracts/[id]` | Véhicule, montants, couverture, attestations, paiements |
 | Commissions | `/commissions` | Total, filtre par statut, commission et net à verser |
 
+## ⚠️ Après un `git pull` qui change les routes
+
+`npx tsc --noEmit` peut échouer sur des routes parfaitement valides :
+
+```
+src/app/index.tsx(23,20): Type '"/dashboard"' is not assignable to ...
+```
+
+Ce n'est PAS une vraie erreur. `.expo/types/router.d.ts` est généré par
+`expo start` et **gitignoré** : après un pull qui ajoute ou déplace des écrans,
+votre copie locale décrit encore l'ancien arbre de routes, et le typecheck
+valide donc contre des données mortes.
+
+```bash
+npx expo start     # régénère .expo/types/, quelques secondes suffisent
+# puis, dans un autre terminal :
+npx tsc --noEmit
+```
+
+Le réflexe inverse — « le typecheck échoue, la route doit être fausse » — coûte
+une demi-heure à chercher un bug qui n'existe pas. `npx expo export --platform
+android`, lui, ne lit pas ce fichier : s'il passe, les imports et les écrans
+sont bons.
+
 ## Navigation
 
 ```

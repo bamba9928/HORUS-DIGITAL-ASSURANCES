@@ -154,3 +154,24 @@ export function formatCount(value: number | null | undefined) {
   }
   return new Intl.NumberFormat("fr-FR").format(value);
 }
+
+// Statuts ASS. Le backend les stocke en français majuscule (`Contract.AssStatus`)
+// et le web les rend « Brouillon ASS » / « Validé ASS » / « Annulé ASS » via son
+// StatusBadge. Sans cette table, la fiche affichait « BROUILLON » brut — le même
+// défaut que « BUS_SCHOOL », trouvé sur appareil et corrigé le 29/08.
+//
+// Le suffixe « ASS » n'est pas décoratif : la fiche montre déjà un statut
+// interne juste au-dessus, et « Annulé » deux fois de suite ne dirait pas
+// lequel des deux systèmes a annulé quoi.
+const ASS_STATUS_LABELS: Record<string, string> = {
+  BROUILLON: "Brouillon ASS",
+  VALIDE: "Validé ASS",
+  ANNULE: "Annulé ASS",
+};
+
+export function assStatusLabel(status: string | null | undefined) {
+  if (!status) {
+    return "—";
+  }
+  return ASS_STATUS_LABELS[status] ?? status;
+}
