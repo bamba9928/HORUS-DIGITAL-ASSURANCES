@@ -22,6 +22,32 @@ jobs:
       - run: uv run python backend/manage.py makemigrations --check --dry-run
       - run: uv run pytest -q
 
+  mobile:
+    name: Mobile
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      # Portee reelle de ce typecheck : imports casses et erreurs de type.
+      # PAS les routes. `.expo/types/router.d.ts` est produit par `expo start`
+      # et gitignore, donc absent d'un checkout neuf ; sans lui, `Href` retombe
+      # sur un type permissif et un `router.push("/inexistant")` passerait.
+      # Le CLI Expo n'offre aucune commande de generation seule — verifier les
+      # routes suppose de lancer le serveur de dev, ce qui n'a pas sa place ici.
+      #
+      # Pas de `npm run lint` : aucune configuration ESLint n'existe dans
+      # `mobile/`, et `expo lint` tenterait d'en installer une en appelant
+      # l'API Expo — une dependance reseau non deterministe en CI.
+      - run: npx tsc --noEmit
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
