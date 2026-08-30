@@ -10,19 +10,52 @@ import type { NextConfig } from "next";
 // à base de nonce demande de faire passer le nonce par le middleware. Les
 // directives qui ferment les vecteurs les plus courants — frame-ancestors,
 // object-src, base-uri, form-action — sont, elles, strictes.
+// En développement, le front (3000) et l'API (8000) sont deux origines
+// distinctes : `'self'` ne couvre pas l'API, et le navigateur bloque tous les
+// appels avec un « Failed to fetch » qui ressemble à s'y méprendre à un backend
+// éteint. En production, nginx sert les deux sous le même domaine — d'où le
+// fait que ce trou ne se voie qu'en local. Cette ouverture est donc STRICTEMENT
+// réservée au dev : la politique de production reste inchangée.
+const isDevelopment = process.env.NODE_ENV !== "production";
+
+function developmentApiOrigins() {
+  if (!isDevelopment) {
+    return [];
+  }
+  const origins = new Set(["http://localhost:8000", "http://127.0.0.1:8000"]);
+  const configured = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (configured) {
+    try {
+      origins.add(new URL(configured).origin);
+    } catch {
+      // Valeur non analysable : on l'ignore plutôt que de casser le build.
+    }
+  }
+  return [...origins];
+}
+
 const CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  // Sentry (suivi d'erreurs) est le seul appel sortant du navigateur.
-  "connect-src 'self' https://*.ingest.sentry.io https://*.ingest.de.sentry.io https://*.ingest.us.sentry.io",
+  // Sentry (suivi d'erreurs) est le seul appel sortant du navigateur en
+  // production ; le dev y ajoute l'API locale.
+  [
+    "connect-src 'self'",
+    "https://*.ingest.sentry.io",
+    "https://*.ingest.de.sentry.io",
+    "https://*.ingest.us.sentry.io",
+    ...developmentApiOrigins(),
+  ].join(" "),
   "frame-ancestors 'none'",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
-  "upgrade-insecure-requests",
+  // Forcerait l'API locale en https, où rien n'écoute. Sans objet en dev, où
+  // tout tient sur la machine.
+  ...(isDevelopment ? [] : ["upgrade-insecure-requests"]),
 ].join("; ");
 
 const SECURITY_HEADERS = [
