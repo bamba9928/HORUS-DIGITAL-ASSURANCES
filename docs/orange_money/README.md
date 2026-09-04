@@ -94,6 +94,29 @@ l'activation de l'application `Horus Assur Digital` (code marchand 621513). Il n
 parle ni des pièces du dossier — déjà transmises par mail les 23 juin et
 11 juillet — ni du RIB.
 
+## Réponse du 2026-09-03 : c'est à nous de basculer en production
+
+**Message `1a067d4b85b4e1a4`, 2026-09-03 15:13**, cc Fatoumata SENE, Alioune SECK
+et désormais aussi **Seyni Ndiaye NIASSE** (SNT DIP-X/ID Tech Lab/UX-BSC/ACS,
+`seynindiaye.niasse@orange-sonatel.com`) :
+
+> « Merci de passer en production pour l'activation de votre application. »
+
+Confirme la lecture de l'étape 6 de la procédure « Passage prod new portal » :
+Sonatel n'active pas le sandbox en amont d'un geste séparé — c'est le fait
+d'actionner l'interrupteur **Sandbox → Production** sur la fiche applicative qui
+déclenche leur vérification et l'activation. Il n'y a donc rien à obtenir avant
+de basculer : c'est la prochaine action, et elle ne peut être faite que depuis le
+compte portail `bigrip2016_1788338171721` (identifiants personnels, aucun agent
+ne peut s'y substituer).
+
+Marche à suivre inchangée par rapport à la section précédente (étapes 3 à 6) :
+interrupteur Sandbox → Production sur la fiche `Horus Assur Digital` → confirmer
+→ attendre vérification/approbation Sonatel → récupérer les identifiants de
+production (bloc « Clé API de production ») → les reporter dans `backend/.env`
+(`OM_BASE_URL=https://api.orange-sonatel.com`, `OM_CLIENT_ID`, `OM_CLIENT_SECRET`,
+`OM_MOCK_ENABLED=False`, `OM_REAL_CALLS_ALLOWED=True`) sans jamais les committer.
+
 ## Prérequis découvert : profil personnel incomplet
 
 `/dashboard/gestion-comptes/entreprise` **redirige** vers
@@ -199,24 +222,29 @@ passerelle — il faut la demander à Ndèye Fakhane DIOP.
 
 1. ~~Coller les clés du bloc « Clé API de test » dans `backend/.env`~~ — fait le
    2026-09-02.
-2. **Demander l'activation à Ndèye Fakhane DIOP** (cc Fatoumata SENE, Alioune
-   SECK) en donnant le nom de l'application et le code marchand. Sans cela le
-   `/oauth/v1/token` sandbox reste en `unauthorized_client`.
-3. Une fois activée, valider la sandbox sans toucher à la config de l'app :
+2. ~~Demander l'activation du sandbox à Ndèye Fakhane DIOP~~ — **superseded par
+   sa réponse du 2026-09-03** : Sonatel n'active rien en amont, c'est le
+   basculement de l'interrupteur qui déclenche leur vérification (voir section
+   ci-dessus). Étape sans objet désormais.
+3. **Basculer l'application en Production** — action manuelle sur le portail,
+   à faire depuis le compte `bigrip2016_1788338171721` (identifiants
+   personnels, aucun agent ne peut le faire) :
+   - `https://developer.orange-sonatel.com/dashboard/applications` → fiche
+     `Horus Assur Digital` → interrupteur Sandbox → Production → confirmer.
+   - Le dossier entreprise (infos + 6 pièces dont le RIB) a été soumis le
+     2026-09-02 ; si le portail redemande quelque chose, le compléter avant de
+     confirmer.
+4. **Attendre la vérification/approbation Sonatel**, puis récupérer les
+   identifiants du bloc « Clé API de production » sur la fiche de l'app.
+5. Reporter dans `backend/.env` : `OM_BASE_URL=https://api.orange-sonatel.com`,
+   le nouveau `OM_CLIENT_ID`/`OM_CLIENT_SECRET`, `OM_MOCK_ENABLED=False`,
+   `OM_REAL_CALLS_ALLOWED=True`. Ne jamais laisser `OM_MOCK_ENABLED=True` en
+   prod (`OM_ALLOW_MOCK_IN_PRODUCTION` reste à `False`).
+6. Valider sans toucher à la config de l'app :
    ```
    uv run python backend/scripts/om_sandbox_probe.py token
    uv run python backend/scripts/om_sandbox_probe.py qr
    ```
-3. Enregistrer le webhook (une fois par environnement) :
+7. Enregistrer le webhook de production (une fois) :
    `uv run python backend/scripts/om_sandbox_probe.py register-callback`
-   (utilise `OM_CALLBACK_URL` et `OM_CALLBACK_API_KEY`).
-4. Basculer l'app en **Production** via l'interrupteur de sa fiche. Le profil
-   doit d'abord être complété dans *Gestion comptes › Mon entreprise* :
-   informations entreprise puis documents (CNI du gérant, NINEA, RCCM, RIB,
-   contrat signé) — les mêmes pièces que celles déjà envoyées par mail.
-5. **Revenir vers Ndèye Fakhane DIOP pour l'activation en production**, en
-   copiant Fatoumata SENE et Alioune SECK.
-6. Basculer `backend/.env` : `OM_BASE_URL=https://api.orange-sonatel.com`,
-   `OM_MOCK_ENABLED=False`, `OM_REAL_CALLS_ALLOWED=True`, et les clés du bloc
-   « Clé API de production ». Ne jamais laisser `OM_MOCK_ENABLED=True` en prod
-   (`OM_ALLOW_MOCK_IN_PRODUCTION` reste à `False`).
+   (utilise `OM_CALLBACK_URL` et `OM_CALLBACK_API_KEY`, cette fois en prod).
