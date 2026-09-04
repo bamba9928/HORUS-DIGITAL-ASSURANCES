@@ -117,6 +117,18 @@ production (bloc « Clé API de production ») → les reporter dans `backend/.e
 (`OM_BASE_URL=https://api.orange-sonatel.com`, `OM_CLIENT_ID`, `OM_CLIENT_SECRET`,
 `OM_MOCK_ENABLED=False`, `OM_REAL_CALLS_ALLOWED=True`) sans jamais les committer.
 
+## Basculement effectué le 2026-09-04
+
+Interrupteur Sandbox → Production actionné sur la fiche `Horus Assur Digital`.
+Constat conforme à l'avertissement de l'étape 6 de la procédure : le bloc
+« Clé API de production » affiche désormais un Client ID/Secret, mais les APIs
+(QR Code – OM, Payment – OM, Notification) sont repassées au statut
+**« En attente »**. Comme pour le sandbox le 2026-09-02, la présence des clés ne
+vaut pas activation côté passerelle — probable `unauthorized_client` tant que
+Sonatel n'a pas vérifié et approuvé le dossier. Relance envoyée à Ndèye Fakhane
+DIOP (cc Fatoumata SENE, Alioune SECK, Seyni Ndiaye NIASSE) pour confirmer la
+réception et demander un délai — en attente de réponse.
+
 ## Prérequis découvert : profil personnel incomplet
 
 `/dashboard/gestion-comptes/entreprise` **redirige** vers
@@ -226,16 +238,12 @@ passerelle — il faut la demander à Ndèye Fakhane DIOP.
    sa réponse du 2026-09-03** : Sonatel n'active rien en amont, c'est le
    basculement de l'interrupteur qui déclenche leur vérification (voir section
    ci-dessus). Étape sans objet désormais.
-3. **Basculer l'application en Production** — action manuelle sur le portail,
-   à faire depuis le compte `bigrip2016_1788338171721` (identifiants
-   personnels, aucun agent ne peut le faire) :
-   - `https://developer.orange-sonatel.com/dashboard/applications` → fiche
-     `Horus Assur Digital` → interrupteur Sandbox → Production → confirmer.
-   - Le dossier entreprise (infos + 6 pièces dont le RIB) a été soumis le
-     2026-09-02 ; si le portail redemande quelque chose, le compléter avant de
-     confirmer.
-4. **Attendre la vérification/approbation Sonatel**, puis récupérer les
-   identifiants du bloc « Clé API de production » sur la fiche de l'app.
+3. ~~Basculer l'application en Production~~ — fait le 2026-09-04. Le bloc
+   « Clé API de production » affiche un Client ID/Secret.
+4. **Attendre la vérification/approbation Sonatel** — les APIs sont au statut
+   « En attente » malgré les clés visibles (même symptôme que le sandbox le
+   2026-09-02). Relance envoyée à Ndèye Fakhane DIOP le 2026-09-04, en attente
+   de réponse.
 5. Reporter dans `backend/.env` : `OM_BASE_URL=https://api.orange-sonatel.com`,
    le nouveau `OM_CLIENT_ID`/`OM_CLIENT_SECRET`, `OM_MOCK_ENABLED=False`,
    `OM_REAL_CALLS_ALLOWED=True`. Ne jamais laisser `OM_MOCK_ENABLED=True` en
