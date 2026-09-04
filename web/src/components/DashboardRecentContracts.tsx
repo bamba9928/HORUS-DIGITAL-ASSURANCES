@@ -13,6 +13,7 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { useAuth } from "@/components/AuthProvider";
 import {
   AlertMessage,
   ContractTypeBadge,
@@ -25,6 +26,7 @@ import {
   type ContractInternalStatus,
   type ContractListItem,
 } from "@/lib/api";
+import { canSeeAssBranding } from "@/lib/permissions";
 
 const statusFilters: { label: string; value: ContractInternalStatus | "" }[] = [
   { label: "Tous les statuts", value: "" },
@@ -47,6 +49,8 @@ const typeFilters = [
 ];
 
 export function DashboardRecentContracts() {
+  const { auth } = useAuth();
+  const canSeeAss = canSeeAssBranding(auth?.user);
   const [contracts, setContracts] = useState<ContractListItem[]>([]);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -215,13 +219,13 @@ export function DashboardRecentContracts() {
                 <th>Échéance</th>
                 <th>Statut</th>
                 <th>Apporteur / groupe</th>
-                <th className="num">Prime ASS</th>
+                <th className="num">{canSeeAss ? "Prime ASS" : "Prime"}</th>
                 <th className="num">Actions</th>
               </tr>
             </thead>
             <tbody>
               {contracts.map((contract) => (
-                <ContractRow contract={contract} key={contract.id} />
+                <ContractRow canSeeAss={canSeeAss} contract={contract} key={contract.id} />
               ))}
             </tbody>
           </table>
@@ -283,7 +287,13 @@ export function DashboardRecentContracts() {
   );
 }
 
-function ContractRow({ contract }: { contract: ContractListItem }) {
+function ContractRow({
+  canSeeAss,
+  contract,
+}: {
+  canSeeAss: boolean;
+  contract: ContractListItem;
+}) {
   const totalPrime =
     contract.ttc_ass ??
     (contract.prime_rc_ass === null
@@ -293,15 +303,20 @@ function ContractRow({ contract }: { contract: ContractListItem }) {
   return (
     <tr>
       <td className="row-head" data-label="Police">
+        {/* Une fois le contrat émis, la police du client est le numéro
+            d'attestation renvoyé par ASS — pas notre référence interne
+            (`HORUS-POL-…`) transmise à l'émission, qui n'a aucune valeur pour
+            l'apporteur. Cette dernière ne sert de repère que tant que le
+            contrat n'est pas encore émis. */}
         <p className="cell-mono text-primary">
-          {contract.policy_number || `Dossier ${contract.id}`}
+          {contract.attestation_number ||
+            contract.policy_number ||
+            `Dossier ${contract.id}`}
         </p>
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
           <ContractTypeBadge contractType={contract.contract_type} />
-          {contract.attestation_number ? (
-            <span className="text-[10.5px] font-bold text-faint">
-              Att. {contract.attestation_number}
-            </span>
+          {!contract.attestation_number && contract.policy_number ? (
+            <span className="text-[10.5px] font-bold text-faint">Non émise</span>
           ) : null}
         </div>
       </td>
@@ -334,7 +349,7 @@ function ContractRow({ contract }: { contract: ContractListItem }) {
         </p>
         <p className="cell-sub max-w-40 truncate">{contract.organization_name || "—"}</p>
       </td>
-      <td className="num" data-label="Prime ASS">
+      <td className="num" data-label={canSeeAss ? "Prime ASS" : "Prime"}>
         <p className="text-[13.5px] font-black text-strong">
           {totalPrime === null ? "—" : formatMoney(totalPrime)}
         </p>

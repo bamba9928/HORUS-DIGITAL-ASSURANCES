@@ -49,6 +49,7 @@ import {
   canCancelContract,
   canConfirmContractPayment,
   canManageContractWorkflow,
+  canSeeAssBranding,
 } from "@/lib/permissions";
 
 type DraftVehicle = {
@@ -109,6 +110,9 @@ export default function ContractDetailPage() {
   const canManageWorkflow = canManageContractWorkflow(auth?.user);
   const canConfirmPayment = canConfirmContractPayment(auth?.user);
   const canCancel = canCancelContract(auth?.user);
+  // Le nom du fournisseur ASS n'a rien à faire sous les yeux d'un apporteur :
+  // seul l'admin général le voit, les autres rôles ont un libellé neutre.
+  const canSeeAss = canSeeAssBranding(auth?.user);
 
   async function refresh() {
     setError("");
@@ -263,7 +267,10 @@ export default function ContractDetailPage() {
       await cancelContract(contract.id, cancelMethod, cancelMotif);
       setCancelMotif("");
       await refresh();
-      toast.success("Contrat annulé", "L'attestation a été annulée auprès d'ASS.");
+      toast.success(
+        "Contrat annulé",
+        canSeeAss ? "L'attestation a été annulée auprès d'ASS." : "L'attestation a été annulée.",
+      );
     } catch (err) {
       toast.error(
         "Annulation impossible",
@@ -320,7 +327,7 @@ export default function ContractDetailPage() {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <StatusBadge status={contract.internal_status} />
                       {contract.ass_status ? (
-                        <StatusBadge status={contract.ass_status} />
+                        <StatusBadge showAssLabel={canSeeAss} status={contract.ass_status} />
                       ) : null}
                       <ContractTypeBadge contractType={contract.contract_type} />
                     </div>
@@ -433,9 +440,12 @@ export default function ContractDetailPage() {
                         ? "—"
                         : formatMoney(contract.prime_rc_ass),
                   },
-                  { label: "Police ASS", value: formatMoney(contract.cout_police_ass) },
                   {
-                    label: "TTC ASS",
+                    label: canSeeAss ? "Police ASS" : "Police",
+                    value: formatMoney(contract.cout_police_ass),
+                  },
+                  {
+                    label: canSeeAss ? "TTC ASS" : "TTC",
                     value: contract.ttc_ass === null ? "—" : formatMoney(contract.ttc_ass),
                     tone: "primary",
                   },
@@ -514,7 +524,7 @@ export default function ContractDetailPage() {
                         value={formatMoney(contract.commission_snapshot.marge_horus)}
                       />
                       <DataRow
-                        label="Reversé ASS"
+                        label={canSeeAss ? "Reversé ASS" : "Reversé assureur"}
                         value={formatMoney(
                           contract.commission_snapshot.montant_reverse_ass,
                         )}
@@ -660,6 +670,7 @@ export default function ContractDetailPage() {
                 {/* Tarification — permanent dès qu'un devis existe */}
                 <TarificationPanel
                   breakdown={contract.quote_breakdown}
+                  canSeeAss={canSeeAss}
                   contractType={contract.contract_type}
                   freshQuote={quote}
                 />
@@ -725,8 +736,9 @@ export default function ContractDetailPage() {
               <div>
                 <h3 className="text-base font-black">Annuler le contrat</h3>
                 <p className="mt-1 text-sm font-medium text-black/45">
-                  Cette action est irréversible. L&apos;attestation sera annulée auprès
-                  de l&apos;ASS.
+                  {canSeeAss
+                    ? "Cette action est irréversible. L'attestation sera annulée auprès de l'ASS."
+                    : "Cette action est irréversible. L'attestation sera annulée."}
                 </p>
               </div>
             </div>
@@ -830,7 +842,10 @@ function DraftDetailsPanel({ contract }: { contract: ContractDetail }) {
                     </DataList>
                   </div>
                 ) : null}
-                {insured ? (
+                {/* Quand l'assuré est le souscripteur (cas par défaut), le payload
+                    duplique quand même ses coordonnées dans `insured` : sans ce
+                    garde-fou, le bloc réaffichait deux fois la même personne. */}
+                {insured && payload.sameAsPolicyholder === false ? (
                   <div>
                     <p className="eyebrow mb-1 text-primary">Assuré</p>
                     <DataList>
@@ -869,14 +884,6 @@ function DraftDetailsPanel({ contract }: { contract: ContractDetail }) {
                   }
                 />
                 <DataRow label="Places" value={vehicle.seats || "—"} />
-                <DataRow
-                  label="1re circulation"
-                  value={
-                    vehicle.firstCirculationDate
-                      ? formatDate(vehicle.firstCirculationDate)
-                      : "—"
-                  }
-                />
               </DataList>
             </Block>
           ) : null}
@@ -1087,10 +1094,12 @@ function ActionButton({
 
 function TarificationPanel({
   breakdown,
+  canSeeAss,
   contractType,
   freshQuote,
 }: {
   breakdown: QuoteBreakdown | null;
+  canSeeAss: boolean;
   contractType: string;
   freshQuote: ContractQuote | null;
 }) {
@@ -1124,7 +1133,7 @@ function TarificationPanel({
       </div>
       <div className="divide-y divide-[#f0f2f8]">
         <QuoteRow label="Prime RC" value={formatMoney(b.prime_rc_ass)} />
-        <QuoteRow label="Police ASS" value={formatMoney(b.cout_police)} />
+        <QuoteRow label={canSeeAss ? "Police ASS" : "Police"} value={formatMoney(b.cout_police)} />
         {b.taxe !== undefined && b.taxe !== null ? (
           <QuoteRow label="Taxe" value={formatMoney(b.taxe)} />
         ) : null}

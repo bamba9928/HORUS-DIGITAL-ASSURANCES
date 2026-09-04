@@ -44,7 +44,10 @@ class AssStockQrView(APIView):
         return Response(serializer.data)
 
     def _can_view_stock(self, user):
-        return user.is_admin_general or user.is_admin_group or user.is_finance
+        # Reserve a l'admin general : ASS est un fournisseur technique, pas une
+        # information a exposer aux admins de groupe ou a finance (cf. le meme
+        # cloisonnement cote front, canViewAssIntegration).
+        return user.is_admin_general
 
 
 class AssVerifyRegistrationView(APIView):

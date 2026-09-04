@@ -57,6 +57,7 @@ import {
   canConfirmContractPayment,
   canCreateContract,
   canManageContractWorkflow,
+  canSeeAssBranding,
 } from "@/lib/permissions";
 
 type VehicleForm = {
@@ -223,6 +224,9 @@ export default function NewContractPage() {
 
 function NewContractPageContent() {
   const { auth, isLoading: isAuthLoading } = useAuth();
+  // Le nom du fournisseur ASS n'a rien à faire sous les yeux d'un apporteur :
+  // seul l'admin général le voit, les autres rôles ont un libellé neutre.
+  const canSeeAss = canSeeAssBranding(auth?.user);
   const searchParams = useSearchParams();
   const [step, setStep] = useState(1);
   const [contractType, setContractType] = useState(() => {
@@ -412,7 +416,9 @@ function NewContractPageContent() {
     const requestId = ++registrationLookupRequestRef.current;
     const timeout = window.setTimeout(async () => {
       setRegistrationLookupState("checking");
-      setRegistrationLookupMessage("Recherche automatique dans ASS...");
+      setRegistrationLookupMessage(
+        canSeeAss ? "Recherche automatique dans ASS..." : "Recherche automatique en cours…",
+      );
       try {
         const response = await verifyAssRegistration(registration);
         if (registrationLookupRequestRef.current !== requestId) {
@@ -454,13 +460,15 @@ function NewContractPageContent() {
         }
         setRegistrationLookupState("error");
         setRegistrationLookupMessage(
-          "Vérification ASS indisponible. Vous pouvez continuer la saisie manuellement.",
+          canSeeAss
+            ? "Vérification ASS indisponible. Vous pouvez continuer la saisie manuellement."
+            : "Vérification indisponible. Vous pouvez continuer la saisie manuellement.",
         );
       }
     }, 700);
 
     return () => window.clearTimeout(timeout);
-  }, [isGarage, vehicle.registration]);
+  }, [canSeeAss, isGarage, vehicle.registration]);
   const canSaveVehicle = Boolean(
     vehicle.brand &&
       vehicle.model &&
@@ -887,10 +895,11 @@ function NewContractPageContent() {
   const userCanCreateContract = canCreateContract(auth?.user);
   const userCanConfirmPayment = canConfirmContractPayment(auth?.user);
   const userCanIssueContract = canManageContractWorkflow(auth?.user);
+  const wizardDescription = canSeeAss ? "Souscription et émission ASS" : "Souscription et émission";
 
   if (isAuthLoading) {
     return (
-      <AppShell description="Souscription et émission ASS" title="Nouveau contrat">
+      <AppShell description={wizardDescription} title="Nouveau contrat">
         <div className="app-surface p-6 text-sm font-semibold text-black/45">
           Chargement de la session…
         </div>
@@ -900,7 +909,7 @@ function NewContractPageContent() {
 
   if (!auth?.authenticated || !userCanCreateContract) {
     return (
-      <AppShell description="Souscription et émission ASS" title="Nouveau contrat">
+      <AppShell description={wizardDescription} title="Nouveau contrat">
         <div className="app-surface p-6">
           <h2 className="font-extrabold">Accès non autorisé</h2>
           <p className="mt-1 text-sm font-medium text-black/45">
@@ -920,7 +929,7 @@ function NewContractPageContent() {
   return (
       <AppShell
       actions={<AutoSaveIndicator draftId={savedDraftId} state={autoSaveState} />}
-      description={isEditingDraft ? `Reprise du brouillon ${savedDraftId}` : "Souscription et émission ASS"}
+      description={isEditingDraft ? `Reprise du brouillon ${savedDraftId}` : wizardDescription}
       title="Nouveau contrat"
     >
       <div className="space-y-5">
@@ -1065,6 +1074,7 @@ function NewContractPageContent() {
                   addTrailer={addTrailer}
                   brands={brands}
                   canSaveTrailer={canSaveTrailer}
+                  canSeeAss={canSeeAss}
                   deleteFleetVehicle={deleteFleetVehicle}
                   editFleetVehicle={editFleetVehicle}
                   fleetVehicles={fleetVehicles}
@@ -1079,6 +1089,7 @@ function NewContractPageContent() {
 
               {isFleet ? (
                 <FleetCoverageFields
+                  canSeeAss={canSeeAss}
                   fleetCoverage={fleetCoverage}
                   showErrors={showErrors}
                   updateFleetCoverage={(field, value) =>
@@ -1116,7 +1127,10 @@ function NewContractPageContent() {
                 {/* RC + CEDEAO toujours incluses */}
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   {[
-                    { label: "Responsabilité Civile (RC)", sub: "Garantie de base ASS" },
+                    {
+                      label: "Responsabilité Civile (RC)",
+                      sub: canSeeAss ? "Garantie de base ASS" : "Garantie de base",
+                    },
                     { label: "CEDEAO", sub: "Couverture zone CEDEAO" },
                   ].map(({ label, sub }) => (
                     <div key={label} className="flex items-center gap-3 rounded-xl border-2 border-emerald-200 bg-emerald-50 px-4 py-3">
@@ -1293,7 +1307,7 @@ function NewContractPageContent() {
 
                 {/* Devis */}
                 {quote ? (
-                  <QuoteResultPanel quote={quote} />
+                  <QuoteResultPanel canSeeAss={canSeeAss} quote={quote} />
                 ) : (
                   <div className="app-surface flex flex-col items-center gap-3 p-6 text-center">
                     <div className="flex size-12 items-center justify-center rounded-2xl bg-amber-100">
@@ -1352,13 +1366,16 @@ function NewContractPageContent() {
               <section className="app-surface p-5 sm:p-6">
                 <h2 className="text-lg font-black">Paiement et émission</h2>
                 <p className="mt-1 text-sm font-medium text-black/50">
-                  L&apos;émission ASS consomme un QR code uniquement après paiement confirmé.
+                  {`L'émission${
+                    canSeeAss ? " ASS" : ""
+                  } consomme un QR code uniquement après paiement confirmé.`}
                 </p>
               </section>
               {quote ? (
                 <PaymentIssuePanel
                   canConfirmPayment={userCanConfirmPayment}
                   canIssue={userCanIssueContract}
+                  canSeeAss={canSeeAss}
                   contractId={savedDraftId}
                   issueResult={issueResult}
                   issuing={issuing}
@@ -1370,7 +1387,9 @@ function NewContractPageContent() {
                 />
               ) : (
                 <div className="app-surface flex items-center gap-2 p-5 text-sm font-semibold text-black/50">
-                  Calculez d&apos;abord le devis ASS depuis l&apos;étape options.
+                  {`Calculez d'abord le devis${
+                    canSeeAss ? " ASS" : ""
+                  } depuis l'étape options.`}
                 </div>
               )}
               <div className="flex">
@@ -1854,10 +1873,12 @@ function VehicleFields({
 }
 
 function FleetCoverageFields({
+  canSeeAss,
   fleetCoverage,
   showErrors = false,
   updateFleetCoverage,
 }: {
+  canSeeAss: boolean;
   fleetCoverage: FleetCoverage;
   showErrors?: boolean;
   updateFleetCoverage: (field: keyof FleetCoverage, value: string) => void;
@@ -1893,8 +1914,9 @@ function FleetCoverageFields({
         />
       </div>
       <p className="mt-3 text-xs font-semibold text-black/45">
-        Ces champs s&apos;appliquent à l&apos;ensemble des véhicules de la flotte.
-        Rabais ASS : 10-20 véhicules = 10 %, 21-40 = 15 %, 41-60 = 20 %, +60 = 25 %.
+        {`Ces champs s'appliquent à l'ensemble des véhicules de la flotte. Rabais${
+          canSeeAss ? " ASS" : ""
+        } : 10-20 véhicules = 10 %, 21-40 = 15 %, 41-60 = 20 %, +60 = 25 %.`}
       </p>
     </FormBlock>
   );
@@ -1904,6 +1926,7 @@ function FleetSection({
   addTrailer,
   brands,
   canSaveTrailer,
+  canSeeAss,
   deleteFleetVehicle,
   editFleetVehicle,
   fleetVehicles,
@@ -1917,6 +1940,7 @@ function FleetSection({
   addTrailer: () => void;
   brands: SelectOption[];
   canSaveTrailer: boolean;
+  canSeeAss: boolean;
   deleteFleetVehicle: (vehicleId: string) => void;
   editFleetVehicle: (vehicleId: string) => void;
   fleetVehicles: FleetVehicle[];
@@ -1931,6 +1955,7 @@ function FleetSection({
   const allTrailers = fleetVehicles.flatMap((v) =>
     v.trailers.map((t) => ({ ...t, tractorVehicle: v })),
   );
+  const genreLabel = canSeeAss ? "Genre ASS" : "Genre";
 
   return (
     <div className="space-y-6">
@@ -1949,7 +1974,7 @@ function FleetSection({
               <tr>
                 <th>Immatriculation</th>
                 <th>Marque / Modèle</th>
-                <th>Genre ASS</th>
+                <th>{genreLabel}</th>
                 <th>Énergie</th>
                 <th>Puiss. fisc.</th>
                 <th>Remorques</th>
@@ -1961,7 +1986,7 @@ function FleetSection({
                 <tr key={v.id}>
                   <td className="font-black" data-label="Immatriculation">{v.registration || "—"}</td>
                   <td data-label="Marque / Modèle">{v.brand || "—"} {v.model || ""}</td>
-                  <td className="text-xs font-bold text-black/60" data-label="Genre ASS">{v.subcategory || "—"}</td>
+                  <td className="text-xs font-bold text-black/60" data-label={genreLabel}>{v.subcategory || "—"}</td>
                   <td className="text-xs" data-label="Énergie">{v.energy || "—"}</td>
                   <td className="text-xs" data-label="Puiss. fisc.">{v.fiscalPower || "—"}</td>
                   <td data-label="Remorques">
@@ -2170,14 +2195,22 @@ function SummaryGrid({ children }: { children: React.ReactNode }) {
   return <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm max-sm:grid-cols-1">{children}</dl>;
 }
 
-function QuoteResultPanel({ quote }: { quote: ContractQuote }) {
+function QuoteResultPanel({
+  canSeeAss,
+  quote,
+}: {
+  canSeeAss: boolean;
+  quote: ContractQuote;
+}) {
   const paymentAmount = quotePayableAmount(quote);
   const hasBreakdown = quote.prime_totale !== undefined;
 
   return (
     <section className="app-surface overflow-hidden">
       <div className="flex items-center justify-between gap-3 border-b border-border bg-primary/5 px-5 py-4">
-        <h3 className="font-extrabold text-primary">Devis ASS calculé</h3>
+        <h3 className="font-extrabold text-primary">
+          {canSeeAss ? "Devis ASS calculé" : "Devis calculé"}
+        </h3>
         <span className="rounded-full bg-primary px-2.5 py-1 text-[11px] font-black text-white">
           {quote.type}
         </span>
@@ -2213,7 +2246,10 @@ function QuoteResultPanel({ quote }: { quote: ContractQuote }) {
             </div>
           ) : (
             <dl className="grid grid-cols-2 gap-4 md:grid-cols-3">
-              <SummaryItem label="Prime RC ASS" value={`${formatAmount(quote.prime_rc_ass)} FCFA`} />
+              <SummaryItem
+                label={canSeeAss ? "Prime RC ASS" : "Prime RC"}
+                value={`${formatAmount(quote.prime_rc_ass)} FCFA`}
+              />
               <SummaryItem label="Coût de police" value={`${formatAmount(quote.policy_fee_ass)} FCFA`} />
               <SummaryItem label="Total à payer" value={`${formatAmount(paymentAmount)} FCFA`} />
             </dl>
@@ -2288,6 +2324,7 @@ function QuoteRow({
 function PaymentIssuePanel({
   canConfirmPayment,
   canIssue,
+  canSeeAss,
   contractId,
   issueResult,
   issuing,
@@ -2299,6 +2336,7 @@ function PaymentIssuePanel({
 }: {
   canConfirmPayment: boolean;
   canIssue: boolean;
+  canSeeAss: boolean;
   contractId: number | null;
   issueResult: IssueResult | null;
   issuing: boolean;
@@ -2320,7 +2358,7 @@ function PaymentIssuePanel({
               {formatAmount(payableAmount)} FCFA
             </p>
             <p className="mt-1 text-xs font-medium text-black/45">
-              Prime totale calculée par ASS
+              {canSeeAss ? "Prime totale calculée par ASS" : "Prime totale calculée"}
             </p>
           </div>
           <span
@@ -2358,7 +2396,7 @@ function PaymentIssuePanel({
               onClick={onIssue}
               type="button"
             >
-              {issuing ? "Émission…" : "Émettre le contrat ASS"}
+              {issuing ? "Émission…" : canSeeAss ? "Émettre le contrat ASS" : "Émettre le contrat"}
             </button>
           ) : null}
           {!canConfirmPayment && contractId ? (
@@ -2378,12 +2416,18 @@ function PaymentIssuePanel({
         </div>
       </section>
 
-      {issueResult ? <IssuePanel issueResult={issueResult} /> : null}
+      {issueResult ? <IssuePanel canSeeAss={canSeeAss} issueResult={issueResult} /> : null}
     </div>
   );
 }
 
-function IssuePanel({ issueResult }: { issueResult: IssueResult }) {
+function IssuePanel({
+  canSeeAss,
+  issueResult,
+}: {
+  canSeeAss: boolean;
+  issueResult: IssueResult;
+}) {
   return (
     <section className="app-surface overflow-hidden">
       <div className="flex items-center gap-3 border-b border-emerald-100 bg-emerald-50 px-5 py-4">
@@ -2393,7 +2437,7 @@ function IssuePanel({ issueResult }: { issueResult: IssueResult }) {
         <div>
           <h3 className="font-extrabold text-emerald-800">Contrat émis</h3>
           <p className="text-xs font-medium text-emerald-700">
-            <StatusBadge status={issueResult.ass_status} />
+            <StatusBadge showAssLabel={canSeeAss} status={issueResult.ass_status} />
           </p>
         </div>
       </div>

@@ -45,6 +45,29 @@ def test_contributor_cannot_read_ass_stock_qr():
 
 
 @pytest.mark.django_db
+@override_settings(ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
+@pytest.mark.parametrize("role", [User.Role.ADMIN_GROUP, User.Role.FINANCE])
+def test_non_admin_general_roles_cannot_read_ass_stock_qr(role):
+    # ASS est un fournisseur technique : seul l'admin general y a accès (ni
+    # l'admin de groupe, ni finance) — voir canViewAssIntegration cote front.
+    organization = Organization.objects.create(
+        name=f"Groupe Stock QR {role}", code=f"STOCK-{role}"
+    )
+    user = User.objects.create_user(
+        username=f"user-ass-stock-{role.lower()}",
+        password="test-pass-123",
+        role=role,
+        organization=organization,
+    )
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.get("/api/integrations/ass/stock-qr/")
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
 @override_settings(
     ASS_MOCK_ENABLED=False,
     ASS_REAL_CALLS_ALLOWED=False,
@@ -52,13 +75,13 @@ def test_contributor_cannot_read_ass_stock_qr():
     ASS_PASSWORD="secret-test",
 )
 def test_stock_qr_endpoint_does_not_call_real_ass_when_real_calls_are_disabled():
-    finance = User.objects.create_user(
-        username="finance-ass-stock",
+    admin = User.objects.create_user(
+        username="admin-ass-stock-real-calls",
         password="test-pass-123",
-        role=User.Role.FINANCE,
+        role=User.Role.ADMIN_GENERAL,
     )
     client = APIClient()
-    client.force_authenticate(finance)
+    client.force_authenticate(admin)
 
     response = client.get("/api/integrations/ass/stock-qr/")
 

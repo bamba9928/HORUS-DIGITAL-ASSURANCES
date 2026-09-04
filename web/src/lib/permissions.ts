@@ -34,11 +34,15 @@ export function canManageReferentials(user: User) {
 }
 
 export function canViewAssIntegration(user: User) {
-  return Boolean(
-    user &&
-      ["ADMIN_GENERAL", "ADMIN_GROUP", "FINANCE"].includes(user.role),
-  );
+  return Boolean(user && user.role === "ADMIN_GENERAL");
 }
+
+// Alias sémantique : même règle que ci-dessus, mais utilisée pour décider si
+// le nom du fournisseur "ASS" apparaît dans les libellés vus par tous les
+// rôles (wizard, détail contrat) — pas seulement sur la page /integrations/ass.
+// Les autres rôles voient un libellé neutre : ASS est un partenaire technique,
+// pas une information à exposer à l'apporteur.
+export const canSeeAssBranding = canViewAssIntegration;
 
 export function canUpdateCommissionStatus(user: User) {
   return Boolean(

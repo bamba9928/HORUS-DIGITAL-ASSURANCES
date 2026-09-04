@@ -181,6 +181,9 @@ def test_callback_confirms_payment_when_signature_is_valid(settings):
     settings.OM_MOCK_ENABLED = True
     settings.OM_MOCK_CONFIRM_DELAY_SECONDS = 0
     settings.OM_CALLBACK_SIGNING_SECRET = "secret-partenaire"
+    # Isole du garde-fou Authorization : ce test ne porte que sur la
+    # signature, il ne doit pas dependre d'un OM_CALLBACK_API_KEY local.
+    settings.OM_CALLBACK_API_KEY = ""
     client, contributor = make_contributor()
     contract = create_quote_ready_contract(contributor)
     reference = initiate(client, contract).data["payment"]["external_reference"]
@@ -208,6 +211,9 @@ def test_callback_does_not_trust_body_status(settings):
     settings.OM_MOCK_ENABLED = True
     settings.OM_MOCK_CONFIRM_DELAY_SECONDS = 3600
     settings.OM_CALLBACK_API_KEY = "cle-callback"
+    # Isole du garde-fou signature : ce test ne porte que sur l'Authorization,
+    # il ne doit pas dependre d'un OM_CALLBACK_SIGNING_SECRET local.
+    settings.OM_CALLBACK_SIGNING_SECRET = ""
     client, contributor = make_contributor()
     contract = create_quote_ready_contract(contributor)
     reference = initiate(client, contract).data["payment"]["external_reference"]
@@ -409,6 +415,7 @@ def test_callback_accepts_valid_signature(settings):
     settings.OM_MOCK_ENABLED = True
     settings.OM_MOCK_CONFIRM_DELAY_SECONDS = 0
     settings.OM_CALLBACK_SIGNING_SECRET = "secret-partenaire"
+    settings.OM_CALLBACK_API_KEY = ""
     client, contributor = make_contributor(username="om-goodsig", org_code="OM-GOODSIG")
     contract = create_quote_ready_contract(contributor)
     reference = initiate(client, contract).data["payment"]["external_reference"]
@@ -454,6 +461,10 @@ def test_callback_rejects_bad_basic_authorization(settings):
     settings.OM_MOCK_ENABLED = True
     settings.OM_MOCK_CONFIRM_DELAY_SECONDS = 0
     settings.OM_CALLBACK_API_KEY = "cle-partagee"
+    # Isole du garde-fou signature : sans ca, un OM_CALLBACK_SIGNING_SECRET
+    # local ferait echouer la requete sur la signature avant l'Authorization,
+    # et le test passerait pour la mauvaise raison.
+    settings.OM_CALLBACK_SIGNING_SECRET = ""
     client, contributor = make_contributor(username="om-badauth", org_code="OM-BADAUTH")
     contract = create_quote_ready_contract(contributor)
     reference = initiate(client, contract).data["payment"]["external_reference"]
@@ -474,6 +485,7 @@ def test_callback_matches_payment_by_transaction_id(settings):
     settings.OM_MOCK_ENABLED = True
     settings.OM_MOCK_CONFIRM_DELAY_SECONDS = 0
     settings.OM_CALLBACK_API_KEY = "cle-callback"
+    settings.OM_CALLBACK_SIGNING_SECRET = ""
     client, contributor = make_contributor(username="om-bytxn", org_code="OM-BYTXN")
     contract = create_quote_ready_contract(contributor)
     payment_id = initiate(client, contract).data["payment"]["id"]

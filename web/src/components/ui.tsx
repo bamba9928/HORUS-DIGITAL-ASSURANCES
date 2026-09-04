@@ -284,7 +284,15 @@ export function SectionHeader({
 }
 
 /* ── StatusBadge ─────────────────────────────────────────────────── */
-export function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({
+  status,
+  showAssLabel = true,
+}: {
+  status: string;
+  /** VALIDE/BROUILLON/ANNULE sont le statut brut ASS : le nom du fournisseur
+   *  n'a rien à faire sous les yeux d'un apporteur (`canSeeAssBranding`). */
+  showAssLabel?: boolean;
+}) {
   const statusConfig: Record<
     string,
     { label: string; className: string; dot: string; icon: typeof CircleDashed }
@@ -304,9 +312,9 @@ export function StatusBadge({ status }: { status: string }) {
     FAILED:          { label: "Échoué",            className: "bg-red-50 text-red-600",            dot: "bg-red-400",     icon: AlertCircle   },
     REFUNDED:        { label: "Remboursé",         className: "bg-blue-50 text-blue-700",          dot: "bg-blue-400",    icon: CheckCircle2  },
     SUCCESS:         { label: "Opérationnel",      className: "bg-emerald-50 text-emerald-700",    dot: "bg-emerald-500", icon: CheckCircle2  },
-    VALIDE:          { label: "Validé ASS",        className: "bg-violet-50 text-violet-700",      dot: "bg-violet-500",  icon: CheckCircle2  },
-    BROUILLON:       { label: "Brouillon ASS",     className: "bg-slate-100 text-slate-600",       dot: "bg-slate-400",   icon: CircleDashed  },
-    ANNULE:          { label: "Annulé ASS",        className: "bg-red-50 text-red-600",            dot: "bg-red-400",     icon: AlertCircle   },
+    VALIDE:          { label: showAssLabel ? "Validé ASS" : "Validé",     className: "bg-violet-50 text-violet-700",      dot: "bg-violet-500",  icon: CheckCircle2  },
+    BROUILLON:       { label: showAssLabel ? "Brouillon ASS" : "Brouillon", className: "bg-slate-100 text-slate-600",       dot: "bg-slate-400",   icon: CircleDashed  },
+    ANNULE:          { label: showAssLabel ? "Annulé ASS" : "Annulé",     className: "bg-red-50 text-red-600",            dot: "bg-red-400",     icon: AlertCircle   },
     CONTRIBUTOR:     { label: "Apporteur",          className: "bg-primary/10 text-primary",         dot: "bg-primary",     icon: CheckCircle2  },
     FINANCE:         { label: "Finance",             className: "bg-amber-50 text-amber-700",         dot: "bg-amber-400",   icon: CheckCircle2  },
     ADMIN_GROUP:     { label: "Admin groupe",        className: "bg-blue-50 text-blue-700",           dot: "bg-blue-500",    icon: CheckCircle2  },

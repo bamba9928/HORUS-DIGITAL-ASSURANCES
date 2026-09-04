@@ -20,7 +20,7 @@ import {
   updateCommissionSnapshotStatus,
   type CommissionSnapshot,
 } from "@/lib/api";
-import { canUpdateCommissionStatus } from "@/lib/permissions";
+import { canSeeAssBranding, canUpdateCommissionStatus } from "@/lib/permissions";
 
 type StatusFilter = CommissionSnapshot["status"] | "";
 
@@ -63,6 +63,7 @@ export default function CommissionsPage() {
 
   const isLoading = authLoading || isDataLoading;
   const canUpdateStatus = canUpdateCommissionStatus(auth?.user);
+  const canSeeAss = canSeeAssBranding(auth?.user);
 
   async function refresh() {
     if (!auth?.authenticated) return;
@@ -251,7 +252,7 @@ export default function CommissionsPage() {
                     <th>Apporteur</th>
                     <th>Date</th>
                     <th>Statut</th>
-                    <th className="num">Montants ASS</th>
+                    <th className="num">{canSeeAss ? "Montants ASS" : "Montants"}</th>
                     <th className="num">Commission</th>
                     <th className="num">Marge Horus</th>
                   </tr>
@@ -331,7 +332,7 @@ export default function CommissionsPage() {
                         ) : null}
                       </td>
 
-                      <td className="num" data-label="Montants ASS">
+                      <td className="num" data-label={canSeeAss ? "Montants ASS" : "Montants"}>
                         <p className="text-[13.5px] font-bold text-strong">
                           {formatMoney(snapshot.prime_rc_ass)}
                         </p>

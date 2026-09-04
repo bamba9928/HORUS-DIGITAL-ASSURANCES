@@ -30,7 +30,7 @@ import {
   type ContractListItem,
   type ExpirationWindow,
 } from "@/lib/api";
-import { canCreateContract } from "@/lib/permissions";
+import { canCreateContract, canSeeAssBranding } from "@/lib/permissions";
 
 const statusTabs: { label: string; value: ContractInternalStatus | "" }[] = [
   { label: "Tous", value: "" },
@@ -63,6 +63,7 @@ const expirationFilters: { label: string; value: ExpirationWindow | "" }[] = [
 export default function ContractsPage() {
   const router = useRouter();
   const { auth } = useAuth();
+  const canSeeAss = canSeeAssBranding(auth?.user);
   const toast = useToast();
   const [contracts, setContracts] = useState<ContractListItem[]>([]);
   const [isExporting, setIsExporting] = useState(false);
@@ -337,7 +338,7 @@ export default function ContractsPage() {
                     <th>Attestation</th>
                     <th>Échéance</th>
                     <th>Mis à jour</th>
-                    <th className="num">TTC ASS</th>
+                    <th className="num">{canSeeAss ? "TTC ASS" : "TTC"}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -419,7 +420,7 @@ export default function ContractsPage() {
                       </td>
 
                       {/* Montants */}
-                      <td className="num" data-label="TTC ASS">
+                      <td className="num" data-label={canSeeAss ? "TTC ASS" : "TTC"}>
                         <p className="text-[13.5px] font-black text-strong">
                           {contract.ttc_ass === null ? "—" : formatMoney(contract.ttc_ass)}
                         </p>
