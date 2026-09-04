@@ -316,12 +316,84 @@ export type ContractPayment = {
 /** Fenetres d'echeance calculees par le backend, en jours. */
 export type ExpirationWindow = "expired" | "30" | "60" | "90";
 
+/**
+ * Ventilation du tarif ASS, ré-extraite par le backend depuis la réponse
+ * stockée au calcul du devis. `null` tant qu'aucun devis n'existe.
+ *
+ * Seuls `prime_rc_ass` et `cout_police` sont garantis : le reste dépend du
+ * format que renvoie ASS, et la flotte n'en expose aucun.
+ */
+export type QuoteBreakdown = {
+  prime_rc_ass: number;
+  cout_police: number;
+  taxe?: number;
+  cedeao?: number;
+  reduction?: number;
+  prime_ag?: number;
+  fonds_garantie?: number;
+  prime_totale?: number;
+};
+
+/**
+ * Une attestation ASS. Il y en a UNE PAR VÉHICULE et une par remorque : sur une
+ * flotte de douze camions et trois remorques, quinze — chacune avec son numéro,
+ * sa date d'expiration, son attestation digitale et sa carte brune CEDEAO.
+ *
+ * Les champs plats du contrat (`link_attestation_digitale`,
+ * `link_attestation_cedeao`) ne portent QUE la première : s'y fier revenait à
+ * n'en montrer qu'une sur quinze, et à laisser onze chauffeurs sans papier.
+ */
+export type ContractAssAttestation = {
+  kind: "VEHICLE" | "TRAILER";
+  label: string;
+  immatriculation: string;
+  reference_externe: string;
+  attestation_number: string;
+  date_expiration: string | null;
+  link_attestation_digitale: string;
+  link_attestation_cedeao: string;
+};
+
 export type ContractDetail = ContractListItem & {
+  /**
+   * Le formulaire tel qu'il a été saisi, rendu tel quel par le backend. Non
+   * typé : sa forme dépend du produit (mono-véhicule, flotte, garage) et c'est
+   * l'assistant qui sait la lire — voir `readVehicle` dans `contracts/new.tsx`.
+   */
+  draft_payload: Record<string, unknown>;
+  ass_attestations: ContractAssAttestation[];
   payments: ContractPayment[];
+  quote_breakdown: QuoteBreakdown | null;
 };
 
 export async function fetchContract(contractId: number) {
   return fetchApi<ContractDetail>(`/contracts/${contractId}/`);
+}
+
+/**
+ * Net à verser : ce que l'apporteur règle par Orange Money avant l'émission.
+ *
+ * TTC moins le coût de police, qu'il retient à la source (règle du
+ * 28/08/2026). Le backend applique la MÊME formule dans
+ * `payments.services.expected_payment_amount` et c'est lui qui fixe le montant
+ * réellement demandé : ce calcul ne sert qu'à afficher la somme et à savoir si
+ * le bouton a un sens. Les deux doivent néanmoins coïncider, sinon l'apporteur
+ * lit un montant et en paie un autre.
+ *
+ * `null` quand aucun devis n'a été calculé : il n'y a alors rien à payer.
+ */
+export function payableAmount(contract: ContractDetail) {
+  if (!contract.prime_rc_ass) {
+    return null;
+  }
+  // TTC = prime totale ASS (taxe, CEDEAO, fonds de garantie…) quand elle
+  // existe ; sinon le repli prime RC + coût de police, comme côté backend.
+  const primeTotale = contract.quote_breakdown?.prime_totale;
+  const ttc =
+    primeTotale && primeTotale > 0
+      ? primeTotale
+      : contract.prime_rc_ass + contract.cout_police_ass;
+  return Math.max(0, ttc - contract.cout_police_ass);
 }
 
 /* ── Compteurs du tableau de bord ────────────────────────────────────────── */
@@ -459,8 +531,18 @@ async function fetchOptions(path: string) {
   return data.results;
 }
 
-export function fetchVehicleCategories(contractType: string) {
-  return fetchOptions(`/referentials/vehicle-categories/?contract_type=${contractType}`);
+/**
+ * Catégories de véhicule. SANS filtre de type par défaut : le tri se fait sur
+ * les tags `contract_types` de chaque option, côté client, comme le web.
+ *
+ * La raison est dans les données : « Auto mono » doit proposer C5 (deux-roues),
+ * qui porte le tag `MOTO` et non `AUTO_MONO`. Demander au serveur les
+ * catégories d'`AUTO_MONO` renvoie sept entrées et laisse la moto invisible —
+ * c'est le défaut constaté le 03/09/2026.
+ */
+export function fetchVehicleCategories(contractType?: string) {
+  const query = contractType ? `?contract_type=${contractType}` : "";
+  return fetchOptions(`/referentials/vehicle-categories/${query}`);
 }
 
 export function fetchVehicleSubcategories(category: string) {
@@ -536,6 +618,19 @@ export async function updateContractDraft(draftId: number, payload: ContractDraf
  * que de l'API réelle : en mock, seuls `prime_rc_ass` et `policy_fee_ass` sont
  * garantis, d'où les champs optionnels.
  */
+/**
+ * Une ligne du devis d'une flotte : un véhicule, ou une remorque attelée à
+ * l'un d'eux. `request_id` est l'identifiant local envoyé dans le brouillon,
+ * ce qui permet de rattacher chaque prime au véhicule saisi.
+ */
+export type QuoteItem = {
+  request_id: string;
+  label: string;
+  prime_rc_ass: number;
+  kind: "VEHICLE" | "TRAILER";
+  tractor_vehicle_id?: string;
+};
+
 export type ContractQuote = {
   type: string;
   prime_rc_ass: number;
@@ -548,6 +643,8 @@ export type ContractQuote = {
   fonds_garantie?: number;
   cout_police?: number;
   prime_totale?: number;
+  /** Renseigné pour la flotte seulement : une entrée par véhicule et remorque. */
+  items?: QuoteItem[];
 };
 
 export async function calculateContractQuote(contractId: number) {
@@ -556,4 +653,92 @@ export async function calculateContractQuote(contractId: number) {
     internal_status: ContractInternalStatus;
     quote: ContractQuote;
   }>(`/contracts/${contractId}/quote/`, { method: "POST" });
+}
+
+/* ── Paiement Orange Money ───────────────────────────────────────────────── */
+
+export type OmPayment = {
+  id: number;
+  contract_id: number;
+  amount: number;
+  status: PaymentStatus;
+  method: "ORANGE_MONEY";
+  external_reference: string;
+  om_transaction_id: string;
+  confirmed_at: string | null;
+};
+
+/**
+ * Ce qu'Orange Money renvoie pour faire payer.
+ *
+ * `qr_code` est une image en data-URI, affichable telle quelle. `deep_links`
+ * associe un libellé d'application (« MAXIT », « OM ») à une URL qui l'ouvre
+ * directement sur le montant — c'est LE moyen de paiement du mobile, là où le
+ * web ne peut proposer qu'un code à scanner. `mock` signale l'environnement de
+ * démonstration, où la confirmation se simule toute seule.
+ */
+export type OmQrData = {
+  qr_code: string;
+  deep_links: Record<string, string>;
+  validity_seconds: number | null;
+  mock: boolean;
+};
+
+export type OmInitiateResult = {
+  payment: OmPayment;
+  contract_internal_status: ContractInternalStatus;
+  qr: OmQrData;
+};
+
+/**
+ * Ouvre une demande de paiement. Le montant est calculé par le backend, il
+ * n'est pas transmis : le client ne décide pas de ce qu'il doit.
+ *
+ * Toute demande précédente restée en attente sur ce contrat est annulée côté
+ * serveur — une seule est active à la fois.
+ */
+export async function initiateOmPayment(contractId: number) {
+  return fetchApi<OmInitiateResult>("/payments/om/initiate/", {
+    method: "POST",
+    body: JSON.stringify({ contract_id: contractId }),
+  });
+}
+
+/**
+ * Interroge Orange Money, qui fait foi. Le backend synchronise le paiement au
+ * passage : c'est cet appel, et non un quelconque état local, qui fait basculer
+ * le contrat en `PAID`.
+ */
+export async function getOmPaymentStatus(paymentId: number) {
+  return fetchApi<{
+    payment: OmPayment;
+    contract_internal_status: ContractInternalStatus;
+  }>(`/payments/om/${paymentId}/status/`);
+}
+
+/* ── Émission ────────────────────────────────────────────────────────────── */
+
+export type IssueResult = {
+  contract_id: number;
+  internal_status: "ISSUED";
+  ass_status: "VALIDE";
+  reference_trx_partner: string;
+  reference_externe: string;
+  attestation_number: string;
+  date_expiration: string | null;
+  link_attestation_digitale: string;
+  link_attestation_cedeao: string;
+};
+
+/**
+ * Demande l'attestation à ASS. Le contrat doit être payé — le backend le
+ * vérifie, et refuse en 400 sinon.
+ *
+ * Opération engageante : elle consomme une attestation du stock ASS. À
+ * n'appeler qu'une fois, sur action explicite.
+ */
+export async function issueContract(contractId: number) {
+  return fetchApi<IssueResult>(`/contracts/${contractId}/issue/`, {
+    method: "POST",
+  });
 }

@@ -1,5 +1,5 @@
-import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -57,22 +57,27 @@ export default function CommissionsScreen() {
   const [status, setStatus] = useState<CommissionStatus | "">("");
 
   const load = useCallback(async () => {
-    setError(null);
     try {
       const response = await listCommissionSnapshots({ page_size: 50 });
       setSnapshots(response.results);
+      setError(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Chargement impossible.");
       setSnapshots([]);
     }
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      await load();
-      setLoading(false);
-    })();
-  }, [load]);
+  // Au retour sur l'onglet : une commission naît à l'ÉMISSION d'un contrat,
+  // qui se fait désormais depuis le téléphone. Chargée une seule fois au
+  // montage, la liste ignorait celle que l'apporteur venait de créer.
+  useFocusEffect(
+    useCallback(() => {
+      void (async () => {
+        await load();
+        setLoading(false);
+      })();
+    }, [load])
+  );
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);

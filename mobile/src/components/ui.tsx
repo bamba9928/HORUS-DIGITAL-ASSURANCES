@@ -167,6 +167,59 @@ export function MetricCard({
   return <View style={[styles.metric, width]}>{content}</View>;
 }
 
+/* ── Bouton d'action ─────────────────────────────────────────────────────── */
+
+/**
+ * Action pleine largeur d'un panneau — payer, émettre, calculer.
+ *
+ * Distinct de `PrimaryButton` (`components/form.tsx`), qui porte un `flexGrow`
+ * pensé pour une RANGÉE de boutons : empilé dans une colonne, ce `flexGrow`
+ * s'applique à la hauteur et étire le bouton sur tout l'espace libre.
+ */
+export function ActionButton({
+  disabled = false,
+  icon,
+  label,
+  loading = false,
+  onPress,
+  tone = "primary",
+}: {
+  disabled?: boolean;
+  icon: FeatherName;
+  label: string;
+  loading?: boolean;
+  onPress: () => void;
+  tone?: "primary" | "neutral";
+}) {
+  const neutral = tone === "neutral";
+  const inactive = disabled || loading;
+  const foreground = inactive ? colors.textFaint : neutral ? colors.textStrong : "#ffffff";
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled: inactive }}
+      disabled={inactive}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.action,
+        neutral && styles.actionNeutral,
+        inactive && styles.actionDisabled,
+        pressed && !inactive && styles.actionPressed,
+      ]}
+    >
+      {loading ? (
+        <ActivityIndicator color={neutral ? colors.primary : "#ffffff"} />
+      ) : (
+        <>
+          <Feather color={foreground} name={icon} size={15} />
+          <Text style={[styles.actionLabel, { color: foreground }]}>{label}</Text>
+        </>
+      )}
+    </Pressable>
+  );
+}
+
 /* ── Section en carte ────────────────────────────────────────────────────── */
 
 export function Section({
@@ -241,6 +294,25 @@ export function ErrorBanner({ message }: { message: string }) {
 }
 
 const styles = StyleSheet.create({
+  action: {
+    alignItems: "center",
+    alignSelf: "stretch",
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    flexDirection: "row",
+    gap: spacing.sm,
+    height: 48,
+    justifyContent: "center",
+    paddingHorizontal: spacing.lg,
+  },
+  actionDisabled: { backgroundColor: colors.muted, borderColor: colors.border },
+  actionLabel: { fontSize: 14, fontWeight: "800" },
+  actionNeutral: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+  },
+  actionPressed: { opacity: 0.85 },
   empty: { alignItems: "center", paddingHorizontal: spacing.xl, paddingTop: spacing.xxl },
   emptyIcon: {
     alignItems: "center",

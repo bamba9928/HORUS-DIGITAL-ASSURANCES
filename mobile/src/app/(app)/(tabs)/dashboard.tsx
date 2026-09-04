@@ -1,6 +1,6 @@
 import Feather from "@expo/vector-icons/Feather";
-import { useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import {
   Pressable,
   RefreshControl,
@@ -55,18 +55,28 @@ export default function DashboardScreen() {
 
   const [period, setPeriod] = useState<FinancialPeriod>("month");
   const [financial, setFinancial] = useState<FinancialSummary | null>(null);
-  const [financialError, setFinancialError] = useState<string | null>(null);
-  const [financialLoading, setFinancialLoading] = useState(true);
+  // L'erreur porte SA période. Sans elle, un échec sur « Cette année » restait
+  // affiché sous les chiffres du mois après retour en arrière, et la période en
+  // cours passait pour cassée alors qu'elle venait d'aboutir.
+  const [financialError, setFinancialError] = useState<{
+    period: FinancialPeriod;
+    message: string;
+  } | null>(null);
 
   const [recent, setRecent] = useState<ContractListItem[]>([]);
   const [recentError, setRecentError] = useState<string | null>(null);
 
   const [refreshing, setRefreshing] = useState(false);
 
+  // Les trois chargeurs n'écrivent qu'APRÈS leur `await`. Remettre l'erreur à
+  // zéro d'entrée les rendait synchrones, donc appelées depuis un effet elles
+  // déclenchaient un rendu avant même que la requête ne parte. L'erreur s'efface
+  // au succès : elle reste lisible pendant tout le rechargement au lieu de
+  // clignoter.
   const loadSummary = useCallback(async () => {
-    setSummaryError(null);
     try {
       setSummary(await fetchContractSummary());
+      setSummaryError(null);
     } catch (caught) {
       setSummaryError(
         caught instanceof Error ? caught.message : "Compteurs indisponibles."
@@ -75,12 +85,12 @@ export default function DashboardScreen() {
   }, []);
 
   const loadRecent = useCallback(async () => {
-    setRecentError(null);
     try {
       // La liste arrive déjà triée par `-updated_at` côté backend : les cinq
       // premiers SONT les cinq derniers mouvements, rien à retrier ici.
       const response = await listContracts({ page_size: 5 });
       setRecent(response.results);
+      setRecentError(null);
     } catch (caught) {
       setRecentError(
         caught instanceof Error ? caught.message : "Contrats indisponibles."
@@ -89,29 +99,42 @@ export default function DashboardScreen() {
   }, []);
 
   const loadFinancial = useCallback(async (target: FinancialPeriod) => {
-    setFinancialLoading(true);
-    setFinancialError(null);
     try {
       setFinancial(await fetchFinancialSummary(target));
+      setFinancialError((current) => (current?.period === target ? null : current));
     } catch (caught) {
-      setFinancialError(
-        caught instanceof Error ? caught.message : "Statistiques indisponibles."
-      );
-    } finally {
-      setFinancialLoading(false);
+      setFinancialError({
+        period: target,
+        message:
+          caught instanceof Error ? caught.message : "Statistiques indisponibles.",
+      });
     }
   }, []);
 
-  useEffect(() => {
-    void loadSummary();
-    void loadRecent();
-  }, [loadSummary, loadRecent]);
+  // Au RETOUR sur l'onglet, pas seulement au montage : émettre un contrat
+  // depuis sa fiche déplace les compteurs — un devis prêt de moins, un émis de
+  // plus — et l'onglet resté monté affichait encore les chiffres d'avant.
+  //
+  // Les deux requêtes partent ensemble : sur un réseau sénégalais en 3G, les
+  // enchaîner doublerait le temps d'affichage.
+  useFocusEffect(
+    useCallback(() => {
+      void (async () => {
+        await Promise.all([loadSummary(), loadRecent()]);
+      })();
+    }, [loadSummary, loadRecent])
+  );
 
-  // Recharge au changement de période seulement : les compteurs de production
-  // ne dépendent pas de la période, les redemander serait du réseau gâché.
-  useEffect(() => {
-    void loadFinancial(period);
-  }, [loadFinancial, period]);
+  // Séparé : la période ne concerne que ce bloc, et les compteurs de production
+  // n'en dépendent pas — les redemander à chaque changement de période serait
+  // du réseau gâché.
+  useFocusEffect(
+    useCallback(() => {
+      void (async () => {
+        await loadFinancial(period);
+      })();
+    }, [loadFinancial, period])
+  );
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -120,6 +143,17 @@ export default function DashboardScreen() {
   }, [loadSummary, loadRecent, loadFinancial, period]);
 
   const loadingSummary = summary === null && summaryError === null;
+
+  // « En chargement » se LIT dans les données : la réponse porte sa période
+  // (`FinancialSummary.period`), donc tant qu'elle ne correspond pas à celle qui
+  // est sélectionnée, les chiffres à l'écran sont ceux d'avant. Un booléen
+  // d'état posé depuis un effet dirait la même chose au prix d'un rendu de plus,
+  // et resterait coincé à `true` le jour où un chemin d'erreur oublierait de le
+  // rabaisser.
+  const financialLoading =
+    financial?.period !== period && financialError?.period !== period;
+  const financialMessage =
+    financialError?.period === period ? financialError.message : null;
 
   return (
     <ScrollView
@@ -213,7 +247,7 @@ export default function DashboardScreen() {
           })}
         </View>
       </View>
-      {financialError ? <ErrorBanner message={financialError} /> : null}
+      {financialMessage ? <ErrorBanner message={financialMessage} /> : null}
       <View style={styles.grid}>
         <MetricCard
           icon="dollar-sign"
@@ -255,21 +289,6 @@ export default function DashboardScreen() {
 }
 
 /**
- * Compteur de navigations vers la liste.
- *
- * Un onglet reste monté : renvoyer DEUX FOIS vers la même fenêtre d'échéance
- * pousse exactement les mêmes paramètres, l'effet qui les applique là-bas ne se
- * redéclenche pas, et la liste garde le filtre que l'utilisateur avait changé
- * entre-temps à la main. Constaté sur appareil le 30/08/2026 : « D'ici 30 j »,
- * puis « Toutes » sur la liste, puis « D'ici 30 j » à nouveau — la liste restait
- * sur « Toutes ».
- *
- * Ce compteur rend chaque poussée distincte. Hors état React exprès : il ne
- * doit rien redessiner, seulement changer la valeur du paramètre.
- */
-let navigationTicket = 0;
-
-/**
  * Échéances. Les trois compteurs du backend sont CUMULATIFS : un contrat qui
  * expire dans 20 jours est compté dans « 30 j » et dans « 60 j ». Les libellés
  * disent donc « d'ici 30 jours », pas « entre 30 et 60 jours » — l'inverse
@@ -305,10 +324,7 @@ function ExpirationBlock({
             onPress={() =>
               router.push({
                 pathname: "/contracts",
-                params: {
-                  expiration: window.target,
-                  ticket: String((navigationTicket += 1)),
-                },
+                params: { expiration: window.target },
               })
             }
             // Une fenêtre vide n'a rien d'alarmant : pas de rouge sur un zéro.

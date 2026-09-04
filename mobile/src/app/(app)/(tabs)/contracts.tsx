@@ -1,5 +1,5 @@
 import Feather from "@expo/vector-icons/Feather";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -58,9 +58,8 @@ export default function ContractsScreen() {
   // Le tableau de bord renvoie ici avec une fenêtre d'échéance déjà choisie
   // (« 4 expirés » → la liste des 4). Sans ce paramètre, il faudrait refaire le
   // filtre à la main juste après l'avoir vu affiché.
-  const { expiration: expirationParam, ticket } = useLocalSearchParams<{
+  const { expiration: expirationParam } = useLocalSearchParams<{
     expiration?: string;
-    ticket?: string;
   }>();
   // Sans cette marge, la barre d'onglets recouvre la dernière carte : elle
   // reste tactile mais devient illisible.
@@ -74,27 +73,32 @@ export default function ContractsScreen() {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<ContractInternalStatus | "">("");
-  const [expiration, setExpiration] = useState<ExpirationWindow | "">(
-    isExpirationWindow(expirationParam) ? expirationParam : ""
-  );
 
-  // Un onglet reste monté une fois visité : sans cette synchronisation, le
-  // deuxième aller-retour depuis le tableau de bord (« expirés », puis « 30 j »)
-  // rouvrirait la liste sur le filtre du premier. La valeur initiale ci-dessus
-  // ne couvre que la toute première visite.
-  //
-  // `ticket` change à CHAQUE poussée du tableau de bord, même vers la même
-  // fenêtre. Sans lui, revenir deux fois de suite sur « D'ici 30 j » laissait la
-  // liste sur le filtre que l'utilisateur avait changé entre les deux : les
-  // paramètres étant identiques, l'effet ne se redéclenchait pas.
-  //
-  // Ne dépend QUE des paramètres de route : un filtre choisi à la main sur cet
-  // écran ne déclenche rien et n'est donc jamais écrasé.
-  useEffect(() => {
-    if (isExpirationWindow(expirationParam)) {
-      setExpiration(expirationParam);
-    }
-  }, [expirationParam, ticket]);
+  /**
+   * La fenêtre d'échéance N'EST PAS un état : c'est le paramètre de route, lu
+   * tel quel, et les puces l'écrivent au même endroit.
+   *
+   * Un onglet reste monté une fois visité. Tant que le paramètre était recopié
+   * dans un état, il fallait le resynchroniser à chaque poussée du tableau de
+   * bord — et comme deux poussées vers la même fenêtre portent des paramètres
+   * identiques, la synchronisation ne se redéclenchait pas : « D'ici 30 j »,
+   * puis « Toutes » ici, puis « D'ici 30 j » à nouveau laissait la liste sur
+   * « Toutes » (constaté sur appareil le 30/08/2026). Un compteur de navigation
+   * glissé dans les paramètres masquait le symptôme.
+   *
+   * Avec une seule source de vérité, le problème disparaît au lieu d'être
+   * contourné : choisir « Toutes » écrit `expiration=""` dans la route, la
+   * poussée suivante y écrit `30`, la valeur change donc bel et bien.
+   */
+  const expiration: ExpirationWindow | "" = isExpirationWindow(expirationParam)
+    ? expirationParam
+    : "";
+  const setExpiration = useCallback(
+    (value: ExpirationWindow | "") => {
+      router.setParams({ expiration: value });
+    },
+    [router]
+  );
 
   // La recherche part au repos de la frappe, pas à chaque caractère : sur un
   // réseau mobile, une requête par lettre sature la liaison et fait clignoter
@@ -105,7 +109,6 @@ export default function ContractsScreen() {
   }, [search]);
 
   const load = useCallback(async () => {
-    setError(null);
     try {
       // Le backend filtre déjà selon le rôle (get_contract_queryset_for_user) :
       // un apporteur ne voit que les siens. Rien à cloisonner côté client, et
@@ -117,18 +120,34 @@ export default function ContractsScreen() {
         expiration,
       });
       setContracts(response.results);
+      setError(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Chargement impossible.");
       setContracts([]);
     }
   }, [query, status, expiration]);
 
-  useEffect(() => {
-    (async () => {
-      await load();
-      setLoading(false);
-    })();
-  }, [load]);
+  /**
+   * Rechargement au RETOUR sur l'écran, et pas seulement au montage.
+   *
+   * Un onglet reste monté une fois visité. Sans ça, payer puis émettre un
+   * contrat depuis sa fiche laissait la liste sur l'état d'avant : « Devis
+   * prêt » affiché sous un dossier qui venait d'être émis, jusqu'à ce que
+   * l'apporteur pense à tirer pour rafraîchir. Constaté sur appareil le
+   * 02/09/2026, juste après avoir branché le paiement.
+   *
+   * `useFocusEffect` couvre les deux déclencheurs : il se rejoue au retour au
+   * premier plan ET quand `load` change, c'est-à-dire à chaque changement de
+   * filtre ou de recherche.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      void (async () => {
+        await load();
+        setLoading(false);
+      })();
+    }, [load])
+  );
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);

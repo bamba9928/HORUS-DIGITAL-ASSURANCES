@@ -22,6 +22,15 @@ export function formatDate(value: string | null | undefined) {
   if (!value) {
     return "—";
   }
+  // Une date SEULE (« 2026-10-01 », ce que rend `effect_date`) est lue en UTC
+  // par `new Date` : à l'ouest de Greenwich elle reculerait d'un jour à
+  // l'affichage. Le Sénégal est à UTC+0, donc invisible ici — et c'est
+  // précisément ce qui en ferait un défaut découvert ailleurs, longtemps après.
+  // Même parade que le web (`formatDate`, contracts/[id]/page.tsx).
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (dateOnly) {
+    return `${dateOnly[3]}/${dateOnly[2]}/${dateOnly[1]}`;
+  }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return value;
@@ -205,4 +214,62 @@ export function assStatusLabel(status: string | null | undefined) {
     return "—";
   }
   return ASS_STATUS_LABELS[status] ?? status;
+}
+
+/**
+ * Fin de couverture : date d'effet + durée − UN JOUR.
+ *
+ * Miroir exact de `calculate_expiration_date` (`backend/contracts/services.py`),
+ * qui est la date que le backend envoie à ASS à l'émission. Le « moins un jour »
+ * n'est pas un détail : un contrat de douze mois pris le 1er octobre 2026 couvre
+ * jusqu'au 30 septembre 2027, pas jusqu'au 1er octobre. Un jour d'écart affiché
+ * ici, et l'apporteur annonce au client une couverture qu'il n'a pas.
+ *
+ * ⚠️ C'est une PRÉVISION, pas la vérité. Après émission, la date qui fait foi
+ * est celle qu'ASS renvoie et que le contrat stocke (`date_expiration`) : c'est
+ * elle qu'affiche la fiche. Les deux coïncident normalement ; si elles
+ * divergent, c'est ASS qui a raison.
+ *
+ * Rend "" si la saisie est incomplète — il n'y a alors rien à annoncer.
+ */
+export function coverageEndIso(
+  effectIsoDate: string,
+  duration: string,
+  periodicity: string
+) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(effectIsoDate);
+  const count = Number(duration);
+  if (!match || !Number.isInteger(count) || count <= 0) {
+    return "";
+  }
+  const [, year, month, day] = match.map(Number);
+
+  // Construction composante par composante : `new Date("2026-10-01")` serait lu
+  // en UTC et rendrait le 30 septembre à l'ouest de Greenwich.
+  const end =
+    periodicity === "JOUR"
+      ? new Date(year, month - 1, day + count - 1)
+      : endOfMonthSpan(year, month, day, count);
+
+  if (Number.isNaN(end.getTime())) {
+    return "";
+  }
+  const endMonth = String(end.getMonth() + 1).padStart(2, "0");
+  const endDay = String(end.getDate()).padStart(2, "0");
+  return `${end.getFullYear()}-${endMonth}-${endDay}`;
+}
+
+/**
+ * `add_months` du backend, puis un jour de moins.
+ *
+ * Le jour est ramené au dernier du mois d'arrivée quand il n'existe pas : un an
+ * après le 29 février tombe le 28.
+ */
+function endOfMonthSpan(year: number, month: number, day: number, months: number) {
+  const shifted = month - 1 + months;
+  const endYear = year + Math.floor(shifted / 12);
+  const endMonth = (shifted % 12) + 1;
+  // Jour 0 du mois suivant = dernier jour du mois visé.
+  const lastDay = new Date(endYear, endMonth, 0).getDate();
+  return new Date(endYear, endMonth - 1, Math.min(day, lastDay) - 1);
 }
