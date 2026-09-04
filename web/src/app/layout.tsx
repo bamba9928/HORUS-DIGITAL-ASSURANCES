@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { AuthProvider } from "@/components/AuthProvider";
+import { InstallPrompt } from "@/components/InstallPrompt";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 import { ToastProvider } from "@/components/ToastProvider";
 import "./globals.css";
@@ -61,6 +62,7 @@ export default function RootLayout({
           <AuthProvider>{children}</AuthProvider>
         </ToastProvider>
         <ServiceWorkerRegistration />
+        <InstallPrompt />
       </body>
     </html>
   );
