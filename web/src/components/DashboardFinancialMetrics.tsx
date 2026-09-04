@@ -53,13 +53,15 @@ export function DashboardFinancialMetrics() {
   return (
     <div>
       <div className="mb-2.5 flex items-center justify-between gap-2">
-        <h2 className="text-[12.5px] font-black uppercase tracking-[0.05em] text-muted-fg">
+        {/* Le titre cède l'espace en premier : à 375 px le groupe de pastilles
+            manquait de 7 px et les trois libellés passaient sur deux lignes. */}
+        <h2 className="min-w-0 truncate text-[12.5px] font-black uppercase tracking-[0.05em] text-muted-fg">
           Activité financière
         </h2>
-        <div className="flex gap-1">
+        <div className="flex shrink-0 gap-1">
           {periods.map((p) => (
             <button
-              className={`rounded-full px-2.5 py-1 text-[12px] font-bold transition ${
+              className={`whitespace-nowrap rounded-full px-2 py-1 text-[12px] font-bold transition sm:px-2.5 ${
                 period === p.value
                   ? "bg-primary text-white shadow-sm shadow-primary/25"
                   : "bg-muted text-muted-fg hover:bg-border"

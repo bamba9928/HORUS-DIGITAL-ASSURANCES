@@ -241,7 +241,7 @@ export default function ContractsPage() {
           {/* ── Filter bar ─────────────────────────────────── */}
           <div className="space-y-3 border-b border-border px-4 pb-3 pt-4">
             {/* Row 1: search + type + refresh */}
-            <div className="grid gap-2 md:grid-cols-[1fr_auto_auto_auto]">
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-2 md:grid-cols-[1fr_auto_auto_auto]">
               <div className="relative">
                 <Search
                   className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/30"

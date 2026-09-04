@@ -116,7 +116,7 @@ export default function ConfigPage() {
           />
         </div>
 
-        <div className="grid items-start gap-5 lg:grid-cols-[1fr_320px]">
+        <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 lg:grid-cols-[1fr_320px]">
           {/* ── Colonne principale ────────────────────────────── */}
           <div className="space-y-5">
             {/* ASS */}

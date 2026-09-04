@@ -68,7 +68,15 @@ table, .tabular, input[type="number"] { font-variant-numeric: tabular-nums; }
 
 h1, h2, h3, h4 { letter-spacing: -0.021em; }
 
-button, a, input, select, textarea { font: inherit; }
+/* Normalisation de la police des contrôles de formulaire.
+   DOIT rester dans `@layer base` : hors couche, cette règle l'emporterait sur
+   TOUTES les utilitaires Tailwind (les règles sans couche battent les règles en
+   couche, quelle que soit la spécificité). Les `text-*` posés sur les <button>
+   et les <a> étaient alors ignorés et tout retombait à 16 px — barre de
+   navigation basse, pastilles de période, liens d'action, badges. */
+@layer base {
+  button, a, input, select, textarea { font: inherit; }
+}
 button, a { -webkit-tap-highlight-color: transparent; }
 
 button:focus-visible,
@@ -444,6 +452,17 @@ select.app-field:disabled {
   .app-table-responsive td > * {
     grid-column: 2;
     justify-self: end;
+    max-width: 100%;
+  }
+  /* Les plafonds `max-w-*` sont calibrés pour les colonnes étroites du tableau.
+     En mode carte la valeur dispose de toute la largeur restante : sans ceci,
+     « MOUHAMADOU BAMBA DIENG » restait tronqué à 160 px alors que ~209 px
+     étaient libres. Les libellés sont imbriqués (td > div > div > p), d'où le
+     ciblage par classe plutôt que par enfant direct. */
+  .app-table-responsive td .cell-main,
+  .app-table-responsive td .cell-sub,
+  .app-table-responsive td .cell-mono {
+    max-width: 100%;
   }
   /* La première cellule sert de titre de fiche : pas de libellé redondant,
      et tout le contenu revient à gauche (une seule colonne). */

@@ -176,7 +176,7 @@ export default function AssIntegrationPage() {
               />
             </div>
 
-            <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
               {/* ── Colonne gauche ───────────────────────────── */}
               <div className="space-y-5">
                 {/* État du service */}

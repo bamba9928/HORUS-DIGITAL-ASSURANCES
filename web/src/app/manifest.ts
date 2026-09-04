@@ -25,6 +25,13 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: "#f5f6f9",
     theme_color: "#ffffff",
     categories: ["business", "finance", "productivity"],
+    // Permet à `navigator.getInstalledRelatedApps()` de nous reconnaître : sans
+    // cette déclaration, le navigateur ne sait pas dire à la page que l'app est
+    // déjà installée, et l'invitation à installer réapparaît (voir InstallPrompt).
+    prefer_related_applications: false,
+    related_applications: [
+      { platform: "webapp", url: "https://horus-assur.digital/manifest.webmanifest" },
+    ],
     icons: [
       { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },

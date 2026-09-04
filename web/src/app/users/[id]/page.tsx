@@ -249,7 +249,7 @@ export default function UserDetailPage() {
             ) : null}
 
             {/* ── Grid principal ───────────────────────────────── */}
-            <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
               {/* Contrats récents */}
               <section className="app-surface overflow-hidden">
                 <div className="flex items-center justify-between border-b border-border px-5 py-3.5">

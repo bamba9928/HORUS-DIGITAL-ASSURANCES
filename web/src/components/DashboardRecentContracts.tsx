@@ -147,7 +147,7 @@ export function DashboardRecentContracts() {
           title="Derniers contrats"
         />
 
-        <div className="mt-4 grid gap-2 lg:grid-cols-[minmax(240px,1fr)_190px_190px_auto]">
+        <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-2 lg:grid-cols-[minmax(240px,1fr)_190px_190px_auto]">
           <div className="relative">
             <Search
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/30"

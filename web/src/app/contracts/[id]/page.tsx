@@ -459,7 +459,7 @@ export default function ContractDetailPage() {
             </section>
 
             {/* ── Main grid ──────────────────────────────────────── */}
-            <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+            <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
               {/* Left column */}
               <div className="space-y-5">
                 <DraftDetailsPanel contract={contract} />

@@ -115,7 +115,11 @@ export function MetricCard({
           <span className="skeleton mt-2.5 block h-[25px] w-24 rounded-md sm:h-[27px]" />
         ) : (
           <p
-            className={`mt-2.5 truncate text-[23px] font-black leading-none tracking-[-0.03em] tabular sm:text-[26px] ${cfg.value || "text-strong"}`}
+            // Taille fluide sous `sm` : les cartes sont en 2 colonnes dès 375 px
+            // (~137 px utiles) et un montant FCFA à 6 chiffres débordait à 23 px,
+            // tronqué en « 325 660 F… » — un montant illisible. Le `clamp` couvre
+            // jusqu'à ~8 chiffres ; `truncate` ne reste qu'un filet de sécurité.
+            className={`mt-2.5 truncate text-[clamp(15px,4.6vw,23px)] font-black leading-none tracking-[-0.03em] tabular sm:text-[26px] ${cfg.value || "text-strong"}`}
             title={String(value)}
           >
             {value}
