@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Hors ligne · Horus Assur</title>
+    <style>
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: #f5f6f9;
+        color: #0d0f17;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-weight: 500;
+        letter-spacing: -0.013em;
+      }
+      .card {
+        width: 100%;
+        max-width: 380px;
+        text-align: center;
+        background: #fff;
+        border: 1px solid #e2e5ee;
+        border-radius: 16px;
+        box-shadow: 0 10px 20px -3px rgba(0, 0, 0, 0.09), 0 4px 8px -4px rgba(0, 0, 0, 0.06);
+        padding: 32px 28px;
+      }
+      .logo {
+        width: 56px;
+        height: 56px;
+        margin: 0 auto 18px;
+        border-radius: 14px;
+        display: block;
+        box-shadow: 0 4px 10px -2px rgba(0, 0, 0, 0.18);
+      }
+      h1 { margin: 0 0 8px; font-size: 18px; letter-spacing: -0.021em; }
+      p { margin: 0 0 20px; font-size: 14px; color: #565c70; line-height: 1.5; }
+      button {
+        appearance: none;
+        border: 0;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 800;
+        color: #fff;
+        background: linear-gradient(160deg, #9600c0, #7800a0);
+        border-radius: 10px;
+        padding: 12px 22px;
+        box-shadow: 0 4px 12px -2px rgba(150, 0, 192, 0.35);
+      }
+      button:active { transform: scale(0.98); }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <img class="logo" src="/icons/icon-192.png" alt="Horus Assur" />
+      <h1>Vous êtes hors ligne</h1>
+      <p>
+        Impossible de joindre Horus Assurances Digital. Vérifiez votre connexion,
+        puis réessayez.
+      </p>
+      <button type="button" onclick="location.reload()">Réessayer</button>
+    </div>
+  </body>
+</html>
