@@ -449,6 +449,39 @@ Cette ligne n'est atteignable qu'**après** le contrôle `Authorization: Basic` 
 la clé enregistrée chez Sonatel correspond à celle qu'Orange renvoie. Le 202 sur
 référence inconnue est le comportement voulu — un 4xx aurait valu rejet définitif.
 
+## Lien partageable — `shareLink` (2026-09-09)
+
+Orange documente `shortLink` comme *« Shortened URL pointing at the payment
+page »*. **En production il revient systématiquement vide** — vérifié sur trois
+demandes réelles. Le champ était de toute façon jeté par la vue : l'apporteur
+n'avait aucun lien à envoyer, il ne pouvait que faire scanner l'écran de son
+propre téléphone.
+
+`_normalize_qrcode` calcule désormais un champ `shareLink`, exposé au front sous
+`qr.share_link`, avec cette précédence :
+
+1. `shortLink` d'Orange, s'il est fourni ;
+2. sinon `deepLink` — une URL `https://sugu.orange-sonatel.com/mp/<qrId>`
+   parfaitement ordinaire, qui ouvre la même page de paiement ;
+3. sinon le premier des `deepLinks` ;
+4. sinon chaîne vide, et le front n'affiche rien.
+
+Vérifié contre l'API réelle :
+
+```
+shortLink brut : ''
+deepLink       : https://sugu.orange-sonatel.com/mp/dmeKfXQj-2eij1gkRGGO
+shareLink      : 'https://sugu.orange-sonatel.com/mp/dmeKfXQj-2eij1gkRGGO'
+```
+
+Le **mock passe par la même normalisation** : sans cela il aurait exposé une
+forme différente et le front aurait divergé entre développement et production.
+
+Côté interface : bouton *« Copier le lien à envoyer au client »* sur le web
+(avec repli affichant l'URL en clair si le presse-papiers est refusé), et
+*« Envoyer le lien au client »* sur mobile, qui ouvre la feuille de partage
+native — WhatsApp, SMS, etc.
+
 ## Ce qu'il reste à faire
 
 1. ~~Coller les clés du bloc « Clé API de test » dans `backend/.env`~~ — fait le

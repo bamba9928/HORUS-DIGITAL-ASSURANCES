@@ -327,7 +327,14 @@ def test_qrcode_normalization_leaves_data_uri_untouched():
         "qrCode": "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=",
         "deepLinks": {"OM": "x"},
     }
-    assert OmClient._normalize_qrcode(dict(already)) == already
+
+    normalized = OmClient._normalize_qrcode(dict(already))
+
+    # Un data-URI n'est pas re-prefixe, et les liens existants sont conserves.
+    assert normalized["qrCode"] == already["qrCode"]
+    assert normalized["deepLinks"] == already["deepLinks"]
+    # La normalisation enrichit en revanche la charge utile du lien partageable.
+    assert normalized["shareLink"] == "x"
 
 
 @pytest.mark.parametrize("om_status", ["CANCELLED", "FAILED", "REJECTED"])
@@ -787,3 +794,66 @@ def test_initiate_refuses_an_amount_below_the_orange_minimum(settings):
     assert response.status_code == 400
     assert "minimum Orange Money" in response.data["detail"]
     assert not Payment.objects.filter(contract=contract).exists()
+
+
+# ─── Lien partageable (shortLink) ─────────────────────────────────────────────
+
+
+def test_share_link_prefers_the_orange_short_link():
+    from integrations.orange_money.client import OmClient
+
+    normalized = OmClient._normalize_qrcode(
+        {
+            "qrCode": "iVBORw0KGgo=",
+            "shortLink": "https://s.orange-sonatel.com/aBc123",
+            "deepLink": "https://sugu.orange-sonatel.com/mp/dmejytnd",
+        }
+    )
+
+    assert normalized["shareLink"] == "https://s.orange-sonatel.com/aBc123"
+
+
+def test_share_link_falls_back_to_the_deeplink_when_short_link_is_empty():
+    """Cas REEL : Orange renvoie `shortLink` vide (constate le 2026-09-09).
+
+    Le deeplink est une URL https ordinaire pointant la meme page de paiement :
+    sans ce repli, l'apporteur n'aurait aucun lien a envoyer a son client.
+    """
+    from integrations.orange_money.client import OmClient
+
+    normalized = OmClient._normalize_qrcode(
+        {
+            "qrCode": "iVBORw0KGgo=",
+            "shortLink": "",
+            "deepLink": "https://sugu.orange-sonatel.com/mp/dmejytndaPZy6yAej7An",
+        }
+    )
+
+    assert normalized["shareLink"] == "https://sugu.orange-sonatel.com/mp/dmejytndaPZy6yAej7An"
+
+
+def test_share_link_falls_back_to_the_first_deep_link():
+    from integrations.orange_money.client import OmClient
+
+    normalized = OmClient._normalize_qrcode(
+        {"qrCode": "iVBORw0KGgo=", "deepLinks": {"MAXIT": "https://sugu.example/mp/x"}}
+    )
+
+    assert normalized["shareLink"] == "https://sugu.example/mp/x"
+
+
+def test_share_link_is_empty_when_orange_provides_no_link():
+    from integrations.orange_money.client import OmClient
+
+    assert OmClient._normalize_qrcode({"qrCode": "iVBORw0KGgo="})["shareLink"] == ""
+
+
+def test_initiate_exposes_the_share_link_to_the_front(settings):
+    """Le mock passe par la meme normalisation : meme forme qu'en production."""
+    settings.OM_MOCK_ENABLED = True
+    client, contributor = make_contributor()
+    contract = create_quote_ready_contract(contributor)
+
+    qr = initiate(client, contract).data["qr"]
+
+    assert qr["share_link"] == qr["deep_links"]["MAXIT"]

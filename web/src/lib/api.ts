@@ -873,6 +873,12 @@ export type OmPayment = {
 export type OmQrData = {
   qr_code: string;
   deep_links: Record<string, string>;
+  /**
+   * Lien à transmettre au payeur qui n'est pas devant l'écran. Le `shortLink`
+   * d'Orange quand il est fourni — vide en production au 2026-09-09 —, sinon le
+   * deeplink, qui pointe la même page de paiement. Chaîne vide si aucun des deux.
+   */
+  share_link: string;
   validity_seconds: number | null;
   mock: boolean;
 };

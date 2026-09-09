@@ -24,6 +24,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -180,6 +181,20 @@ export function OmPaymentSheet({
   const expired = secondsLeft !== null && secondsLeft <= 0;
   const canRetry = !initiating && (failed || expired || (Boolean(error) && !data));
   const links = Object.entries(data?.qr.deep_links ?? {});
+  // Lien a transmettre quand le payeur n'est pas la : l'apporteur l'envoie par
+  // WhatsApp ou SMS au lieu de faire scanner l'ecran de son propre telephone.
+  const shareUrl = data?.qr.share_link ?? "";
+
+  async function sharePaymentLink() {
+    if (!shareUrl) {
+      return;
+    }
+    try {
+      await Share.share({ message: shareUrl });
+    } catch {
+      // Feuille de partage annulee ou indisponible : rien a signaler.
+    }
+  }
 
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible>
@@ -247,6 +262,19 @@ export function OmPaymentSheet({
                       </Pressable>
                     ))}
                   </View>
+                ) : null}
+
+                {shareUrl ? (
+                  <Pressable
+                    onPress={sharePaymentLink}
+                    style={({ pressed }) => [
+                      styles.shareButton,
+                      pressed && styles.linkButtonPressed,
+                    ]}
+                  >
+                    <Feather color={colors.textMuted} name="share-2" size={14} />
+                    <Text style={styles.shareLabel}>{"Envoyer le lien au client"}</Text>
+                  </Pressable>
                 ) : null}
 
                 {/* L'état du paiement passe AVANT le code à scanner.
@@ -368,6 +396,18 @@ const styles = StyleSheet.create({
   linkButtonPressed: { opacity: 0.85 },
   linkLabel: { color: "#ffffff", fontSize: 15, fontWeight: "800" },
   links: { gap: spacing.sm, marginTop: spacing.lg },
+  shareButton: {
+    alignItems: "center",
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    height: 44,
+    justifyContent: "center",
+    marginTop: spacing.sm,
+  },
+  shareLabel: { color: colors.textMuted, fontSize: 14, fontWeight: "700" },
   loading: { alignItems: "center", paddingVertical: spacing.xxl },
   mock: {
     backgroundColor: colors.warningBg,

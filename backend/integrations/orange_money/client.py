@@ -58,7 +58,12 @@ class OmClient:
     def create_payment_qrcode(self, *, amount, reference, client_label=""):
         """Crée une demande de paiement marchand (QR + deeplinks MAXIT/OM)."""
         if settings.OM_MOCK_ENABLED:
-            return self._mock_qrcode_response(amount=amount, reference=reference)
+            # Meme normalisation que la reponse reelle : sans quoi le mock
+            # exposerait une forme differente et le front divergerait entre
+            # developpement et production.
+            return self._normalize_qrcode(
+                self._mock_qrcode_response(amount=amount, reference=reference)
+            )
 
         if not settings.OM_MERCHANT_CODE:
             raise OmConfigurationError("OM_MERCHANT_CODE manquant (voir .env).")
@@ -105,6 +110,17 @@ class OmClient:
             data["qrCode"] = f"data:image/png;base64,{qr_code}"
         if not data.get("deepLinks") and data.get("deepLink"):
             data["deepLinks"] = {"MAXIT": data["deepLink"]}
+        # Lien partageable : ce qu'on envoie au payeur quand il n'est pas devant
+        # l'ecran. Orange documente `shortLink` pour cet usage, mais le renvoie
+        # VIDE en production (constate le 2026-09-09 sur deux demandes reelles).
+        # On retombe donc sur le deeplink, qui est une URL https ordinaire
+        # pointant la meme page de paiement — le front n'a pas a connaitre ce
+        # detail, il affiche `shareLink` quand il est non vide.
+        data["shareLink"] = (
+            data.get("shortLink")
+            or data.get("deepLink")
+            or next(iter((data.get("deepLinks") or {}).values()), "")
+        )
         return data
 
     # ── Statut de transaction (source de vérité, art. 4.1 du contrat) ────

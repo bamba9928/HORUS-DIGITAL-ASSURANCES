@@ -680,6 +680,8 @@ export type OmPayment = {
 export type OmQrData = {
   qr_code: string;
   deep_links: Record<string, string>;
+  /** Lien à transmettre au payeur absent : `shortLink` Orange, sinon le deeplink. */
+  share_link: string;
   validity_seconds: number | null;
   mock: boolean;
 };

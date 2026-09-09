@@ -90,6 +90,8 @@ def _om_payment_response(payment, qr_data=None):
         data["qr"] = {
             "qr_code": qr_data.get("qrCode", ""),
             "deep_links": qr_data.get("deepLinks", {}),
+            # Lien à transmettre au payeur qui n'est pas devant l'écran.
+            "share_link": qr_data.get("shareLink", ""),
             "validity_seconds": qr_data.get("validity"),
             "mock": bool(qr_data.get("mock")),
         }

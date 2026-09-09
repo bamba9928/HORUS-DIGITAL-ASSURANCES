@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, RefreshCw, Smartphone, X } from "lucide-react";
+import { Check, Copy, ExternalLink, RefreshCw, Smartphone, X } from "lucide-react";
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -39,6 +39,9 @@ export function OmPaymentDialog({
   const [error, setError] = useState("");
   const [isInitiating, setIsInitiating] = useState(true);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  // Le presse-papiers peut être refusé (contexte non sécurisé, permission) :
+  // dans ce cas on révèle le lien pour qu'il reste copiable à la main.
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const confirmedRef = useRef(false);
   const pollFailuresRef = useRef(0);
 
@@ -66,6 +69,7 @@ export function OmPaymentDialog({
     setError("");
     setData(null);
     setSecondsLeft(null);
+    setCopyState("idle");
     setIsInitiating(true);
     void initiate();
   }
@@ -120,6 +124,19 @@ export function OmPaymentDialog({
     const timer = setTimeout(() => setSecondsLeft((s) => (s === null ? null : s - 1)), 1000);
     return () => clearTimeout(timer);
   }, [secondsLeft]);
+
+  const shareLink = data?.qr.share_link ?? "";
+
+  async function copyShareLink() {
+    if (!shareLink) return;
+    try {
+      await navigator.clipboard.writeText(shareLink);
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState("idle"), 2000);
+    } catch {
+      setCopyState("failed");
+    }
+  }
 
   const payment = data?.payment ?? null;
   const isFailed = payment ? ["FAILED", "CANCELLED"].includes(payment.status) : false;
@@ -212,6 +229,26 @@ export function OmPaymentDialog({
                 </a>
               ))}
             </div>
+            {shareLink ? (
+              <>
+                <button
+                  className="mt-2 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-border bg-white text-[13px] font-bold text-black/75 shadow-xs transition hover:bg-muted"
+                  onClick={copyShareLink}
+                  title={shareLink}
+                  type="button"
+                >
+                  {copyState === "copied" ? <Check size={13} /> : <Copy size={13} />}
+                  {copyState === "copied"
+                    ? "Lien copié"
+                    : "Copier le lien à envoyer au client"}
+                </button>
+                {copyState === "failed" ? (
+                  <p className="mt-1.5 break-all rounded-lg bg-muted px-2 py-1.5 text-[11px] font-medium text-black/55">
+                    {shareLink}
+                  </p>
+                ) : null}
+              </>
+            ) : null}
             <div className="mt-4 flex items-center justify-center gap-2 text-xs font-semibold text-black/40">
               <BrandSpinner size="sm" />
               En attente du paiement…
