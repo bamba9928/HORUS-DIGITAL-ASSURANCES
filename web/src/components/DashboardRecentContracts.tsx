@@ -294,11 +294,11 @@ function ContractRow({
   canSeeAss: boolean;
   contract: ContractListItem;
 }) {
-  const totalPrime =
-    contract.ttc_ass ??
-    (contract.prime_rc_ass === null
-      ? null
-      : contract.prime_rc_ass + contract.cout_police_ass);
+  // `ttc_ass` porte la Prime Totale d'ASS, posee des le calcul du devis. Le
+  // repli « prime RC + cout de police » qui existait ici fabriquait un TTC
+  // ampute des taxes, du FGA et de la CEDEAO : le tableau de bord affichait
+  // donc un total qui n'etait celui de personne.
+  const totalPrime = contract.ttc_ass;
 
   return (
     <tr>

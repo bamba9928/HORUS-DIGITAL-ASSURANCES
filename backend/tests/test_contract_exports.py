@@ -176,3 +176,50 @@ def test_pdf_export_is_isolated_per_contributor():
     response = client.get(f"/api/contracts/{theirs.pk}/export-pdf/")
 
     assert response.status_code == 404
+
+
+def test_csv_export_exposes_prime_totale_and_net_a_verser():
+    """La colonne « ttc_encaisse » mentait : elle porte la Prime Totale du devis.
+
+    `ttc_ass` est renseigne des le calcul du devis, paye ou non — l'appeler
+    « encaisse » induisait la compta en erreur. La colonne est renommee, et le
+    net a verser, seul montant calcule par Horus, s'ajoute a cote.
+    """
+    client, contributor = make_contributor()
+    create_contract(
+        contributor,
+        ass_response_payload={
+            "operationStatus": "SUCCESS",
+            "PrimeRC": "24000",
+            "CoutPolice": "3000",
+            "PrimeTotale": "27000",
+        },
+    )
+
+    body = read_streaming_text(client.get("/api/contracts/export/"))
+    header, row = body.lstrip("﻿").strip().splitlines()[:2]
+
+    assert "prime_totale_fcfa" in header
+    assert "net_a_verser_fcfa" in header
+    assert "ttc_encaisse_fcfa" not in header
+
+    columns = header.split(";")
+    values = row.split(";")
+    prime_totale = values[columns.index("prime_totale_fcfa")]
+    net_a_verser = values[columns.index("net_a_verser_fcfa")]
+
+    assert prime_totale == "27000"
+    # 27 000 - 3 000 de cout de police, retenu a la source par l'apporteur.
+    assert net_a_verser == "24000"
+
+
+def test_csv_export_leaves_net_a_verser_empty_without_prime_totale():
+    """Sans Prime Totale d'ASS, la colonne reste vide : Horus n'invente rien."""
+    client, contributor = make_contributor()
+    create_contract(contributor, ass_response_payload={"operationStatus": "SUCCESS"})
+
+    body = read_streaming_text(client.get("/api/contracts/export/"))
+    header, row = body.lstrip("﻿").strip().splitlines()[:2]
+    columns = header.split(";")
+
+    assert row.split(";")[columns.index("net_a_verser_fcfa")] == ""

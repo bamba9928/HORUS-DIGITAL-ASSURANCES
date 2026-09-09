@@ -226,9 +226,14 @@ export default function ContractsPage() {
             loading={isLoading}
             value={formatMoney(totals.primeRc)}
           />
+          {/* « TTC encaissé » était juste tant que `ttc_ass` n'était écrit qu'au
+              paiement. Il porte désormais la Prime Totale d'ASS dès le calcul du
+              devis : cette somme couvre donc tout le portefeuille listé, payé ou
+              non. L'argent réellement encaissé est le « CA encaissé » du tableau
+              de bord, agrégé depuis les paiements confirmés. */}
           <MetricCard
             icon={Banknote}
-            label="TTC encaissé"
+            label={canSeeAss ? "Prime totale ASS" : "Prime totale"}
             loading={isLoading}
             tone="primary"
             value={formatMoney(totals.ttc)}

@@ -1720,9 +1720,14 @@ function QuoteStep({
     .filter((item) => guarantees.includes(Number(item.value)))
     .map((item) => item.label);
 
-  // Le total vient d'ASS quand elle le fournit. Le recalculer par addition
-  // donnerait un montant qui diverge dès qu'une taxe change de règle.
-  const total = quote.prime_totale ?? quote.prime_rc_ass + quote.policy_fee_ass;
+  // Prime Totale d'ASS, telle quelle. Le repli « prime RC + coût de police »
+  // qui la remplaçait fabriquait un total amputé des taxes, du FGA et de la
+  // CEDEAO : Horus ne tarife pas, et un total absent vaut mieux qu'un faux.
+  const total = quote.prime_totale ?? null;
+  // La seule ligne calculée par Horus : ce que l'apporteur règle réellement,
+  // coût de police retenu à la source.
+  const netAVerser =
+    total === null ? null : Math.max(0, total - (quote.cout_police ?? quote.policy_fee_ass));
 
   // La couverture est portée par la flotte ou par le véhicule selon le produit.
   const coverage = isFleet
@@ -1762,6 +1767,10 @@ function QuoteStep({
         {quote.cedeao ? <QuoteRow label="CEDEAO" value={formatFcfa(quote.cedeao)} /> : null}
         {quote.reduction ? <QuoteRow label="Réduction" value={formatFcfa(-quote.reduction)} /> : null}
         <QuoteRow label="Coût de police" value={formatFcfa(quote.cout_police ?? quote.policy_fee_ass)} />
+        {/* Tout ce qui précède vient d'ASS tel quel ; cette ligne est la nôtre. */}
+        {netAVerser !== null ? (
+          <QuoteRow label="Net à verser" value={formatFcfa(netAVerser)} />
+        ) : null}
       </View>
 
       {/* Ventilation d'une flotte : ASS renvoie une prime PAR véhicule et par

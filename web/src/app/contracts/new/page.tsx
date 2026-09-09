@@ -866,7 +866,13 @@ function NewContractPageContent() {
     setPaying(true);
     setError("");
     try {
-      const amount = quotePayableAmount(quote);
+      const amount = quoteNetAVerser(quote);
+      if (amount === null) {
+        setError(
+          "Prime totale ASS indisponible : le net à verser ne peut pas être déterminé.",
+        );
+        return;
+      }
       const response = await confirmContractPayment(savedDraftId, amount);
       setPayment(response.payment);
     } catch (apiError) {
@@ -2202,7 +2208,7 @@ function QuoteResultPanel({
   canSeeAss: boolean;
   quote: ContractQuote;
 }) {
-  const paymentAmount = quotePayableAmount(quote);
+  const netAVerser = quoteNetAVerser(quote);
   const hasBreakdown = quote.prime_totale !== undefined;
 
   return (
@@ -2236,11 +2242,12 @@ function QuoteResultPanel({
                   ) : null}
                   <QuoteRow label="Prime A.G" value={quote.prime_ag ?? 0} />
                   <QuoteRow label="Fonds de garantie" value={quote.fonds_garantie ?? 0} />
-                  <QuoteRow
-                    label="Prime Totale"
-                    value={quote.prime_totale ?? paymentAmount}
-                    isTotal
-                  />
+                  <QuoteRow label="Prime Totale" value={quote.prime_totale ?? 0} isTotal />
+                  {/* Tout ce qui précède vient d'ASS tel quel ; cette ligne est
+                      la nôtre : ce que l'apporteur règle, police déduite. */}
+                  {netAVerser !== null ? (
+                    <QuoteRow label="Net à verser" value={netAVerser} isTotal />
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -2251,7 +2258,10 @@ function QuoteResultPanel({
                 value={`${formatAmount(quote.prime_rc_ass)} FCFA`}
               />
               <SummaryItem label="Coût de police" value={`${formatAmount(quote.policy_fee_ass)} FCFA`} />
-              <SummaryItem label="Total à payer" value={`${formatAmount(paymentAmount)} FCFA`} />
+              <SummaryItem
+                label="Net à verser"
+                value={netAVerser === null ? "—" : `${formatAmount(netAVerser)} FCFA`}
+              />
             </dl>
           )}
         </div>
@@ -2346,7 +2356,7 @@ function PaymentIssuePanel({
   payment: ConfirmedPayment | null;
   quote: ContractQuote;
 }) {
-  const payableAmount = quotePayableAmount(quote);
+  const payableAmount = quoteNetAVerser(quote);
 
   return (
     <div className="space-y-5">
@@ -2355,10 +2365,14 @@ function PaymentIssuePanel({
           <div>
             <p className="text-xs font-extrabold uppercase text-black/40">Montant à confirmer</p>
             <p className="mt-1 text-3xl font-black tabular-nums text-primary">
-              {formatAmount(payableAmount)} FCFA
+              {payableAmount === null ? "—" : `${formatAmount(payableAmount)} FCFA`}
             </p>
             <p className="mt-1 text-xs font-medium text-black/45">
-              {canSeeAss ? "Prime totale calculée par ASS" : "Prime totale calculée"}
+              {payableAmount === null
+                ? "Prime totale ASS indisponible — rien à encaisser."
+                : canSeeAss
+                  ? "Net à verser : prime totale ASS moins le coût de police"
+                  : "Net à verser : prime totale moins le coût de police"}
             </p>
           </div>
           <span
@@ -2376,13 +2390,15 @@ function PaymentIssuePanel({
           {canConfirmPayment ? (
             <button
               className="h-11 rounded-lg bg-primary px-5 text-sm font-extrabold text-white shadow-sm shadow-primary/20 transition hover:bg-[var(--primary-strong)] disabled:bg-black/20 disabled:shadow-none"
-              disabled={Boolean(payment) || paying}
+              disabled={Boolean(payment) || paying || payableAmount === null}
               onClick={onConfirmPayment}
               type="button"
             >
               {paying
                 ? "Confirmation…"
-                : `Confirmer ${formatAmount(payableAmount)} FCFA`}
+                : payableAmount === null
+                  ? "Montant indisponible"
+                  : `Confirmer ${formatAmount(payableAmount)} FCFA`}
             </button>
           ) : (
             <span className="text-sm font-semibold text-amber-700">
@@ -3049,12 +3065,20 @@ function guaranteeOptionSummary(options: GuaranteeOptionsForm) {
   return values.join(", ") || "-";
 }
 
-function quotePayableAmount(quote: ContractQuote) {
-  // Même règle que le backend : prime totale ASS si présente et > 0,
-  // sinon prime RC + coût de police.
-  return quote.prime_totale && quote.prime_totale > 0
-    ? quote.prime_totale
-    : quote.prime_rc_ass + quote.policy_fee_ass;
+/**
+ * Net à verser : le seul montant calculé par Horus, et ce que l'apporteur règle
+ * réellement — Prime Totale ASS moins le coût de police, qu'il retient à la
+ * source. `null` quand ASS n'a pas fourni de Prime Totale : rien n'est payable.
+ *
+ * Cette fonction renvoyait auparavant la Prime Totale entière, et le repli
+ * « prime RC + coût de police » quand elle manquait. Les deux étaient faux
+ * depuis la règle du 28/08/2026 : le backend refusait la confirmation en
+ * réclamant « exactement N FCFA », N étant le net à verser.
+ */
+function quoteNetAVerser(quote: ContractQuote) {
+  const primeTotale = quote.prime_totale;
+  if (!primeTotale || primeTotale <= 0) return null;
+  return Math.max(0, primeTotale - (quote.cout_police ?? quote.policy_fee_ass));
 }
 
 function cleanGuaranteeOptions(options: GuaranteeOptionsForm) {

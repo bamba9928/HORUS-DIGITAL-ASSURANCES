@@ -7,6 +7,7 @@ from datetime import date, datetime, time, timedelta
 from django.utils import timezone
 
 from contracts.models import Contract
+from payments.services import expected_payment_amount
 
 # ─── CSV ───────────────────────────────────────────────────────────────────────
 
@@ -26,13 +27,23 @@ CSV_HEADERS = [
     "apporteur",
     "prime_rc_fcfa",
     "cout_police_fcfa",
-    "ttc_encaisse_fcfa",
+    # Anciennement « ttc_encaisse_fcfa », un nom devenu faux : `ttc_ass` porte la
+    # Prime Totale d'ASS des le calcul du devis, payee ou non. Le montant
+    # reellement encaisse est celui des paiements confirmes.
+    "prime_totale_fcfa",
+    "net_a_verser_fcfa",
     "commission_apporteur_fcfa",
     "date_emission",
     "date_expiration",
     "numero_attestation",
     "reference_externe",
 ]
+
+
+def _net_a_verser(contract):
+    """Net a verser, ou chaine vide : le seul montant calcule par Horus."""
+    amount = expected_payment_amount(contract)
+    return "" if amount is None else amount
 
 
 class ExportPeriodError(ValueError):
@@ -105,6 +116,7 @@ def _contract_csv_row(contract):
         contract.prime_rc_ass if contract.prime_rc_ass is not None else "",
         contract.cout_police_ass,
         contract.ttc_ass if contract.ttc_ass is not None else "",
+        _net_a_verser(contract),
         snapshot.commission_total if snapshot else "",
         _format_dt(snapshot.created_at) if snapshot else "",
         _format_dt(contract.date_expiration),
@@ -245,10 +257,13 @@ def build_contract_pdf(contract):
             ),
         ],
     )
+    # Les trois premieres lignes viennent d'ASS telles quelles ; la quatrieme est
+    # la notre — le seul montant calcule par Horus.
     montant_rows = [
         ("Prime RC", _fmt_money(contract.prime_rc_ass)),
         ("Coût de police", _fmt_money(contract.cout_police_ass)),
-        ("TTC encaissé", _fmt_money(contract.ttc_ass)),
+        ("Prime totale ASS", _fmt_money(contract.ttc_ass)),
+        ("Net à verser", _fmt_money(_net_a_verser(contract) or None)),
     ]
     if confirmed_payment:
         method_label = confirmed_payment.get_method_display()
