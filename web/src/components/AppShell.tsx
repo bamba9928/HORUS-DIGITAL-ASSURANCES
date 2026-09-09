@@ -124,14 +124,17 @@ export function AppShell({
     () => false,
   );
 
-  // Redirection automatique vers /login si session expirée ou non authentifié
+  // Redirection automatique vers /login si session expirée ou non authentifié.
+  // Le chemin courant n'est plus transmis : la connexion ramene toujours au
+  // tableau de bord. Renvoyer l'utilisateur sur sa derniere page le faisait
+  // atterrir sur un dossier entre-temps supprime — « Contrat introuvable » a
+  // chaque reconnexion, sans qu'il comprenne pourquoi.
   useEffect(() => {
     if (isAuthLoading) return;
     if (auth?.authenticated === false) {
-      const redirect = encodeURIComponent(pathname);
-      router.replace(`/login?redirect=${redirect}`);
+      router.replace("/login");
     }
-  }, [isAuthLoading, auth?.authenticated, pathname, router]);
+  }, [isAuthLoading, auth?.authenticated, router]);
   const [productionOpen, setProductionOpen] = useState(false);
   const [financeOpen, setFinanceOpen] = useState(false);
   const [compteOpen, setCompteOpen] = useState(false);

@@ -2,40 +2,16 @@
 
 import { Eye, EyeOff, LockKeyhole, LogIn, UserRound } from "lucide-react";
 import Image from "next/image";
-import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useId, useState } from "react";
+import { useRouter } from "next/navigation";
+import { FormEvent, useId, useState } from "react";
 
 import { AppFooter } from "@/components/AppFooter";
 import { useAuth } from "@/components/AuthProvider";
-import { AlertMessage, BrandSpinner } from "@/components/ui";
+import { AlertMessage } from "@/components/ui";
 import { login } from "@/lib/api";
 
 export default function LoginPage() {
-  return (
-    <Suspense
-      fallback={
-        <main className="flex min-h-screen items-center justify-center bg-[#f5f6f9]">
-          <BrandSpinner size="lg" />
-        </main>
-      }
-    >
-      <LoginPageContent />
-    </Suspense>
-  );
-}
-
-// N'accepte que des chemins internes pour éviter tout open redirect
-// (ex: /login?redirect=https://site-malveillant ou //site-malveillant).
-function sanitizeRedirect(value: string | null) {
-  if (!value) return "/";
-  if (!value.startsWith("/")) return "/";
-  if (value.startsWith("//") || value.startsWith("/\\")) return "/";
-  return value;
-}
-
-function LoginPageContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { refreshAuth } = useAuth();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -47,8 +23,6 @@ function LoginPageContent() {
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const redirectTo = sanitizeRedirect(searchParams.get("redirect"));
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
@@ -56,7 +30,10 @@ function LoginPageContent() {
     try {
       await login(identifier.trim(), password);
       await refreshAuth();
-      router.push(redirectTo);
+      // Toujours le tableau de bord, jamais la derniere page consultee : celle-ci
+      // pointe souvent sur un dossier entre-temps supprime ou sorti du perimetre,
+      // et la connexion s'achevait alors sur une erreur plutot que sur l'accueil.
+      router.push("/");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Connexion impossible.");

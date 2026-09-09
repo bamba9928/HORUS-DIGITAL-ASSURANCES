@@ -316,9 +316,8 @@ export default function ContractDetailPage() {
 
         {/* Contrat introuvable : c'est une impasse, pas une erreur passagere.
             L'ecran n'affichait qu'un bandeau rouge sous un en-tete « Contrat 4
-            — Detail », sans aucune sortie. Le cas arrive typiquement apres une
-            reconnexion : `AppShell` renvoie vers /login?redirect=<page>, et on
-            retombe sur un contrat entre-temps supprime. */}
+            — Detail », sans aucune sortie. Le cas reste possible par un lien
+            direct ou un signet vers un dossier entre-temps supprime. */}
         {error && !contract && !isLoading ? (
           <section className="app-surface animate-fade-in">
             <EmptyState
