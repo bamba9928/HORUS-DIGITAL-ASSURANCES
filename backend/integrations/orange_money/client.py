@@ -1,6 +1,7 @@
 import base64
 import logging
 import time
+from datetime import timedelta
 
 import requests
 from django.conf import settings
@@ -14,6 +15,7 @@ from integrations.orange_money.constants import (
     OM_ENDPOINT_TRANSACTIONS,
     OM_STATUS_PENDING,
     OM_STATUS_SUCCESS,
+    OM_TRANSACTION_SEARCH_MARGIN_SECONDS,
     OM_TRANSACTION_TYPE_MERCHANT_PAYMENT,
 )
 from integrations.orange_money.exceptions import (
@@ -24,9 +26,15 @@ from integrations.orange_money.exceptions import (
 
 logger = logging.getLogger("integrations.orange_money")
 
-# Cache de token OAuth partagé par processus (gunicorn = 1 cache par worker).
+
+class _OmTokenExpired(Exception):
+    """Signal interne : la passerelle a refusé le jeton, un rejeu est légitime."""
+
+# Cache de token OAuth partagé par processus (gunicorn = 1 cache par worker),
+# indexé par (base_url, client_id) : sandbox et production ne partagent pas la
+# même passerelle, un cache unique servirait un jeton de prod à un appel sandbox.
 # Durée pilotée par expires_in renvoyé par l'API (jamais hardcodée).
-_token_cache = {"access_token": None, "expires_at": 0.0}
+_token_cache = {}
 
 
 class OmClient:
@@ -116,17 +124,31 @@ class OmClient:
             "size": 20,
         }
         if since is not None:
-            params["fromDateTime"] = since.strftime("%Y-%m-%dT%H:%M:%S")
+            # Marge arriere : `fromDateTime` est une borne stricte cote OM et nos
+            # deux horloges ne sont pas synchronisees a la seconde. Sans elle,
+            # une transaction horodatee juste avant la creation du Payment
+            # devient introuvable — donc un encaissement jamais confirme.
+            params["fromDateTime"] = (
+                since - timedelta(seconds=OM_TRANSACTION_SEARCH_MARGIN_SECONDS)
+            ).strftime("%Y-%m-%dT%H:%M:%S")
         data = self._request("GET", OM_ENDPOINT_TRANSACTIONS, params=params)
         transactions = data if isinstance(data, list) else data.get("transactions", [])
-        for txn in transactions:
-            if not isinstance(txn, dict):
-                continue
+        matches = [
+            txn
+            for txn in transactions
             # Le filtre serveur est refait ici : une API qui élargirait la
             # recherche ne doit jamais nous faire confirmer le mauvais contrat.
-            if txn.get("reference") == reference:
+            if isinstance(txn, dict) and txn.get("reference") == reference
+        ]
+        if not matches:
+            return None
+        # Plusieurs transactions peuvent porter la meme reference (tentative
+        # rejetee puis reussie). Un SUCCESS prime : retenir la premiere venue
+        # ferait passer pour echoue un paiement bel et bien encaisse.
+        for txn in matches:
+            if (txn.get("status") or "").upper() == OM_STATUS_SUCCESS:
                 return self._normalize_transaction(txn)
-        return None
+        return self._normalize_transaction(matches[0])
 
     def get_transaction_status(self, *, transaction_id):
         """Statut courant d'une transaction connue (endpoint dédié, plus direct).
@@ -239,8 +261,10 @@ class OmClient:
                 "OM_CLIENT_ID / OM_CLIENT_SECRET manquants (voir .env)."
             )
         now = time.monotonic()
-        if _token_cache["access_token"] and now < _token_cache["expires_at"]:
-            return _token_cache["access_token"]
+        cache_key = (self.base_url, self.client_id)
+        cached = _token_cache.get(cache_key)
+        if cached and now < cached["expires_at"]:
+            return cached["access_token"]
 
         try:
             response = self.session.post(
@@ -261,14 +285,23 @@ class OmClient:
                 status_code=response.status_code,
                 response_body=_safe_body(response),
             )
-        data = response.json()
+        try:
+            data = response.json()
+        except ValueError as exc:
+            # Une passerelle en panne renvoie parfois du HTML : sans ce garde-fou
+            # le ValueError remonte tel quel et devient un 500 au lieu d'un 502.
+            raise OmApiError("Réponse OAuth Orange Money non JSON.") from exc
         token = data.get("access_token")
         expires_in = int(data.get("expires_in") or 300)
         if not token:
             raise OmApiError("Réponse OAuth Orange Money sans access_token.")
         # Marge de 30 s pour éviter d'utiliser un token expirant en vol.
-        _token_cache["access_token"] = token
-        _token_cache["expires_at"] = now + max(expires_in - 30, 30)
+        # expires_in vaut 299 s en production : le cache evite un aller-retour
+        # OAuth par appel sans jamais depasser la duree annoncee par l'API.
+        _token_cache[cache_key] = {
+            "access_token": token,
+            "expires_at": now + max(expires_in - 30, 30),
+        }
         return token
 
     def _request(self, method, endpoint, *, json=None, params=None, headers=None):
@@ -276,9 +309,29 @@ class OmClient:
             raise OmRealCallsDisabledError(
                 "Appels réels Orange Money désactivés (OM_REAL_CALLS_ALLOWED=False)."
             )
+        try:
+            return self._send(method, endpoint, json=json, params=params, headers=headers)
+        except _OmTokenExpired:
+            # Le jeton a expiré entre notre cache et la passerelle (expires_in
+            # vaut 299 s en production) : on rejoue une fois avec un jeton neuf
+            # plutôt que de faire échouer un encaissement sur une rotation.
+            logger.info("Jeton OM refusé (401) : nouvelle tentative avec un jeton neuf.")
+            return self._send(
+                method, endpoint, json=json, params=params, headers=headers, _retry=False
+            )
+
+    def _send(self, method, endpoint, *, json=None, params=None, headers=None, _retry=True):
         token = self._get_token()
         url = f"{self.base_url}{endpoint}"
-        request_headers = {"Authorization": f"Bearer {token}"}
+        # Content-Type est exige meme sur les GET sans corps : sans lui,
+        # GET /api/notification/v1/merchantcallback repond 415 « Unsupported
+        # media type, it should be 'application/json' » (constate en production
+        # le 2026-09-08). requests ne le pose que lorsqu'un corps json est fourni.
+        request_headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
         if settings.OM_API_KEY:
             request_headers["X-Api-Key"] = settings.OM_API_KEY
         if headers:
@@ -295,18 +348,29 @@ class OmClient:
         except requests.RequestException as exc:
             raise OmApiError(f"Échec réseau Orange Money ({endpoint}) : {exc}") from exc
 
-        if response.status_code == 401:
-            # Token révoqué côté OM : on invalide le cache pour le prochain appel.
-            _token_cache["access_token"] = None
+        if response.status_code == 401 and _retry:
+            # Token révoqué ou expiré côté OM : on vide le cache et on signale à
+            # _request qu'un seul rejeu est légitime.
+            _token_cache.pop((self.base_url, self.client_id), None)
+            raise _OmTokenExpired
         if response.status_code >= 400:
             logger.warning(
-                "Erreur API OM %s %s -> %s", method, endpoint, response.status_code
+                "Erreur API OM %s %s -> %s : %s",
+                method,
+                endpoint,
+                response.status_code,
+                _safe_body(response),
             )
             raise OmApiError(
                 f"Erreur API Orange Money ({response.status_code}).",
                 status_code=response.status_code,
                 response_body=_safe_body(response),
             )
+        # 201/204 sans corps : POST /api/notification/v1/merchantcallback renvoie
+        # un corps vide en cas de succes (constate en production le 2026-09-08).
+        # Lever ici ferait passer un enregistrement reussi pour un echec.
+        if not response.content or not response.content.strip():
+            return {}
         try:
             return response.json()
         except ValueError as exc:

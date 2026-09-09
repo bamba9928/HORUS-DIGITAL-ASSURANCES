@@ -50,5 +50,10 @@ OM_ERROR_CODE_QR_EXPIRED = "4004"
 
 OM_CURRENCY = "XOF"
 
+# Marge arrière appliquée à `fromDateTime` lors de la recherche d'une
+# transaction : nos horloges et celles d'Orange ne sont pas synchronisées à la
+# seconde, et la borne est stricte côté serveur.
+OM_TRANSACTION_SEARCH_MARGIN_SECONDS = 120
+
 # Tolérance sur l'horodatage `t` de X-Sonatel-Signature (anti-rejeu).
 OM_CALLBACK_SIGNATURE_TOLERANCE_SECONDS = 300

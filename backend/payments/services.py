@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from django.conf import settings
@@ -12,6 +13,9 @@ from integrations.orange_money.constants import (
     OM_TERMINAL_FAILURE_STATUSES,
 )
 from payments.models import Payment
+
+
+logger = logging.getLogger("payments.orange_money")
 
 
 class PaymentConfirmationError(ValueError):
@@ -155,36 +159,48 @@ def _validate_payable_contract(contract):
         raise PaymentConfirmationError("Un paiement confirme existe deja pour ce contrat.")
 
 
-@transaction.atomic
 def initiate_om_payment(*, contract, created_by=None, client=None):
     """Crée un paiement Orange Money PENDING et la demande QR côté OM.
 
     Retourne (payment, qr_data). Les initiations précédentes non confirmées
     du même contrat sont annulées (une seule demande active à la fois).
+
+    L'appel réseau à Orange Money est fait DÉLIBÉRÉMENT hors de la transaction :
+    dans le bloc atomique, un simple dépassement de délai annulait la ligne
+    Payment alors qu'Orange, lui, avait pu créer le QR — un client pouvait donc
+    payer une référence dont nous n'avions plus aucune trace. La ligne est donc
+    committée d'abord ; si l'appel échoue ensuite, elle reste PENDING et la
+    réconciliation (`manage.py om_reconcile`) la rattrapera.
     """
     assert_om_mock_allowed()
-    contract = Contract.objects.select_for_update().get(pk=contract.pk)
-    _validate_payable_contract(contract)
 
-    amount = expected_payment_amount(contract)
-    reference = f"HORUS-{contract.pk}-{uuid.uuid4().hex[:10].upper()}"
+    with transaction.atomic():
+        contract = Contract.objects.select_for_update().get(pk=contract.pk)
+        _validate_payable_contract(contract)
 
-    contract.payments.filter(
-        status=Payment.Status.PENDING, method=Payment.Method.ORANGE_MONEY
-    ).update(status=Payment.Status.CANCELLED)
+        amount = expected_payment_amount(contract)
+        reference = f"HORUS-{contract.pk}-{uuid.uuid4().hex[:10].upper()}"
 
-    payment = Payment.objects.create(
-        contract=contract,
-        amount=amount,
-        status=Payment.Status.PENDING,
-        method=Payment.Method.ORANGE_MONEY,
-        external_reference=reference,
-        created_by=created_by if created_by and created_by.is_authenticated else None,
-    )
+        # Les demandes precedentes passent en CANCELLED cote Horus, mais leur QR
+        # reste payable chez Orange jusqu'a expiration : la reconciliation
+        # reinterroge ces references, sans quoi un client payant l'ancien QR
+        # verserait de l'argent sans jamais faire passer son contrat en PAYE.
+        contract.payments.filter(
+            status=Payment.Status.PENDING, method=Payment.Method.ORANGE_MONEY
+        ).update(status=Payment.Status.CANCELLED)
 
-    if contract.internal_status == Contract.InternalStatus.QUOTE_READY:
-        contract.internal_status = Contract.InternalStatus.PAYMENT_PENDING
-        contract.save(update_fields=["internal_status", "updated_at"])
+        payment = Payment.objects.create(
+            contract=contract,
+            amount=amount,
+            status=Payment.Status.PENDING,
+            method=Payment.Method.ORANGE_MONEY,
+            external_reference=reference,
+            created_by=created_by if created_by and created_by.is_authenticated else None,
+        )
+
+        if contract.internal_status == Contract.InternalStatus.QUOTE_READY:
+            contract.internal_status = Contract.InternalStatus.PAYMENT_PENDING
+            contract.save(update_fields=["internal_status", "updated_at"])
 
     client = client or OmClient()
     qr_data = client.create_payment_qrcode(
@@ -192,18 +208,30 @@ def initiate_om_payment(*, contract, created_by=None, client=None):
         reference=reference,
         client_label=f"contrat-{contract.pk}",
     )
+    qr_id = qr_data.get("qrId") if isinstance(qr_data, dict) else None
+    if qr_id:
+        payment.om_qr_id = str(qr_id)[:120]
+        payment.save(update_fields=["om_qr_id", "updated_at"])
     return payment, qr_data
 
 
-def check_om_payment(*, payment, client=None):
+def check_om_payment(*, payment, client=None, revive_cancelled=False):
     """Interroge le statut OM (source de vérité) et synchronise le paiement.
 
     Confirmations idempotentes : rejouable sans effet de bord (callback + polling
     peuvent arriver en concurrence, le verrou de ligne sérialise).
+
+    `revive_cancelled` autorise la reprise d'un paiement passé en CANCELLED par
+    une ré-initiation : son QR restait payable chez Orange, et seule la
+    réconciliation peut constater après coup qu'il a bel et bien été réglé.
+    Réservé à `manage.py om_reconcile` — le parcours normal ne l'active pas.
     """
     assert_om_mock_allowed()
     client = client or OmClient()
     mismatch_message = None
+    revivable = {Payment.Status.PENDING}
+    if revive_cancelled:
+        revivable.add(Payment.Status.CANCELLED)
 
     with transaction.atomic():
         payment = (
@@ -213,7 +241,7 @@ def check_om_payment(*, payment, client=None):
             return payment
         if payment.method != Payment.Method.ORANGE_MONEY:
             raise PaymentConfirmationError("Ce paiement n'est pas un paiement Orange Money.")
-        if payment.status != Payment.Status.PENDING:
+        if payment.status not in revivable:
             return payment
 
         txn = client.find_transaction(
@@ -224,8 +252,22 @@ def check_om_payment(*, payment, client=None):
 
         txn_status = (txn.get("status") or "").upper()
         if txn_status == OM_STATUS_SUCCESS:
-            txn_amount = _parse_amount(txn.get("amount"))
-            if txn_amount and txn_amount != payment.amount:
+            raw_amount = txn.get("amount")
+            txn_amount = _parse_amount(raw_amount)
+            if raw_amount is None or txn_amount <= 0:
+                # ECHEC FERME : sans montant lisible, impossible de verifier que
+                # ce qui a ete encaisse correspond au devis. Auparavant le
+                # garde-fou etait saute et le paiement confirme a l'aveugle. On
+                # laisse PENDING : la reconciliation rejouera avec une reponse
+                # complete plutot que d'emettre une police non financee.
+                logger.warning(
+                    "Transaction OM %s SUCCESS sans montant exploitable (paiement %s) — "
+                    "confirmation differee.",
+                    txn.get("transactionId"),
+                    payment.pk,
+                )
+                return payment
+            if txn_amount != payment.amount:
                 # Montant encaissé différent du devis : on n'auto-confirme pas,
                 # à trancher manuellement (protection contre paiement partiel).
                 # Le FAILED est committé AVANT de lever (hors du bloc atomique).
@@ -263,8 +305,19 @@ def check_om_payment(*, payment, client=None):
                 # confirm_manual_payment.
                 contract.ttc_ass = _contract_ttc(contract)
                 contract.save(update_fields=["internal_status", "ttc_ass", "updated_at"])
+                # Le contrat est paye : toute autre demande OM encore en attente
+                # est caduque. Sans ce menage, la reconciliation d'un ancien QR
+                # laissait derriere elle un PENDING orphelin que plus rien ne
+                # concluait jamais.
+                contract.payments.filter(
+                    status=Payment.Status.PENDING, method=Payment.Method.ORANGE_MONEY
+                ).exclude(pk=payment.pk).update(status=Payment.Status.CANCELLED)
                 # Rafraîchit la relation en cache pour que l'appelant voie le nouvel état.
                 payment.contract = contract
+        elif payment.status != Payment.Status.PENDING:
+            # Paiement deja CANCELLED : rien a redescendre, seul un SUCCESS
+            # justifiait de le rouvrir.
+            return payment
         elif txn_status in OM_TERMINAL_FAILURE_STATUSES:
             # CANCELLED / FAILED / REJECTED sont definitifs cote OM. Les statuts
             # transitoires (ACCEPTED, INITIATED, PENDING, PRE_INITIATED) laissent

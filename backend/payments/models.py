@@ -25,6 +25,10 @@ class Payment(models.Model):
     external_reference = models.CharField(max_length=120, blank=True)
     # Identifiant de transaction retourné par Orange Money (source de vérité OM).
     om_transaction_id = models.CharField(max_length=120, blank=True)
+    # Identifiant du QR côté Orange (`qrId`). La référence marchande était
+    # jusqu'ici l'unique clé de rapprochement : sans ce champ, un support Orange
+    # qui ne connaît qu'un QR ne peut pas être relié à un contrat.
+    om_qr_id = models.CharField(max_length=120, blank=True)
     confirmed_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(
         "accounts.User",

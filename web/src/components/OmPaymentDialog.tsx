@@ -12,6 +12,14 @@ import {
 } from "@/lib/api";
 
 const POLL_INTERVAL_MS = 4000;
+/**
+ * Un sondage qui échoue n'est pas un paiement qui échoue : une coupure réseau
+ * d'une seconde, un 502 passager ou une bascule de gunicorn suffisaient à
+ * afficher « paiement échoué » et à arrêter la vérification, alors que le
+ * client était peut-être en train de régler. On ne conclut qu'après plusieurs
+ * échecs consécutifs (≈ 12 s) ; une réponse valide remet le compteur à zéro.
+ */
+const MAX_CONSECUTIVE_POLL_FAILURES = 3;
 
 /**
  * Paiement Orange Money : initie la demande, affiche le QR + deeplinks,
@@ -32,9 +40,11 @@ export function OmPaymentDialog({
   const [isInitiating, setIsInitiating] = useState(true);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const confirmedRef = useRef(false);
+  const pollFailuresRef = useRef(0);
 
   const initiate = useCallback(() => {
     confirmedRef.current = false;
+    pollFailuresRef.current = 0;
     return initiateOmPayment(contractId)
       .then((res) => {
         setData(res);
@@ -55,6 +65,7 @@ export function OmPaymentDialog({
   function retry() {
     setError("");
     setData(null);
+    setSecondsLeft(null);
     setIsInitiating(true);
     void initiate();
   }
@@ -71,6 +82,7 @@ export function OmPaymentDialog({
     const timer = setInterval(async () => {
       try {
         const res = await getOmPaymentStatus(paymentId);
+        pollFailuresRef.current = 0;
         if (res.payment.status === "CONFIRMED") {
           if (!confirmedRef.current) {
             confirmedRef.current = true;
@@ -83,7 +95,12 @@ export function OmPaymentDialog({
           setError("Le paiement a échoué ou a expiré. Vous pouvez réessayer.");
         }
       } catch (err) {
-        // Montant encaissé ≠ devis (400) : on arrête le sondage et on affiche.
+        pollFailuresRef.current += 1;
+        // Sous le seuil, on ne dit rien et on retente : l'immense majorité des
+        // échecs de sondage sont passagers et le paiement, lui, suit son cours.
+        if (pollFailuresRef.current < MAX_CONSECUTIVE_POLL_FAILURES) return;
+        // Au-delà, l'erreur est persistante (montant encaissé ≠ devis en 400,
+        // backend indisponible) : on arrête le sondage et on affiche.
         setError(
           err instanceof Error ? err.message : "Vérification du paiement impossible.",
         );

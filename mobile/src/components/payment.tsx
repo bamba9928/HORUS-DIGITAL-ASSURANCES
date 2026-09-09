@@ -41,6 +41,13 @@ import { colors, radius, spacing } from "@/lib/theme";
 const ORANGE = "#ff7900";
 
 const POLL_INTERVAL_MS = 4000;
+/**
+ * Un sondage qui échoue n'est pas un paiement qui échoue. Sur mobile la coupure
+ * réseau est la règle, pas l'exception : une seule requête ratée faisait
+ * afficher « paiement échoué » et arrêtait la vérification pendant que le
+ * client réglait. On ne conclut qu'après plusieurs échecs consécutifs.
+ */
+const MAX_CONSECUTIVE_POLL_FAILURES = 3;
 
 export function OmPaymentSheet({
   contractId,
@@ -65,9 +72,11 @@ export function OmPaymentSheet({
   // Le sondage peut voir la confirmation deux fois (un tour déjà lancé pendant
   // que le parent recharge) : le parent ne doit être prévenu qu'une fois.
   const confirmed = useRef(false);
+  const pollFailures = useRef(0);
 
   const initiate = useCallback(async () => {
     confirmed.current = false;
+    pollFailures.current = 0;
     try {
       const result = await initiateOmPayment(contractId);
       setData(result);
@@ -98,6 +107,7 @@ export function OmPaymentSheet({
     const timer = setInterval(async () => {
       try {
         const result = await getOmPaymentStatus(paymentId);
+        pollFailures.current = 0;
         if (result.payment.status === "CONFIRMED") {
           if (!confirmed.current) {
             confirmed.current = true;
@@ -110,9 +120,14 @@ export function OmPaymentSheet({
           setError("Le paiement a échoué ou a expiré. Vous pouvez réessayer.");
         }
       } catch (caught) {
-        // Montant encaissé différent du devis (400) : on arrête de sonder et on
-        // le dit, plutôt que de tourner en rond sur une situation qui ne se
-        // débloquera pas toute seule.
+        pollFailures.current += 1;
+        // Sous le seuil : échec probablement passager, on retente en silence.
+        if (pollFailures.current < MAX_CONSECUTIVE_POLL_FAILURES) {
+          return;
+        }
+        // Au-delà, l'erreur persiste (montant encaissé différent du devis en
+        // 400, API injoignable) : on arrête de sonder et on le dit, plutôt que
+        // de tourner en rond sur une situation qui ne se débloquera pas seule.
         setError(
           caught instanceof Error ? caught.message : "Vérification du paiement impossible."
         );

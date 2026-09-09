@@ -6,6 +6,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from common.pagination import PaginationError, paginate_queryset
@@ -80,6 +81,7 @@ def _om_payment_response(payment, qr_data=None):
             "method": payment.method,
             "external_reference": payment.external_reference,
             "om_transaction_id": payment.om_transaction_id,
+            "om_qr_id": payment.om_qr_id,
             "confirmed_at": payment.confirmed_at.isoformat() if payment.confirmed_at else None,
         },
         "contract_internal_status": payment.contract.internal_status,
@@ -96,6 +98,8 @@ def _om_payment_response(payment, qr_data=None):
 
 class OmInitiateView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "om_initiate"
 
     def post(self, request):
         # Import local : évite un cycle d'import (contracts.views importe
@@ -123,6 +127,8 @@ class OmInitiateView(APIView):
 
 class OmStatusView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "om_status"
 
     def get(self, request, pk):
         from contracts.views import can_manage_contract_workflow, get_contract_queryset_for_user

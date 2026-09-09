@@ -29,6 +29,8 @@ class PaymentSerializer(serializers.ModelSerializer):
             "amount",
             "status",
             "external_reference",
+            "om_transaction_id",
+            "om_qr_id",
             "confirmed_at",
             "created_by",
             "created_by_username",

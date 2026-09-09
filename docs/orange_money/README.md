@@ -195,6 +195,184 @@ application de production **et nous revenir pour activation** ». Le statut
 « approuvée » affiché sur la fiche ne vaut donc **pas** activation sur la
 passerelle — il faut la demander à Ndèye Fakhane DIOP.
 
+## 2026-09-07 : application APPROUVÉE en production
+
+Mail de **Seyni Ndiaye NIASSE** (SNT DIP-X / ID Tech Lab, seynindiaye.niasse@orange-sonatel.com)
+le 2026-09-07 à 14:34, dans le fil : « L'application a été approuvée. » Il fait
+suite au routage de Mme Diop le même jour à 09:41 (« @Seyni Ndiaye NIASSE pour
+approbation »).
+
+Fiche de production :
+`/dashboard/applications/show/horus-assur-digital-c20704a5-9e6b-4a11-9242-c5687bc02cc4-prod`
+
+| Élément | État au 2026-09-08 |
+| ------- | ------------------ |
+| Application | **Approuvée**, interrupteur sur **Production** |
+| Bloc de clés | **Clé API de production** |
+| `oauth` | approuvée |
+| `QR CODE - OM` | approuvée |
+| `NOTIFICATION` | approuvée |
+| `Orange-Money-Distributeur` | approuvée |
+| **`PAYMENT - OM`** | **En attente** |
+
+⚠️ Les clés du bloc « Clé API de production » sont **exactement les mêmes valeurs**
+que celles du bloc « Clé API de test » déjà collées dans `backend/.env` : le
+portail n'émet qu'un seul couple par application, c'est la passerelle qui décide
+de l'environnement. Il n'y a donc rien de nouveau à copier.
+
+## 2026-09-08 : validation contre l'API réelle de production
+
+Sondes lancées avec `OM_BASE_URL=https://api.orange-sonatel.com OM_PROBE_ALLOW_PROD=1`.
+
+| Appel | Résultat |
+| ----- | -------- |
+| `POST /oauth/v1/token` | **200** — `expires_in=299`, réponse `{access_token, token_type, expires_in, scope, refresh_token, refresh_expires_in}` |
+| `POST /api/eWallet/v4/qrcode` (1 XOF) | **200** — `{deepLink, deepLinks{OM,MAXIT}, qrCode, validity, metadata, shortLink, qrId, validFor{startDateTime,endDateTime}}` |
+| `GET /api/eWallet/v1/transactions?reference=…` | **200 `[]`** (liste JSON nue) |
+| `GET /api/notification/v1/merchantcallback` | **200 `[]`** puis, après enregistrement, notre callback |
+| `POST /api/notification/v1/merchantcallback` | **succès, corps vide** |
+| **Sandbox** `POST /oauth/v1/token` | **401 `unauthorized_client`** — toujours non provisionnée |
+
+Conséquences pratiques :
+
+1. **La sandbox est morte.** Les mêmes clés y sont refusées ; seule la production
+   répond. Toute validation doit donc se faire **en production avec 1 XOF**.
+2. **`PAYMENT - OM` « En attente » ne bloque pas** : la génération de QR et la
+   recherche de transactions fonctionnent (elles relèvent de `QR CODE - OM` et de
+   la recherche de transactions).
+3. `qrCode` est bien un **PNG base64 nu** (577 octets décodés, magic `PNG`) :
+   la conversion en data-URI de `_normalize_qrcode` est correcte.
+4. Une demande de QR **non payée n'apparaît pas** dans `/transactions` : la
+   recherche renvoie `[]` et `check_om_payment` laisse donc le paiement en
+   `PENDING`, ce qui est le comportement voulu.
+
+### Deux bugs du client corrigés le 2026-09-08
+
+- **415 sur les GET.** La passerelle exige `Content-Type: application/json`
+  **même sur une requête sans corps**. `requests` ne le pose que lorsqu'un corps
+  `json=` est fourni : `GET /api/notification/v1/merchantcallback` répondait
+  `415 Unsupported Media Type`. `_request` envoie désormais `Accept` et
+  `Content-Type: application/json` sur **tous** les appels.
+- **Corps vide pris pour une erreur.** `POST /api/notification/v1/merchantcallback`
+  répond avec un corps vide en cas de succès ; `response.json()` levait
+  « Réponse Orange Money non JSON » et l'enregistrement — pourtant effectué —
+  était rapporté en échec. `_request` renvoie maintenant `{}` sur un 2xx sans corps.
+
+Au passage, `_token_cache` est désormais indexé par `(base_url, client_id)` :
+un cache unique aurait servi un jeton de production à un appel sandbox.
+
+## Webhook enregistré en production le 2026-09-08
+
+```
+POST /api/notification/v1/merchantcallback
+{"code":"621513","name":"HORUS GLOBAL SERVICE",
+ "callbackUrl":"https://horus-assur.digital/api/payments/om/callback/",
+ "apiKey":"<OM_CALLBACK_API_KEY>"}
+```
+
+Relecture (`GET …/merchantcallback?code=621513`) :
+
+```json
+[{"code":"621513","msisdn":null,"name":"HORUS GLOBAL SERVICE",
+  "callbackUrl":"https://horus-assur.digital/api/payments/om/callback/",
+  "apiKey":"50bb79dd…de99d","createdAt":"08-09-2026 18:30:42"}]
+```
+
+⚠️ **La spec ment sur deux points** : l'`apiKey` est annoncée `writeOnly` et
+« jamais renvoyée » — elle l'est en clair par le GET. Et le POST est documenté
+`201` avec un corps `MerchantCallBack` — il renvoie un corps vide.
+
+### ⚠️ `OM_CALLBACK_SIGNING_SECRET` doit rester VIDE en production
+
+La spec est explicite : le secret de signature est *« your **endpoint secret**,
+which is issued to you when your callback endpoint is provisioned »* — il est
+**délivré par Sonatel**, ce n'est pas une valeur que le partenaire choisit.
+L'enregistrement du callback n'en a renvoyé aucun.
+
+La valeur actuellement dans `backend/.env` a été **générée localement** et n'a
+jamais été transmise à Sonatel : si elle était posée en production,
+`verify_signature` rejetterait **toutes** les notifications en 400 et le
+rapprochement ne tiendrait plus que sur le sondage navigateur.
+
+Configuration retenue au go-live : `OM_CALLBACK_SIGNING_SECRET` **vide**, et
+`OM_CALLBACK_API_KEY` renseignée — le contrôle `Authorization: Basic <apiKey>`
+suffit à passer le garde-fou « échec fermé » de `OmCallbackView`, et le corps du
+callback n'est de toute façon jamais cru sur parole (`check_om_payment`
+réinterroge l'API). **À demander à Sonatel** : le secret d'endpoint, pour
+réactiver la vérification de signature.
+
+## Audit du 2026-09-09 — ce qui a été corrigé
+
+Un audit multi-agents a produit 66 constats ; son étage de vérification est mort
+sur une limite de session, ils sont donc arrivés **non confrontés au code**. Ils
+ont été triés à la main. Beaucoup étaient déjà obsolètes (en-tête `Content-Type`,
+cache de jeton) ou faux — ainsi *« le bundle Android pointe sur localhost »* :
+`mobile/.env` est un fichier de développement, et `mobile/src/lib/config.ts`
+retombe sur `https://horus-assur.digital/api` en son absence.
+
+Les corrections retenues portent toutes sur un scénario où de l'argent est
+encaissé sans que le contrat passe en PAYÉ.
+
+### Réconciliation — `manage.py om_reconcile`
+
+**Le trou principal.** Le rapprochement reposait sur deux chemins faillibles : la
+notification d'Orange (un 4xx de notre côté vaut rejet **définitif**, aucune
+réémission) et le sondage du navigateur (mort dès que l'onglet se ferme). Aucun
+filet en dessous : encaissement réel, contrat en `PAYMENT_PENDING`, silence.
+
+La commande rejoue `GET /transactions` sur toutes les demandes non conclues des
+dernières 48 h et confirme celles qui ont été réglées. Elle reprend aussi les
+paiements passés en `CANCELLED` par une ré-initiation (`revive_cancelled`) : le
+QR précédent restait payable chez Orange jusqu'à expiration, un client scannant
+l'ancien code payait donc sans jamais faire basculer son contrat.
+
+À planifier : `*/10 * * * * cd ~/apps/horus/backend && .venv/bin/python manage.py om_reconcile`
+
+### Appel réseau sorti de la transaction
+
+`initiate_om_payment` appelait Orange **dans** son bloc atomique : un dépassement
+de délai annulait la ligne `Payment` alors qu'Orange avait pu créer le QR — une
+référence payable sans aucune trace locale. La ligne est désormais committée
+d'abord ; si l'appel échoue, elle reste `PENDING` et la réconciliation la
+rattrape.
+
+### Montant manquant : échec fermé
+
+`if txn_amount and txn_amount != payment.amount` sautait la comparaison dès qu'un
+montant valait 0 ou manquait : le paiement était confirmé **à l'aveugle** et une
+police émise sans qu'on sache ce qui avait été encaissé. Un `SUCCESS` sans
+montant exploitable laisse maintenant le paiement en attente.
+
+### Sondage tolérant aux coupures (web + mobile)
+
+Une seule requête ratée — coupure réseau d'une seconde, 502 passager, redémarrage
+de gunicorn — affichait « paiement échoué » et **arrêtait la vérification**
+pendant que le client réglait. Il faut désormais 3 échecs consécutifs (≈ 12 s) ;
+une réponse valide remet le compteur à zéro. Le défaut était plus grave sur
+mobile, où la coupure est la règle.
+
+### Divers
+
+- `find_transaction` : un `SUCCESS` prime sur une tentative échouée portant la
+  même référence, et `fromDateTime` reçoit une marge arrière de 120 s (nos
+  horloges ne sont pas synchronisées avec celles d'Orange, la borne est stricte).
+- Rejeu unique sur `401` : `expires_in` vaut 299 s, une rotation en vol ne doit
+  pas faire échouer un encaissement.
+- Le corps d'erreur d'Orange est journalisé (diagnostic d'incident).
+- Réponse OAuth non-JSON → `OmApiError` (502) au lieu d'un `ValueError` nu (500).
+- Débit borné : `om_initiate` 12/min, `om_status` 60/min.
+
+### Constats réels laissés ouverts
+
+- Pas de déduplication sur `X-Sonatel-Idempotency-Key` — sans effet de bord
+  aujourd'hui (`check_om_payment` court-circuite sur `CONFIRMED` sous verrou de
+  ligne), mais chaque réémission coûte un appel Orange.
+- `validFor` / `shortLink` ne sont toujours pas persistés. En revanche `qrId`
+  l'est désormais (`Payment.om_qr_id`, migration `0004`) : un support Orange qui
+  ne connaît qu'un QR peut être relié à un contrat.
+- Le webhook public n'est pas limité en débit.
+- Pas de dédoublonnage sur `X-Sonatel-Idempotency-Key`.
+
 ## Ce qu'il reste à faire
 
 1. ~~Coller les clés du bloc « Clé API de test » dans `backend/.env`~~ — fait le

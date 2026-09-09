@@ -505,3 +505,147 @@ def test_callback_matches_payment_by_transaction_id(settings):
     assert (
         Payment.objects.filter(contract=contract, status=Payment.Status.CONFIRMED).count() == 1
     )
+
+
+# ─── Rattrapage des encaissements perdus (audit du 2026-09-09) ────────────────
+
+
+def test_status_refuses_to_confirm_when_om_omits_the_amount(settings, monkeypatch):
+    """SUCCESS sans montant lisible : on differe, on ne confirme pas a l'aveugle.
+
+    Le garde-fou anti-paiement-partiel etait fail-open — `if txn_amount and ...`
+    sautait la comparaison des qu'un montant valait 0 ou manquait, et la police
+    etait emise sans qu'on sache ce qui avait ete encaisse.
+    """
+    settings.OM_MOCK_ENABLED = True
+    client, contributor = make_contributor()
+    contract = create_quote_ready_contract(contributor)
+    payment_id = initiate(client, contract).data["payment"]["id"]
+
+    from integrations.orange_money.client import OmClient
+
+    monkeypatch.setattr(
+        OmClient,
+        "find_transaction",
+        lambda self, *, reference, since=None: {
+            "status": "SUCCESS",
+            "transactionId": "TXN-SANS-MONTANT",
+            "amount": None,
+        },
+    )
+
+    response = client.get(f"/api/payments/om/{payment_id}/status/")
+
+    assert response.status_code == 200
+    assert response.data["payment"]["status"] == Payment.Status.PENDING
+    contract.refresh_from_db()
+    assert contract.internal_status == Contract.InternalStatus.PAYMENT_PENDING
+
+
+def test_find_transaction_prefers_success_over_an_earlier_failure(settings):
+    """Une reference peut porter deux transactions : le SUCCESS doit primer."""
+    settings.OM_MOCK_ENABLED = False
+    settings.OM_REAL_CALLS_ALLOWED = True
+
+    from integrations.orange_money.client import OmClient
+
+    om = OmClient(base_url="https://example.invalid", client_id="x", client_secret="y")
+    om._request = lambda *args, **kwargs: [
+        {"reference": "HORUS-1-AAA", "status": "FAILED", "transactionId": "T-KO"},
+        {"reference": "HORUS-1-AAA", "status": "SUCCESS", "transactionId": "T-OK",
+         "amount": {"value": 24_000, "unit": "XOF"}},
+    ]
+
+    txn = om.find_transaction(reference="HORUS-1-AAA")
+
+    assert txn["status"] == "SUCCESS"
+    assert txn["transactionId"] == "T-OK"
+    assert txn["amount"] == 24_000
+
+
+def test_reconcile_confirms_a_payment_whose_callback_was_lost(settings, monkeypatch):
+    """Onglet ferme + notification perdue : la commande rattrape l'encaissement."""
+    settings.OM_MOCK_ENABLED = True
+    client, contributor = make_contributor()
+    contract = create_quote_ready_contract(contributor)
+    payment_id = initiate(client, contract).data["payment"]["id"]
+
+    from django.core.management import call_command
+
+    from integrations.orange_money.client import OmClient
+
+    monkeypatch.setattr(
+        OmClient,
+        "find_transaction",
+        lambda self, *, reference, since=None: {
+            "status": "SUCCESS",
+            "transactionId": "TXN-RATTRAPE",
+            "amount": 24_000,
+        },
+    )
+
+    call_command("om_reconcile")
+
+    payment = Payment.objects.get(pk=payment_id)
+    assert payment.status == Payment.Status.CONFIRMED
+    assert payment.om_transaction_id == "TXN-RATTRAPE"
+    contract.refresh_from_db()
+    assert contract.internal_status == Contract.InternalStatus.PAID
+
+
+def test_reconcile_revives_a_cancelled_payment_that_was_actually_paid(settings, monkeypatch):
+    """Le client a scanne l'ANCIEN QR apres une re-initiation : argent encaisse.
+
+    `initiate_om_payment` passe la demande precedente en CANCELLED cote Horus,
+    mais son QR restait payable chez Orange jusqu'a expiration. Sans reprise,
+    ce versement n'aurait jamais fait passer le contrat en PAYE.
+    """
+    settings.OM_MOCK_ENABLED = True
+    client, contributor = make_contributor()
+    contract = create_quote_ready_contract(contributor)
+    first_id = initiate(client, contract).data["payment"]["id"]
+    initiate(client, contract)
+
+    first = Payment.objects.get(pk=first_id)
+    assert first.status == Payment.Status.CANCELLED
+
+    from django.core.management import call_command
+
+    from integrations.orange_money.client import OmClient
+
+    def fake_find(self, *, reference, since=None):
+        if reference != first.external_reference:
+            return None
+        return {"status": "SUCCESS", "transactionId": "TXN-ANCIEN-QR", "amount": 24_000}
+
+    monkeypatch.setattr(OmClient, "find_transaction", fake_find)
+
+    call_command("om_reconcile")
+
+    first.refresh_from_db()
+    assert first.status == Payment.Status.CONFIRMED
+    assert first.om_transaction_id == "TXN-ANCIEN-QR"
+    contract.refresh_from_db()
+    assert contract.internal_status == Contract.InternalStatus.PAID
+
+
+def test_reconcile_leaves_an_unpaid_pending_payment_alone(settings, monkeypatch):
+    """Aucune transaction cote Orange : le paiement reste en attente, sans bruit."""
+    settings.OM_MOCK_ENABLED = True
+    client, contributor = make_contributor()
+    contract = create_quote_ready_contract(contributor)
+    payment_id = initiate(client, contract).data["payment"]["id"]
+
+    from django.core.management import call_command
+
+    from integrations.orange_money.client import OmClient
+
+    monkeypatch.setattr(
+        OmClient, "find_transaction", lambda self, *, reference, since=None: None
+    )
+
+    call_command("om_reconcile")
+
+    assert Payment.objects.get(pk=payment_id).status == Payment.Status.PENDING
+    contract.refresh_from_db()
+    assert contract.internal_status == Contract.InternalStatus.PAYMENT_PENDING

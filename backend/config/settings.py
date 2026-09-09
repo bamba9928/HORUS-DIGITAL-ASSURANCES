@@ -174,6 +174,14 @@ REST_FRAMEWORK = {
         # Renouvellement et revocation de jeton : plus permissif que la
         # connexion (aucun mot de passe n'y transite) mais borne quand meme.
         'auth_token_refresh': config('AUTH_TOKEN_REFRESH_THROTTLE_RATE', default='60/min'),
+        # Chaque initiation cree une vraie demande de paiement sur le compte
+        # marchand de production : une boucle non bornee taperait dans les
+        # quotas Orange et polluerait le journal des transactions.
+        'om_initiate': config('OM_INITIATE_THROTTLE_RATE', default='12/min'),
+        # Le sondage du front interroge toutes les 4 s (15 appels/min) ; la
+        # borne laisse la marge d'un second onglet sans ouvrir la porte a une
+        # boucle infinie contre l'API Orange.
+        'om_status': config('OM_STATUS_THROTTLE_RATE', default='60/min'),
     },
 }
 
