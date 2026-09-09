@@ -20,10 +20,6 @@ GUARANTEES = [
     {"value": 8, "label": "Tierce complete"},
 ]
 
-# Garanties systématiquement incluses dans tout contrat ASS (non sélectionnables par l'utilisateur).
-# RC = base obligatoire, CEDEAO = couverture zone CEDEAO toujours cochée dans le formulaire ASS natif.
-ALWAYS_INCLUDED_GUARANTEES = ["RC", "CEDEAO"]
-
 GUARANTEE_OPTION_FIELDS = [
     {
         "field": "garantiesOptPT",
@@ -31,6 +27,7 @@ GUARANTEE_OPTION_FIELDS = [
         "helper": "Valeur confirmee ASS pour la garantie 2.",
         "trigger_guarantee": 2,
         "enabled": True,
+        "needs_confirmation": False,
         "options": [{"value": "OPTION_1", "label": "Option 1"}],
     },
     {
@@ -39,15 +36,21 @@ GUARANTEE_OPTION_FIELDS = [
         "helper": "Valeurs confirmees ASS pour la garantie 4.",
         "trigger_guarantee": 4,
         "enabled": True,
+        "needs_confirmation": False,
         "options": [
             {"value": "500000", "label": "Capital 500 000"},
             {"value": "CAPITAL", "label": "Capital"},
         ],
     },
     {
+        # Seule option sans garantie declencheuse, et seule que l'utilisateur ne
+        # choisit pas : le client la force a OPTION_1 sur chaque devis
+        # (`cleanGuaranteeOptions`, web/src/app/contracts/new/page.tsx). Elle
+        # reste exposee ici pour que le formulaire connaisse la valeur attendue,
+        # pas pour etre proposee.
         "field": "garantiesOptAS",
         "label": "Option AS",
-        "helper": "Valeur confirmee ASS pour l'option AS.",
+        "helper": "Toujours envoyee a OPTION_1 : valeur confirmee ASS, non modifiable.",
         "trigger_guarantee": None,
         "enabled": True,
         "needs_confirmation": False,
@@ -103,9 +106,12 @@ VEHICLE_CATEGORIES = [
     {
         "value": "C4",
         "label": "C4 - Transport de Personnes (TPV)",
+        # `contract_types` vide ET `enabled` a False : la categorie ne remonte
+        # dans aucun formulaire. Ses deux sous-genres (TPV8, TPV9) restent
+        # declares plus bas — ils redeviendront selectionnables sans edition le
+        # jour ou ASS rouvrira le pool.
         "contract_types": [],
         "enabled": False,
-        # Pool TPV exclu temporairement de la digitalisation ASS.
         "disabled_reason": "Pool TPV exclu temporairement de la digitalisation ASS.",
     },
     {
