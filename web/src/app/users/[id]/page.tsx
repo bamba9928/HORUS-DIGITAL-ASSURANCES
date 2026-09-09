@@ -290,8 +290,8 @@ export default function UserDetailPage() {
                               className="font-extrabold tabular-nums text-primary"
                               data-label="Prime RC"
                             >
-                              {c.prime_rc_ass !== null
-                                ? formatMoney(c.prime_rc_ass)
+                              {c.prime_rc !== null
+                                ? formatMoney(c.prime_rc)
                                 : "—"}
                             </td>
                             <td className="text-[13px] text-black/45" data-label="Date">

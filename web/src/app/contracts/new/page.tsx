@@ -2230,7 +2230,7 @@ function QuoteResultPanel({
               <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-2 sm:divide-x sm:divide-y-0">
                 {/* Colonne gauche */}
                 <div className="divide-y divide-border">
-                  <QuoteRow label="Prime RC" value={quote.prime_rc_ass} />
+                  <QuoteRow label="Prime RC" value={quote.prime_rc} />
                   <QuoteRow label="Coût de la police" value={quote.cout_police ?? quote.policy_fee_ass} />
                   <QuoteRow label="Taxe" value={quote.taxe ?? 0} />
                   <QuoteRow label="CEDEAO" value={quote.cedeao ?? 0} />
@@ -2255,7 +2255,7 @@ function QuoteResultPanel({
             <dl className="grid grid-cols-2 gap-4 md:grid-cols-3">
               <SummaryItem
                 label={canSeeAss ? "Prime RC ASS" : "Prime RC"}
-                value={`${formatAmount(quote.prime_rc_ass)} FCFA`}
+                value={`${formatAmount(quote.prime_rc)} FCFA`}
               />
               <SummaryItem label="Coût de police" value={`${formatAmount(quote.policy_fee_ass)} FCFA`} />
               <SummaryItem

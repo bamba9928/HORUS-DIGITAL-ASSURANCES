@@ -1758,7 +1758,7 @@ function QuoteStep({
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Détail</Text>
-        <QuoteRow label="Prime RC" value={formatFcfa(quote.prime_rc_ass)} />
+        <QuoteRow label="Prime RC" value={formatFcfa(quote.prime_rc)} />
         {quote.prime_ag ? <QuoteRow label="Prime accessoire" value={formatFcfa(quote.prime_ag)} /> : null}
         {quote.taxe ? <QuoteRow label="Taxe" value={formatFcfa(quote.taxe)} /> : null}
         {quote.fonds_garantie ? (

@@ -230,6 +230,8 @@ export function StatStrip({
     value: React.ReactNode;
     tone?: "neutral" | "primary" | "success";
     mono?: boolean;
+    /** Explication au survol : a quoi ce montant correspond exactement. */
+    hint?: string;
   }[];
   size?: "md" | "sm";
   className?: string;
@@ -253,12 +255,19 @@ export function StatStrip({
         const isEmpty = item.value === "—" || item.value === null;
         return (
           <div className="min-w-0 bg-white px-4 py-2.5" key={item.label}>
-            <p className="eyebrow">{item.label}</p>
+            <p className="eyebrow" title={item.hint}>
+              {item.label}
+              {item.hint ? (
+                <span aria-hidden className="ml-1 cursor-help text-black/25">
+                  ⓘ
+                </span>
+              ) : null}
+            </p>
             <p
               className={`truncate tabular tracking-[-0.025em] ${valueClass} ${
                 isEmpty ? "text-faint" : toneClass[item.tone ?? "neutral"]
               } ${item.mono ? "font-mono tracking-[-0.03em]" : ""}`}
-              title={typeof item.value === "string" ? item.value : undefined}
+              title={item.hint ?? (typeof item.value === "string" ? item.value : undefined)}
             >
               {isEmpty ? "—" : item.value}
             </p>

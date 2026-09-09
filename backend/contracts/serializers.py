@@ -259,6 +259,27 @@ class ContractListSerializer(serializers.ModelSerializer):
     client_phone = serializers.SerializerMethodField()
     effect_date = serializers.SerializerMethodField()
     net_a_verser = serializers.SerializerMethodField()
+    prime_rc = serializers.SerializerMethodField()
+
+    def get_prime_rc(self, contract):
+        """La `PrimeRC` de la ventilation ASS — celle qui s'affiche.
+
+        A ne pas confondre avec `prime_rc_ass`, qui stocke le champ `data` de la
+        reponse ASS : une assiette d'emission que leur passerelle recalcule et
+        controle, et qui ne coincide PAS avec la PrimeRC (4 553 contre 3 953 sur
+        le contrat 19). Les deux s'affichaient sous le meme libelle « Prime RC »,
+        l'une dans le bandeau de la fiche, l'autre dans la ventilation, avec
+        600 F d'ecart et aucune explication.
+
+        Seule la PrimeRC est coherente avec le reste du decompte :
+        `PrimeRC + cout de police + taxe + CEDEAO + FGA = Prime Totale`.
+        `prime_rc_ass` reste intouche — l'envoyer autrement a l'emission fait
+        rejeter l'attestation (voir extract_prime_rc).
+        """
+        breakdown = extract_rc_breakdown(contract.ass_response_payload)
+        if breakdown and breakdown.get("prime_rc_ass"):
+            return breakdown["prime_rc_ass"]
+        return contract.prime_rc_ass
 
     def get_net_a_verser(self, contract):
         """Le seul montant calcule par Horus : Prime Totale ASS - cout de police.
@@ -293,6 +314,7 @@ class ContractListSerializer(serializers.ModelSerializer):
             "client_phone",
             "effect_date",
             "prime_rc_ass",
+            "prime_rc",
             "cout_police_ass",
             "ttc_ass",
             "net_a_verser",

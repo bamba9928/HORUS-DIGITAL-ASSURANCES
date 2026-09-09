@@ -232,7 +232,7 @@ export default function ContractScreen() {
 
         <Section title="Montants">
           {/* Ces trois lignes viennent d'ASS telles quelles. */}
-          <Row label="Prime RC" value={formatFcfa(contract.prime_rc_ass)} />
+          <Row label="Prime RC" value={formatFcfa(contract.prime_rc)} />
           <Row label="Coût de police" value={formatFcfa(contract.cout_police_ass)} />
           <Row label="Total TTC" value={formatFcfa(contract.ttc_ass)} />
           {/* Celle-ci est la nôtre : ce que l'apporteur règle réellement. */}

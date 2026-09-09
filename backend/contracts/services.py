@@ -132,7 +132,12 @@ def _build_quote(contract_type, prime_rc_ass, breakdown, items):
     """
     quote = {
         "type": contract_type,
+        # Assiette d'emission : le champ `data` d'ASS, renvoye tel quel a
+        # `qrcode.request`. Ce n'est PAS la Prime RC — voir extract_prime_rc.
         "prime_rc_ass": prime_rc_ass,
+        # Prime RC de la ventilation, celle qui s'affiche et qui s'additionne au
+        # reste du decompte. Repli sur l'assiette quand ASS ne ventile pas.
+        "prime_rc": (breakdown or {}).get("prime_rc_ass") or prime_rc_ass,
         "policy_fee_ass": breakdown["cout_police"] if breakdown and breakdown.get("cout_police") else ASS_POLICY_FEE,
         "items": items,
         "warnings": [],

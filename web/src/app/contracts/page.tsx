@@ -160,7 +160,7 @@ export default function ContractsPage() {
     () => ({
       count: contracts.length,
       issued: contracts.filter((c) => c.internal_status === "ISSUED").length,
-      primeRc: contracts.reduce((t, c) => t + (c.prime_rc_ass ?? 0), 0),
+      primeRc: contracts.reduce((t, c) => t + (c.prime_rc ?? 0), 0),
       ttc: contracts.reduce((t, c) => t + (c.ttc_ass ?? 0), 0),
     }),
     [contracts],
@@ -431,9 +431,9 @@ export default function ContractsPage() {
                         </p>
                         <p className="cell-sub">
                           RC&nbsp;
-                          {contract.prime_rc_ass === null
+                          {contract.prime_rc === null
                             ? "—"
-                            : formatMoney(contract.prime_rc_ass)}
+                            : formatMoney(contract.prime_rc)}
                         </p>
                       </td>
                     </tr>

@@ -447,26 +447,33 @@ export default function ContractDetailPage() {
                 size="sm"
               />
 
-              {/* Montants — la synthèse ; le détail reste dans « Tarification » */}
+              {/* Montants — la synthèse ; le détail reste dans « Tarification ».
+                  Les trois premières tuiles reprennent EXACTEMENT les lignes du
+                  décompte ASS : la Prime RC affichait auparavant `prime_rc_ass`
+                  (le champ `data` d'ASS, une assiette d'émission), soit 600 F
+                  d'écart avec la « Prime RC » de la ventilation juste en
+                  dessous, sous le même libellé. */}
               <StatStrip
                 items={[
                   {
+                    hint: "Prime de responsabilité civile calculée par ASS, hors coût de police, taxe, CEDEAO et fonds de garantie.",
                     label: "Prime RC",
                     value:
-                      contract.prime_rc_ass === null
-                        ? "—"
-                        : formatMoney(contract.prime_rc_ass),
+                      contract.prime_rc === null ? "—" : formatMoney(contract.prime_rc),
                   },
                   {
+                    hint: "Frais fixes de mise en place du contrat, retenus à la source par l'apporteur.",
                     label: canSeeAss ? "Police ASS" : "Police",
                     value: formatMoney(contract.cout_police_ass),
                   },
                   {
+                    hint: "Prime totale facturée par ASS : prime RC, coût de police, taxe, CEDEAO et fonds de garantie.",
                     label: canSeeAss ? "TTC ASS" : "TTC",
                     value: contract.ttc_ass === null ? "—" : formatMoney(contract.ttc_ass),
                     tone: "primary",
                   },
                   {
+                    hint: "Ce que l'apporteur règle réellement : prime totale moins le coût de police.",
                     label: "Net à verser",
                     value: payableAmount === null ? "—" : formatMoney(payableAmount),
                     tone: "success",
@@ -1138,7 +1145,8 @@ function TarificationPanel({
   // Fusion : on préfère les données fraîches du serveur (breakdown persistant)
   // mais on garde les warnings / fleet items du quote state en mémoire
   const b: QuoteBreakdown = breakdown ?? {
-    prime_rc_ass: freshQuote!.prime_rc_ass,
+    // La ventilation affiche la Prime RC d'ASS, pas l'assiette d'emission.
+    prime_rc_ass: freshQuote!.prime_rc,
     cout_police: freshQuote!.policy_fee_ass,
     taxe: freshQuote!.taxe,
     cedeao: freshQuote!.cedeao,

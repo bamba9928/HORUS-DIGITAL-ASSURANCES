@@ -521,6 +521,12 @@ export type ContractListItem = {
   client_phone: string;
   effect_date: string;
   prime_rc_ass: number | null;
+  /**
+   * Prime RC telle qu'ASS la ventile — c'est elle qu'on affiche. `prime_rc_ass`
+   * porte le champ `data` d'ASS, une assiette d'émission qui ne coïncide pas
+   * avec elle et ne s'additionne pas au reste du décompte.
+   */
+  prime_rc: number | null;
   cout_police_ass: number;
   ttc_ass: number | null;
   /**
@@ -816,7 +822,10 @@ export type QuoteItem = {
 
 export type ContractQuote = {
   type: string;
+  /** Assiette d'émission (champ `data` d'ASS) — pas la Prime RC affichable. */
   prime_rc_ass: number;
+  /** Prime RC de la ventilation ASS : celle qui s'additionne au décompte. */
+  prime_rc: number;
   policy_fee_ass: number;
   items: QuoteItem[];
   warnings: string[];

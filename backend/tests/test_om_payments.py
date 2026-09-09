@@ -1052,3 +1052,68 @@ def test_reconcile_keeps_a_recent_unpaid_request_open(settings, monkeypatch):
     assert Payment.objects.get(pk=payment_id).status == Payment.Status.PENDING
     contract.refresh_from_db()
     assert contract.internal_status == Contract.InternalStatus.PAYMENT_PENDING
+
+
+# ─── « Prime RC » doit dire la meme chose partout (2026-09-09) ────────────────
+
+
+def test_contract_api_exposes_the_ass_prime_rc_not_the_issuance_basis(settings):
+    """Deux « Prime RC » differentes s'affichaient sur le meme ecran.
+
+    Le bandeau de la fiche montrait `prime_rc_ass`, c'est-a-dire le champ `data`
+    d'ASS — une assiette d'emission que leur passerelle recalcule — pendant que
+    la ventilation juste en dessous montrait la vraie `PrimeRC`. Constate en
+    production sur le contrat 19 : 4 553 contre 3 953, sans explication.
+
+    Seule la PrimeRC boucle le decompte :
+    PrimeRC + cout de police + taxe + CEDEAO + FGA = Prime Totale.
+    """
+    settings.OM_MOCK_ENABLED = True
+    client, contributor = make_contributor()
+    contract = Contract.objects.create(
+        organization=contributor.organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.QUOTE_READY,
+        # `data` d'ASS : ce que l'emission doit renvoyer, PAS ce qu'on affiche.
+        prime_rc_ass=4_553,
+        cout_police_ass=3_000,
+        ttc_ass=8_325,
+        ass_response_payload={
+            "operationStatus": "SUCCESS",
+            "data": "4553",
+            "PrimeRC": "3953",
+            "CoutPolice": "3000",
+            "Taxe": "973",
+            "Cedeao": "300",
+            "Fga": "99",
+            "Reduction": "0",
+            "PrimeTotale": "8325",
+        },
+    )
+
+    data = client.get(f"/api/contracts/{contract.id}/").data
+
+    assert data["prime_rc"] == 3_953
+    # L'assiette d'emission reste exposee et INTACTE : l'envoyer autrement fait
+    # rejeter l'attestation par ASS (voir extract_prime_rc).
+    assert data["prime_rc_ass"] == 4_553
+    assert data["prime_rc"] + data["cout_police_ass"] + 973 + 300 + 99 == data["ttc_ass"]
+    assert data["quote_breakdown"]["prime_rc_ass"] == data["prime_rc"]
+
+
+def test_prime_rc_falls_back_to_the_issuance_basis_without_a_breakdown(settings):
+    """Flotte : ASS ne ventile pas, la tuile affiche ce dont on dispose."""
+    settings.OM_MOCK_ENABLED = True
+    client, contributor = make_contributor()
+    contract = Contract.objects.create(
+        organization=contributor.organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.QUOTE_READY,
+        prime_rc_ass=4_553,
+        cout_police_ass=3_000,
+        ass_response_payload={"operationStatus": "SUCCESS", "data": "4553"},
+    )
+
+    assert client.get(f"/api/contracts/{contract.id}/").data["prime_rc"] == 4_553
