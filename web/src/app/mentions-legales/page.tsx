@@ -5,7 +5,7 @@ import Link from "next/link";
 import { AppFooter } from "@/components/AppFooter";
 
 export const metadata: Metadata = {
-  title: "Mentions légales — Horus Assurances Digital",
+  title: "Mentions légales",
   description: "Mentions légales de la plateforme Horus Assurances Digital.",
 };
 

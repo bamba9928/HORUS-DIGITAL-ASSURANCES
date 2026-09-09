@@ -3,7 +3,7 @@
 import { CheckCircle2, Eye, EyeOff, KeyRound, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useState } from "react";
+import { FormEvent, Suspense, useId, useState } from "react";
 
 import { AlertMessage, BrandSpinner } from "@/components/ui";
 import { acceptInvitation } from "@/lib/api";
@@ -147,15 +147,21 @@ function PasswordField({
   onChange: (value: string) => void;
   onToggle: () => void;
 }) {
+  const fieldId = useId();
+
   return (
     <div>
-      <label className="mb-1.5 block text-xs font-extrabold uppercase tracking-wider text-black/50">
+      <label
+        className="mb-1.5 block text-xs font-extrabold uppercase tracking-wider text-black/50"
+        htmlFor={fieldId}
+      >
         {label}
       </label>
       <div className="relative">
         <input
           autoComplete="new-password"
           className="app-field w-full pr-11"
+          id={fieldId}
           minLength={8}
           onChange={(event) => onChange(event.target.value)}
           required

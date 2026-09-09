@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BrandSpinner } from "@/components/ui";
+import { useEscapeKey } from "@/lib/useEscapeKey";
 import {
   getOmPaymentStatus,
   initiateOmPayment,
@@ -44,6 +45,7 @@ export function OmPaymentDialog({
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const confirmedRef = useRef(false);
   const pollFailuresRef = useRef(0);
+  useEscapeKey(onClose);
 
   const initiate = useCallback(() => {
     confirmedRef.current = false;

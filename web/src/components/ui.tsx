@@ -1,3 +1,5 @@
+"use client";
+
 import {
   AlertCircle,
   ArrowRight,
@@ -9,6 +11,9 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useId, useRef } from "react";
+
+import { useEscapeKey } from "@/lib/useEscapeKey";
 
 /* ── PageAction ──────────────────────────────────────────────────── */
 type PageActionProps = {
@@ -533,6 +538,16 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  useEscapeKey(onCancel, open && !loading);
+  const titleId = useId();
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    // Le focus arrivait nulle part a l'ouverture. On le pose sur « Annuler » et
+    // pas sur l'action destructive : une frappe sur Entree ne doit pas
+    // supprimer quoi que ce soit.
+    if (open) cancelRef.current?.focus();
+  }, [open]);
+
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
@@ -544,11 +559,14 @@ export function ConfirmDialog({
         type="button"
       />
       <div
+        aria-labelledby={titleId}
         aria-modal="true"
         className="app-surface-raised animate-scale-in relative z-10 w-full max-w-md p-5 shadow-xl"
         role="dialog"
       >
-        <h2 className="text-[15px] font-extrabold tracking-tight">{title}</h2>
+        <h2 className="text-[15px] font-extrabold tracking-tight" id={titleId}>
+          {title}
+        </h2>
         {description ? (
           <div className="mt-2 text-sm font-medium leading-relaxed text-black/55">
             {description}
@@ -559,6 +577,7 @@ export function ConfirmDialog({
             className="btn btn-secondary"
             disabled={loading}
             onClick={onCancel}
+            ref={cancelRef}
             type="button"
           >
             {cancelLabel}

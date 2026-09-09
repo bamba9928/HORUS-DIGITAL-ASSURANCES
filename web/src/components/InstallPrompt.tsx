@@ -3,6 +3,8 @@
 import { Download, Share, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { useEscapeKey } from "@/lib/useEscapeKey";
+
 /**
  * Invitation à installer l'application (PWA).
  *
@@ -107,6 +109,9 @@ export function InstallPrompt() {
   const [iosHint] = useState(() => isIos());
 
   const close = useCallback(() => setVisible(false), []);
+  // Échap masque la carte sans enregistrer de refus definitif : elle pourra
+  // etre reproposee, contrairement a « Ne plus proposer ».
+  useEscapeKey(close, visible);
 
   const dismissForever = useCallback(() => {
     writeChoice("never");

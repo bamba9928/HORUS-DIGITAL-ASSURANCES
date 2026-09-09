@@ -3,7 +3,7 @@
 import { Eye, EyeOff, LockKeyhole, LogIn, UserRound } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useState } from "react";
+import { FormEvent, Suspense, useId, useState } from "react";
 
 import { AppFooter } from "@/components/AppFooter";
 import { useAuth } from "@/components/AuthProvider";
@@ -40,6 +40,10 @@ function LoginPageContent() {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  // `useId` plutot qu'un identifiant en dur : stable entre le rendu serveur et
+  // le rendu client, donc pas d'avertissement d'hydratation.
+  const identifierId = useId();
+  const passwordId = useId();
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -78,10 +82,17 @@ function LoginPageContent() {
       {/* ── Section connexion (carte flottante) ───────────────────── */}
       <div className="flex w-full flex-1 items-start justify-center pb-14">
         <div className="w-full max-w-[380px] rounded-2xl border border-border bg-white p-8 shadow-xl shadow-black/[0.06] sm:p-10">
+          {/* La page n'avait aucun titre : le logo est une image, et un lecteur
+              d'écran arrivait donc sur un formulaire sans savoir de quoi il
+              s'agit. Visuellement le logo suffit, d'où le `sr-only`. */}
+          <h1 className="sr-only">Connexion à Horus Assurances Digital</h1>
           <form className="space-y-4" onSubmit={handleSubmit}>
             {/* Identifiant */}
             <div>
-              <label className="mb-1.5 block text-xs font-extrabold uppercase tracking-wider text-black/50">
+              <label
+                className="mb-1.5 block text-xs font-extrabold uppercase tracking-wider text-black/50"
+                htmlFor={identifierId}
+              >
                 Identifiant, email ou téléphone
               </label>
               <div className="relative">
@@ -93,6 +104,7 @@ function LoginPageContent() {
                   autoComplete="username"
                   autoFocus
                   className="app-field app-field-with-icon"
+                  id={identifierId}
                   onChange={(e) => setIdentifier(e.target.value)}
                   placeholder="identifiant, email ou 77XXXXXXX"
                   required
@@ -103,7 +115,10 @@ function LoginPageContent() {
 
             {/* Password */}
             <div>
-              <label className="mb-1.5 block text-xs font-extrabold uppercase tracking-wider text-black/50">
+              <label
+                className="mb-1.5 block text-xs font-extrabold uppercase tracking-wider text-black/50"
+                htmlFor={passwordId}
+              >
                 Mot de passe
               </label>
               <div className="relative">
@@ -114,6 +129,7 @@ function LoginPageContent() {
                 <input
                   autoComplete="current-password"
                   className="app-field app-field-with-icon pr-11"
+                  id={passwordId}
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   type={showPassword ? "text" : "password"}

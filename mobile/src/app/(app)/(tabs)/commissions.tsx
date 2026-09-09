@@ -145,6 +145,9 @@ export default function CommissionsScreen() {
               const active = option.value === status;
               return (
                 <Pressable
+                  accessibilityLabel={`Filtrer : ${option.label}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
                   key={option.value || "all"}
                   onPress={() => setStatus(option.value)}
                   style={[styles.chip, active && styles.chipActive]}
@@ -177,6 +180,10 @@ function CommissionRow({ snapshot }: { snapshot: CommissionSnapshot }) {
 
   return (
     <Pressable
+      accessibilityLabel={`Contrat ${snapshot.contract}, retenue ${formatFcfa(
+        snapshot.commission_total
+      )}`}
+      accessibilityRole="button"
       // Une commission se lit toujours par rapport à son contrat : sans ce
       // renvoi, il faudrait retrouver le contrat à la main dans l'autre onglet.
       onPress={() =>

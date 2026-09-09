@@ -6,7 +6,7 @@ import Link from "next/link";
 import { AppFooter } from "@/components/AppFooter";
 
 export const metadata: Metadata = {
-  title: "Page introuvable — Horus Assurances Digital",
+  title: "Page introuvable",
 };
 
 export default function NotFound() {

@@ -16,9 +16,10 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
+import { useEscapeKey } from "@/lib/useEscapeKey";
 import { useAuth } from "@/components/AuthProvider";
 import { OmPaymentDialog } from "@/components/OmPaymentDialog";
 import { useToast } from "@/components/ToastProvider";
@@ -173,6 +174,12 @@ export default function ContractDetailPage() {
   // aurait fait réclamer à l'apporteur un montant que le backend aurait refusé.
   // `null` quand ASS n'a pas fourni de Prime Totale : rien n'est alors payable.
   const payableAmount = contract?.net_a_verser ?? null;
+  // Identifiants des champs du dialogue d'annulation : leurs libelles n'etaient
+  // relies a rien, cliquer dessus ne placait pas le curseur dans le champ.
+  const cancelMethodId = useId();
+  const cancelReasonId = useId();
+  // Le dialogue d'annulation se fermait au clic sur le fond, jamais au clavier.
+  useEscapeKey(() => setShowCancelDialog(false), showCancelDialog);
 
   async function calculateQuote() {
     if (!contract) return;
@@ -736,10 +743,14 @@ export default function ContractDetailPage() {
             </div>
             <div className="mt-6 space-y-4">
               <div>
-                <label className="mb-1.5 block text-xs font-extrabold uppercase tracking-wide text-black/45">
+                <label
+                  className="mb-1.5 block text-xs font-extrabold uppercase tracking-wide text-black/45"
+                  htmlFor={cancelMethodId}
+                >
                   Méthode
                 </label>
                 <select
+                  id={cancelMethodId}
                   className="app-field text-sm"
                   onChange={(e) => setCancelMethod(e.target.value as CancelMethod)}
                   value={cancelMethod}
@@ -750,10 +761,14 @@ export default function ContractDetailPage() {
                 </select>
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-extrabold uppercase tracking-wide text-black/45">
+                <label
+                  className="mb-1.5 block text-xs font-extrabold uppercase tracking-wide text-black/45"
+                  htmlFor={cancelReasonId}
+                >
                   Motif (optionnel)
                 </label>
                 <input
+                  id={cancelReasonId}
                   className="app-field text-sm"
                   onChange={(e) => setCancelMotif(e.target.value)}
                   placeholder="Ex: Erreur de saisie"

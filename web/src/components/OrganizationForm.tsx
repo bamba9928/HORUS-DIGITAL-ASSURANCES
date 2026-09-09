@@ -567,17 +567,21 @@ function Field({
   required?: boolean;
   children: React.ReactNode;
 }) {
+  // `children` est opaque : impossible d'y poser un `id` sans cloner l'element.
+  // Le <label> ENVELOPPE donc le champ — l'association implicite du HTML, celle
+  // qu'utilisent deja les autres formulaires de l'application. Sans elle,
+  // cliquer sur l'intitule ne placait pas le curseur dans le champ.
   return (
-    <div>
-      <label className="mb-1.5 block text-[13px] font-extrabold">
+    <label className="block">
+      <span className="mb-1.5 block text-[13px] font-extrabold">
         {label}
         {required ? <span className="ml-0.5 text-red-500">*</span> : null}
-      </label>
+      </span>
       {children}
       {hint ? (
         <p className="mt-1 text-xs font-semibold text-black/38">{hint}</p>
       ) : null}
-    </div>
+    </label>
   );
 }
 
