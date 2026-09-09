@@ -48,6 +48,11 @@ OM_TRANSACTION_TYPE_MERCHANT_PAYMENT = "MERCHANT_PAYMENT"
 # Code d'erreur métier renvoyé quand le QR est expiré (corps application/problem+json).
 OM_ERROR_CODE_QR_EXPIRED = "4004"
 
+# Montant minimum accepte par la passerelle pour un paiement marchand.
+# Constate en production le 2026-09-09 : la spec annonce `minimum: 1` sur
+# MoneyReq, mais Orange refuse en dessous de 10 XOF cote client.
+OM_MIN_AMOUNT = 10
+
 OM_CURRENCY = "XOF"
 
 # Marge arrière appliquée à `fromDateTime` lors de la recherche d'une

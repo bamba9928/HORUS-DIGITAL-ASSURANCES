@@ -9,6 +9,7 @@ from contracts.models import Contract
 from integrations.ass.client import parse_ass_amount
 from integrations.orange_money.client import OmClient
 from integrations.orange_money.constants import (
+    OM_MIN_AMOUNT,
     OM_STATUS_SUCCESS,
     OM_TERMINAL_FAILURE_STATUSES,
 )
@@ -179,6 +180,14 @@ def initiate_om_payment(*, contract, created_by=None, client=None):
         _validate_payable_contract(contract)
 
         amount = expected_payment_amount(contract)
+        if amount < OM_MIN_AMOUNT:
+            # Orange rejette en dessous de 10 XOF. Sans ce garde-fou l'apporteur
+            # recevait un 502 opaque venu de la passerelle, sur un devis dont le
+            # net a verser est nul ou derisoire.
+            raise PaymentConfirmationError(
+                f"Le montant a regler ({amount} FCFA) est inferieur au minimum "
+                f"Orange Money de {OM_MIN_AMOUNT} FCFA. Verifier le devis."
+            )
         reference = f"HORUS-{contract.pk}-{uuid.uuid4().hex[:10].upper()}"
 
         # Les demandes precedentes passent en CANCELLED cote Horus, mais leur QR

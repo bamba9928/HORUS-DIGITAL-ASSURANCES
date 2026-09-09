@@ -649,3 +649,141 @@ def test_reconcile_leaves_an_unpaid_pending_payment_alone(settings, monkeypatch)
     assert Payment.objects.get(pk=payment_id).status == Payment.Status.PENDING
     contract.refresh_from_db()
     assert contract.internal_status == Contract.InternalStatus.PAYMENT_PENDING
+
+
+# ─── Recette reelle du 2026-09-09 (paiement de 10 XOF en production) ──────────
+
+
+# Transaction reellement renvoyee par Orange pour la reference PROBE-10XOF-RECETTE,
+# copiee telle quelle : c'est le seul echantillon authentique dont nous disposons.
+REAL_PAID_TRANSACTION = {
+    "amount": {"value": 10.0, "unit": "XOF"},
+    "requestDate": "2026-09-09T10:02:59.379Z",
+    "reference": "HORUS-1-ABCDEF0123",
+    "metadata": {
+        "idClient": "contrat-1",
+        "idempotencyKey": "e8a43c9b-6bfb-4573-ae2b-c4564707bb4c",
+        "notification.dispatched": "true",
+    },
+    "receiveNotification": True,
+    "partner": {"id": "621513", "idType": "CODE", "walletType": "PRINCIPAL"},
+    "customer": {"id": "772490530", "idType": "MSISDN", "walletType": "PRINCIPAL"},
+    "type": "MERCHANT_PAYMENT",
+    "transactionId": "MP260909.1002.A34169",
+    "createdAt": "2026-09-09T10:02:59.379Z",
+    "updatedAt": "2026-09-09T10:03:01.210Z",
+    "channel": "MAXIT",
+    "status": "SUCCESS",
+}
+
+
+def test_find_transaction_never_sends_the_broken_type_filter(settings):
+    """`type=MERCHANT_PAYMENT` en parametre de requete casse la recherche.
+
+    Constate en production le 2026-09-09 sur un vrai paiement : la transaction
+    porte pourtant bien `"type": "MERCHANT_PAYMENT"`, mais
+
+        ?reference=<ref>                        -> 1 resultat
+        ?type=MERCHANT_PAYMENT                  -> []
+        ?reference=<ref>&type=MERCHANT_PAYMENT  -> []
+
+    Envoyer ce filtre rendait TOUT encaissement introuvable : ni le sondage ni
+    la reconciliation n'auraient jamais confirme un paiement.
+    """
+    settings.OM_MOCK_ENABLED = False
+    settings.OM_REAL_CALLS_ALLOWED = True
+
+    from integrations.orange_money.client import OmClient
+
+    captured = {}
+    om = OmClient(base_url="https://example.invalid", client_id="x", client_secret="y")
+
+    def fake_request(method, endpoint, *, json=None, params=None, headers=None):
+        captured["params"] = params
+        return [REAL_PAID_TRANSACTION]
+
+    om._request = fake_request
+    txn = om.find_transaction(reference="HORUS-1-ABCDEF0123")
+
+    assert "type" not in captured["params"], (
+        "Le filtre `type` ne doit jamais partir vers Orange : il renvoie [] "
+        "y compris sur des transactions dont le type est MERCHANT_PAYMENT."
+    )
+    # Le tri par type est refait localement, sur le champ que la reponse porte.
+    assert txn == {
+        "status": "SUCCESS",
+        "transactionId": "MP260909.1002.A34169",
+        "amount": 10.0,
+    }
+
+
+def test_find_transaction_ignores_a_reference_of_another_type():
+    """Le tri par type, deplace cote client, doit rester effectif."""
+    from integrations.orange_money.client import OmClient
+
+    om = OmClient(base_url="https://example.invalid", client_id="x", client_secret="y")
+    om._request = lambda *a, **k: [
+        {**REAL_PAID_TRANSACTION, "type": "CASHIN"},
+    ]
+
+    assert om.find_transaction(reference="HORUS-1-ABCDEF0123") is None
+
+
+def test_status_confirms_on_the_real_orange_payload(settings, monkeypatch):
+    """Bout en bout sur la charge utile authentique : montant flottant compris.
+
+    `amount.value` vaut `10.0` — un flottant, la ou la spec annonce un entier.
+    """
+    settings.OM_MOCK_ENABLED = True
+    client, contributor = make_contributor()
+    contract = Contract.objects.create(
+        organization=contributor.organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.QUOTE_READY,
+        prime_rc_ass=10,
+        cout_police_ass=0,
+    )
+    payment_id = initiate(client, contract).data["payment"]["id"]
+
+    from integrations.orange_money.client import OmClient
+
+    monkeypatch.setattr(
+        OmClient,
+        "find_transaction",
+        lambda self, *, reference, since=None: {
+            "status": "SUCCESS",
+            "transactionId": REAL_PAID_TRANSACTION["transactionId"],
+            "amount": REAL_PAID_TRANSACTION["amount"]["value"],
+        },
+    )
+
+    response = client.get(f"/api/payments/om/{payment_id}/status/")
+
+    assert response.status_code == 200
+    assert response.data["payment"]["status"] == Payment.Status.CONFIRMED
+    payment = Payment.objects.get(pk=payment_id)
+    assert payment.om_transaction_id == "MP260909.1002.A34169"
+    contract.refresh_from_db()
+    assert contract.internal_status == Contract.InternalStatus.PAID
+
+
+def test_initiate_refuses_an_amount_below_the_orange_minimum(settings):
+    """Orange refuse en dessous de 10 XOF : le dire clairement, pas via un 502."""
+    settings.OM_MOCK_ENABLED = True
+    client, contributor = make_contributor()
+    contract = Contract.objects.create(
+        organization=contributor.organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.QUOTE_READY,
+        # Net a verser = TTC - cout de police = 5 FCFA, sous le plancher Orange.
+        prime_rc_ass=5,
+        cout_police_ass=0,
+    )
+
+    response = initiate(client, contract)
+
+    assert response.status_code == 400
+    assert "minimum Orange Money" in response.data["detail"]
+    assert not Payment.objects.filter(contract=contract).exists()

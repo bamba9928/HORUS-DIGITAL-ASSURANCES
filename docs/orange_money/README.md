@@ -373,6 +373,82 @@ mobile, où la coupure est la règle.
 - Le webhook public n'est pas limité en débit.
 - Pas de dédoublonnage sur `X-Sonatel-Idempotency-Key`.
 
+## Recette réelle du 2026-09-09 — un paiement de 10 XOF en production
+
+Aucun contrat, aucune ligne `Payment` : QR marchand créé directement par sonde,
+référence `PROBE-10XOF-RECETTE`, payé depuis MaxIt (MSISDN `772490530`).
+
+### ⚠️ Plancher de 10 XOF non documenté
+
+Le premier QR avait été émis à **1 XOF** : MaxIt refuse de le régler. Le montant
+minimum d'un paiement marchand est **10 XOF**, alors que la spec annonce
+`minimum: 1` sur `MoneyReq`. D'où `OM_MIN_AMOUNT = 10` et un refus explicite à
+l'initiation, plutôt qu'un 502 opaque venu de la passerelle.
+
+### 🔴 Le filtre `type` casse la recherche de transactions
+
+**C'était bloquant** : aucun encaissement n'aurait jamais été confirmé.
+
+Sur la transaction réellement payée, dont la charge utile porte pourtant
+`"type": "MERCHANT_PAYMENT"` :
+
+| Requête | Résultat |
+| ------- | -------- |
+| `?reference=PROBE-10XOF-RECETTE` | **1 résultat** |
+| `?status=SUCCESS` | **1 résultat** |
+| `?type=MERCHANT_PAYMENT` | **`[]`** |
+| `?reference=…&type=MERCHANT_PAYMENT` | **`[]`** |
+
+`find_transaction` envoyait systématiquement `type=MERCHANT_PAYMENT` : la
+recherche renvoyait donc toujours `[]`, et **ni le sondage ni la réconciliation
+n'auraient jamais confirmé un paiement**. Le paramètre n'est plus envoyé ; le tri
+par type est refait localement, sur le champ que la réponse contient bel et bien.
+
+### La charge utile authentique
+
+```json
+{
+  "amount": {"value": 10.0, "unit": "XOF"},
+  "requestDate": "2026-09-09T10:02:59.379Z",
+  "reference": "PROBE-10XOF-RECETTE",
+  "metadata": {"idClient": "recette-1xof",
+               "idempotencyKey": "e8a43c9b-6bfb-4573-ae2b-c4564707bb4c",
+               "notification.dispatched": "true"},
+  "receiveNotification": true,
+  "partner":  {"id": "621513",    "idType": "CODE",   "walletType": "PRINCIPAL"},
+  "customer": {"id": "772490530", "idType": "MSISDN", "walletType": "PRINCIPAL"},
+  "type": "MERCHANT_PAYMENT",
+  "transactionId": "MP260909.1002.A34169",
+  "createdAt": "2026-09-09T10:02:59.379Z",
+  "updatedAt": "2026-09-09T10:03:01.210Z",
+  "channel": "MAXIT",
+  "status": "SUCCESS"
+}
+```
+
+À retenir : **`amount.value` est un flottant** (`10.0`), pas un entier comme
+annoncé — `_parse_amount` le ramène bien à `10`. Le `transactionId` suit le
+format `MP<AAMMJJ>.<HHMM>.<suffixe>`. `metadata` est enrichie par Orange
+(`idempotencyKey`, `notification.dispatched`) en plus de notre `idClient`.
+`GET /transactions/{transactionId}/status` répond `{"status": "SUCCESS"}`.
+
+Cette charge utile est figée dans `backend/tests/test_om_payments.py`
+(`REAL_PAID_TRANSACTION`) : c'est le seul échantillon authentique dont nous
+disposons, il sert de référence aux tests de non-régression.
+
+### Le webhook fonctionne réellement
+
+Journal de production, **2 secondes après le paiement** :
+
+```
+10:03:01 views Callback OM sans paiement correspondant
+         (reference=PROBE-10XOF-RECETTE, transactionId=MP260909.1002.A34169)
+```
+
+Cette ligne n'est atteignable qu'**après** le contrôle `Authorization: Basic` :
+la clé enregistrée chez Sonatel correspond à celle qu'Orange renvoie. Le 202 sur
+référence inconnue est le comportement voulu — un 4xx aurait valu rejet définitif.
+
 ## Ce qu'il reste à faire
 
 1. ~~Coller les clés du bloc « Clé API de test » dans `backend/.env`~~ — fait le

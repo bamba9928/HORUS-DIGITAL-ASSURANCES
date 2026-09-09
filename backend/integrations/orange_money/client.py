@@ -118,9 +118,18 @@ class OmClient:
         if settings.OM_MOCK_ENABLED:
             return self._mock_transaction_response(reference=reference)
 
+        # `type` n'est DELIBEREMENT pas envoye : le filtre serveur est casse.
+        # Constate en production le 2026-09-09 sur un vrai paiement de 10 XOF —
+        # la transaction porte pourtant bien "type": "MERCHANT_PAYMENT" :
+        #   ?reference=PROBE-10XOF-RECETTE          -> 1 resultat
+        #   ?status=SUCCESS                         -> 1 resultat
+        #   ?type=MERCHANT_PAYMENT                  -> [] (!)
+        #   ?reference=...&type=MERCHANT_PAYMENT    -> []
+        # L'envoyer rendait TOUT encaissement introuvable : ni le sondage ni la
+        # reconciliation n'auraient jamais confirme un paiement. Le tri par type
+        # est donc fait ici, sur le champ que la reponse contient bel et bien.
         params = {
             "reference": reference,
-            "type": OM_TRANSACTION_TYPE_MERCHANT_PAYMENT,
             "size": 20,
         }
         if since is not None:
@@ -138,7 +147,10 @@ class OmClient:
             for txn in transactions
             # Le filtre serveur est refait ici : une API qui élargirait la
             # recherche ne doit jamais nous faire confirmer le mauvais contrat.
-            if isinstance(txn, dict) and txn.get("reference") == reference
+            if isinstance(txn, dict)
+            and txn.get("reference") == reference
+            and txn.get("type", OM_TRANSACTION_TYPE_MERCHANT_PAYMENT)
+            == OM_TRANSACTION_TYPE_MERCHANT_PAYMENT
         ]
         if not matches:
             return None
