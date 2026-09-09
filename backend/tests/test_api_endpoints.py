@@ -2026,3 +2026,43 @@ def test_group_admin_cannot_rename_or_delete_custom_brands():
     assert delete_response.status_code == 403
     brand.refresh_from_db()
     assert brand.name == "SCOPING HORUS TEST"
+
+
+@pytest.mark.django_db
+def test_missing_contract_returns_a_readable_french_message():
+    """Django renvoyait « No Contract matches the given query. » a l'utilisateur.
+
+    DRF transmet tel quel le message interne de `get_object_or_404`, et le front
+    l'affichait en anglais sur une plateforme entierement francophone. Le cas
+    n'est pas theorique : il suffit de se reconnecter sur l'URL d'un contrat
+    entre-temps supprime.
+    """
+    client, _ = make_authenticated_contract_client()
+
+    response = client.get("/api/contracts/999999/")
+
+    assert response.status_code == 404
+    assert "introuvable" in response.data["detail"].lower()
+    assert "given query" not in response.data["detail"]
+
+
+@pytest.mark.django_db
+def test_a_contract_of_another_organization_is_indistinguishable_from_a_missing_one():
+    """L'URL ne doit pas reveler l'existence des dossiers des autres."""
+    from organizations.models import Organization
+
+    client, _ = make_authenticated_contract_client()
+    other_org = Organization.objects.create(name="Groupe Voisin", code="VOISIN")
+    other_contributor = User.objects.create_user(
+        username="apporteur-voisin",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=other_org,
+    )
+    foreign = create_quote_ready_contract(other_contributor)
+
+    missing = client.get("/api/contracts/999999/")
+    forbidden = client.get(f"/api/contracts/{foreign.id}/")
+
+    assert forbidden.status_code == missing.status_code == 404
+    assert forbidden.data["detail"] == missing.data["detail"]

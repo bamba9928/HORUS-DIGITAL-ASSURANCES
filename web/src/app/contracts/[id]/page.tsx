@@ -25,6 +25,7 @@ import { OmPaymentDialog } from "@/components/OmPaymentDialog";
 import { useToast } from "@/components/ToastProvider";
 import {
   AlertMessage,
+  EmptyState,
   ContractTypeBadge,
   DataList,
   DataRow,
@@ -313,7 +314,26 @@ export default function ContractDetailPage() {
           </div>
         ) : null}
 
-        {error ? <AlertMessage>{error}</AlertMessage> : null}
+        {/* Contrat introuvable : c'est une impasse, pas une erreur passagere.
+            L'ecran n'affichait qu'un bandeau rouge sous un en-tete « Contrat 4
+            — Detail », sans aucune sortie. Le cas arrive typiquement apres une
+            reconnexion : `AppShell` renvoie vers /login?redirect=<page>, et on
+            retombe sur un contrat entre-temps supprime. */}
+        {error && !contract && !isLoading ? (
+          <section className="app-surface animate-fade-in">
+            <EmptyState
+              action={
+                <Link className="btn btn-primary" href="/contracts">
+                  Voir tous les contrats
+                </Link>
+              }
+              description={error}
+              title="Contrat introuvable"
+            />
+          </section>
+        ) : null}
+
+        {error && contract ? <AlertMessage>{error}</AlertMessage> : null}
 
         {contract ? (
           <>

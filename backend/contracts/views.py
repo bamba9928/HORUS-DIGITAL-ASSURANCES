@@ -3,9 +3,9 @@ from datetime import timedelta
 from django.core.exceptions import ValidationError
 from django.db.models import Count, Q, Sum
 from django.http import HttpResponse, StreamingHttpResponse
-from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, status
+from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -139,6 +139,31 @@ def _financial_period_start(period):
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
+CONTRACT_NOT_FOUND_MESSAGE = (
+    "Contrat introuvable : il a peut-etre ete supprime, ou il ne releve pas de "
+    "votre perimetre."
+)
+
+
+def get_contract_or_404(user, pk, queryset=None):
+    """Contrat visible par `user`, ou 404 avec un message lisible.
+
+    `django.shortcuts.get_object_or_404` renvoie le message interne de Django —
+    « No Contract matches the given query. » — que DRF transmet tel quel dans
+    `detail`. Le front l'affichait donc en anglais a l'utilisateur, sur une
+    plateforme entierement francophone.
+
+    Le message reste volontairement vague sur la cause : un contrat hors
+    perimetre ne doit pas se distinguer d'un contrat inexistant, sinon l'URL
+    devient un oracle qui revele l'existence des dossiers des autres.
+    """
+    base = queryset if queryset is not None else get_contract_queryset_for_user(user)
+    try:
+        return base.get(pk=pk)
+    except Contract.DoesNotExist as exc:
+        raise NotFound(CONTRACT_NOT_FOUND_MESSAGE) from exc
+
+
 class AuthenticatedContractMixin:
     permission_classes = [IsAuthenticated]
 
@@ -243,11 +268,12 @@ class ContractListView(AuthenticatedContractMixin, APIView):
 
 class ContractDetailView(AuthenticatedContractMixin, APIView):
     def get(self, request, pk):
-        contract = get_object_or_404(
+        contract = get_contract_or_404(
+            request.user,
+            pk,
             get_contract_queryset_for_user(request.user)
             .select_related("organization", "contributor")
             .prefetch_related("payments", "payments__created_by"),
-            pk=pk,
         )
         serializer = ContractDetailSerializer(contract)
         return Response(serializer.data)
@@ -328,14 +354,15 @@ class ContractDraftDetailView(AuthenticatedContractMixin, generics.RetrieveUpdat
 
 class ContractDraftQuoteView(AuthenticatedContractMixin, APIView):
     def post(self, request, pk):
-        contract = get_object_or_404(
+        contract = get_contract_or_404(
+            request.user,
+            pk,
             get_contract_queryset_for_user(request.user).filter(
                 internal_status__in=[
                     Contract.InternalStatus.DRAFT,
                     Contract.InternalStatus.QUOTE_READY,
                 ]
             ),
-            pk=pk,
         )
         if not can_manage_contract_workflow(request.user, contract):
             return Response({"detail": "Permission refusee."}, status=status.HTTP_403_FORBIDDEN)
@@ -392,13 +419,14 @@ class ContractExportPdfView(AuthenticatedContractMixin, APIView):
     """Fiche récapitulative PDF d'un contrat (parties, montants, attestation)."""
 
     def get(self, request, pk):
-        contract = get_object_or_404(
+        contract = get_contract_or_404(
+            request.user,
+            pk,
             get_contract_queryset_for_user(request.user).select_related(
                 "organization",
                 "contributor",
                 "commission_snapshot",
             ),
-            pk=pk,
         )
         pdf_bytes = build_contract_pdf(contract)
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
@@ -410,7 +438,7 @@ class ContractExportPdfView(AuthenticatedContractMixin, APIView):
 
 class ContractConfirmPaymentView(AuthenticatedContractMixin, APIView):
     def post(self, request, pk):
-        contract = get_object_or_404(get_contract_queryset_for_user(request.user), pk=pk)
+        contract = get_contract_or_404(request.user, pk)
         if not can_confirm_contract_payment(request.user, contract):
             return Response({"detail": "Permission refusee."}, status=status.HTTP_403_FORBIDDEN)
 
@@ -440,7 +468,7 @@ class ContractConfirmPaymentView(AuthenticatedContractMixin, APIView):
 
 class ContractIssueView(AuthenticatedContractMixin, APIView):
     def post(self, request, pk):
-        contract = get_object_or_404(get_contract_queryset_for_user(request.user), pk=pk)
+        contract = get_contract_or_404(request.user, pk)
         if not can_manage_contract_workflow(request.user, contract):
             return Response({"detail": "Permission refusee."}, status=status.HTTP_403_FORBIDDEN)
 
@@ -457,7 +485,7 @@ class ContractIssueView(AuthenticatedContractMixin, APIView):
 
 class ContractCancelView(AuthenticatedContractMixin, APIView):
     def post(self, request, pk):
-        contract = get_object_or_404(get_contract_queryset_for_user(request.user), pk=pk)
+        contract = get_contract_or_404(request.user, pk)
         if not can_cancel_contract(request.user, contract):
             return Response({"detail": "Permission refusee."}, status=status.HTTP_403_FORBIDDEN)
 
