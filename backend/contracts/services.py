@@ -99,11 +99,15 @@ def calculate_contract_quote(contract, ass_client=None):
 
     # Le cout_police vient du breakdown si disponible (sinon constante)
     cout_police = (quote.get("cout_police") or ASS_POLICY_FEE)
-    # ttc_ass reste None jusqu'au paiement confirme (mis a jour par confirm_manual_payment)
+    # `ttc_ass` est la Prime Totale d'ASS, recopiee telle quelle et des le devis.
+    # Elle restait None jusqu'au paiement : la fiche affichait un TTC vide en
+    # face d'un net a verser chiffre, et la regle vivait en double (ici et dans
+    # payments.services). None quand ASS n'en fournit pas — on ne la fabrique pas.
+    prime_totale = quote.get("prime_totale") or None
 
     contract.prime_rc_ass = prime_rc_ass
     contract.cout_police_ass = cout_police
-    contract.ttc_ass = None
+    contract.ttc_ass = prime_totale
     contract.internal_status = Contract.InternalStatus.QUOTE_READY
     contract.ass_request_payload = request_payload
     contract.ass_response_payload = response_payload

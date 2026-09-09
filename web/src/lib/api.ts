@@ -523,6 +523,12 @@ export type ContractListItem = {
   prime_rc_ass: number | null;
   cout_police_ass: number;
   ttc_ass: number | null;
+  /**
+   * Net à verser — le seul montant calculé par Horus : Prime Totale ASS moins
+   * le coût de police, que l'apporteur retient à la source. `null` quand ASS
+   * n'a pas fourni de Prime Totale.
+   */
+  net_a_verser: number | null;
   immatriculation: string;
   attestation_number: string;
   reference_externe: string;

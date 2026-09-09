@@ -43,6 +43,12 @@ def make_authenticated_contract_client(
 
 
 def create_quote_ready_contract(contributor):
+    """Contrat au devis calcule — donc porteur d'une reponse ASS.
+
+    La Prime Totale vient d'ASS et de nulle part ailleurs : Horus ne la fabrique
+    plus. Un contrat de test sans reponse ASS n'est donc plus payable, ce qui
+    reflete la realite.
+    """
     return Contract.objects.create(
         organization=contributor.organization,
         contributor=contributor,
@@ -50,6 +56,19 @@ def create_quote_ready_contract(contributor):
         internal_status=Contract.InternalStatus.QUOTE_READY,
         prime_rc_ass=24_000,
         cout_police_ass=3_000,
+        ttc_ass=27_000,
+        ass_response_payload={
+            "code": "2000",
+            "operationStatus": "SUCCESS",
+            "PrimeRC": "24000",
+            "Reduction": "0",
+            "CoutPolice": "3000",
+            "PrimeAG": "0",
+            "Taxe": "0",
+            "Fga": "0",
+            "Cedeao": "0",
+            "PrimeTotale": "27000",
+        },
     )
 
 
@@ -655,7 +674,10 @@ def test_finance_payment_uses_ass_prime_totale_when_available():
     assert "exactement de 28980 FCFA" in incorrect_response.data["detail"]
     assert correct_response.status_code == 200
     contract.refresh_from_db()
-    assert contract.ttc_ass == 31_980
+    # `ttc_ass` vient du devis, pas du paiement : la reponse ASS a ete remplacee
+    # ici APRES coup, donc le champ garde la valeur posee par le devis. Ce qui
+    # compte est que le net a verser, lui, a bien suivi la nouvelle Prime Totale.
+    assert contract.ttc_ass == 27_000
 
 
 @pytest.mark.django_db
@@ -1568,7 +1590,11 @@ def test_can_calculate_auto_quote_from_ass_mock():
     # ... mais l'assiette du contrat (commission/emission) est `data` ASS
     # = PrimeRC + CEDEAO (decision actee le 2026-06-11).
     assert draft.prime_rc_ass == 24_300
-    assert draft.ttc_ass is None
+    # `ttc_ass` porte desormais la Prime Totale d'ASS des le calcul du devis :
+    # elle restait None jusqu'au paiement, si bien que la fiche affichait un TTC
+    # vide en face d'un net a verser chiffre.
+    assert draft.ttc_ass == response.data["quote"]["prime_totale"]
+    assert draft.ttc_ass > 0
     assert draft.ass_request_payload["puissanceFiscale"] == 8
 
 

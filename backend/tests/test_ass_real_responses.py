@@ -250,7 +250,13 @@ def test_expected_payment_amount_is_ttc_minus_policy_fee():
     assert expected_payment_amount(contract) == 5927
 
 
-def test_expected_payment_amount_falls_back_without_breakdown():
+def test_expected_payment_amount_is_none_without_prime_totale():
+    """Sans Prime Totale d'ASS, pas de net a verser — et surtout pas d'invention.
+
+    Un repli existait : `prime_rc_ass + cout_police_ass`. Il fabriquait un TTC
+    ampute des taxes, du FGA et de la CEDEAO, et l'apporteur reglait ce montant
+    errone. Horus ne tarife pas : la seule reponse honnete est « je ne sais pas ».
+    """
     contract = Contract(
         contract_type=Contract.ContractType.AUTO_MONO,
         prime_rc_ass=4769,
@@ -258,8 +264,7 @@ def test_expected_payment_amount_falls_back_without_breakdown():
         ass_response_payload={"operationStatus": "SUCCESS", "data": "4769"},
     )
 
-    # Repli 4769 + 3000 = 7769, moins le cout de police retenu a la source.
-    assert expected_payment_amount(contract) == 4769
+    assert expected_payment_amount(contract) is None
 
 
 @pytest.mark.parametrize(

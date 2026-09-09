@@ -259,6 +259,8 @@ export type ContractListItem = {
   prime_rc_ass: number | null;
   cout_police_ass: number;
   ttc_ass: number | null;
+  /** Net à verser : Prime Totale ASS − coût de police. `null` si ASS n'en fournit pas. */
+  net_a_verser: number | null;
   immatriculation: string;
   attestation_number: string;
   reference_externe: string;
@@ -383,17 +385,11 @@ export async function fetchContract(contractId: number) {
  * `null` quand aucun devis n'a été calculé : il n'y a alors rien à payer.
  */
 export function payableAmount(contract: ContractDetail) {
-  if (!contract.prime_rc_ass) {
-    return null;
-  }
-  // TTC = prime totale ASS (taxe, CEDEAO, fonds de garantie…) quand elle
-  // existe ; sinon le repli prime RC + coût de police, comme côté backend.
-  const primeTotale = contract.quote_breakdown?.prime_totale;
-  const ttc =
-    primeTotale && primeTotale > 0
-      ? primeTotale
-      : contract.prime_rc_ass + contract.cout_police_ass;
-  return Math.max(0, ttc - contract.cout_police_ass);
+  // Le SEUL montant calculé par Horus (Prime Totale ASS − coût de police), et il
+  // l'est par le backend. On le lit, on ne le recalcule plus : la règle vivait
+  // en triple — backend, web, mobile — et une divergence aurait fait réclamer à
+  // l'apporteur un montant que le backend aurait ensuite refusé.
+  return contract.net_a_verser ?? null;
 }
 
 /* ── Compteurs du tableau de bord ────────────────────────────────────────── */

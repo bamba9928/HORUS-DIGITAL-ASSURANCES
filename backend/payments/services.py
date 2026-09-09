@@ -47,38 +47,62 @@ def assert_om_mock_allowed():
 
 
 def expected_payment_amount(contract):
-    """Net a verser : ce que l'apporteur paie via Orange Money avant emission.
+    """Net a verser : ce que l'apporteur regle par Orange Money avant emission.
 
-    Regle du 2026-08-28 : `TTC - cout de police`. L'apporteur retient le cout de
-    police a la source — c'est sa remuneration, uniforme sur tous les comptes —
-    et ne verse que le solde. Horus y preleve ensuite sa commission d'apport et
-    reverse le reste a ASS hors plateforme (voir commissions.services).
+    **C'est le SEUL montant calcule par Horus.** Prime RC, taxe, CEDEAO, fonds
+    de garantie, prime AG et reductions — qui varient selon la categorie —
+    viennent d'ASS et ne sont jamais recalcules ici : ils sont recopies tels
+    quels pour l'affichage.
+
+    `Prime Totale ASS - cout de police`. L'apporteur retient le cout de police
+    a la source — c'est sa remuneration — et ne verse que le solde. Horus y
+    preleve ensuite sa commission d'apport et reverse le reste a ASS hors
+    plateforme (voir commissions.services).
+
+    Retourne None quand ASS n'a pas fourni de Prime Totale : sans elle il n'y a
+    rien a encaisser, et fabriquer un montant reviendrait a tarifer nous-memes.
     """
-    return max(0, _contract_ttc(contract) - contract.cout_police_ass)
+    prime_totale = ass_prime_totale(contract)
+    if prime_totale is None:
+        return None
+    return max(0, prime_totale - contract.cout_police_ass)
 
 
-def _contract_ttc(contract):
-    """Prime totale TTC facturee par ASS pour ce contrat."""
+def ass_prime_totale(contract):
+    """Prime Totale telle qu'ASS l'a renvoyee, ou None si elle est absente.
+
+    AUCUN REPLI. Il en existait un — `prime_rc_ass + cout_police_ass` — pour la
+    FLOTTE, dont la reponse `rc.flotte` n'expose pas de PrimeTotale. Il produisait
+    un faux TTC, ampute des taxes, du FGA et de la CEDEAO, et l'apporteur reglait
+    ce montant errone. Horus ne tarife pas : sans Prime Totale d'ASS, il n'y a
+    pas de net a verser, et le paiement est refuse avec un message explicite.
+    (`rc.flotte.request` est de toute facon bloque cote ASS : bug serveur
+    `ga_def_recours`, reproduit en production le 2026-08-28.)
+    """
     response_payload = contract.ass_response_payload
-    if isinstance(response_payload, dict):
-        # Format API reelle (valide en sandbox 2026-06-11) : PrimeTotale a la
-        # racine, montant en chaine ("8927").
-        prime_totale = _parse_amount(response_payload.get("PrimeTotale"))
+    if not isinstance(response_payload, dict):
+        return None
+
+    # Format API reelle (valide en sandbox 2026-06-11) : PrimeTotale a la
+    # racine, montant en chaine ("8927").
+    prime_totale = _parse_amount(response_payload.get("PrimeTotale"))
+    if prime_totale > 0:
+        return prime_totale
+
+    # Format mock interne : data.primeTotale.
+    response_data = response_payload.get("data")
+    if isinstance(response_data, dict):
+        prime_totale = _parse_amount(response_data.get("primeTotale"))
         if prime_totale > 0:
             return prime_totale
 
-        # Format mock interne : data.primeTotale.
-        response_data = response_payload.get("data")
-        if isinstance(response_data, dict):
-            prime_totale = _parse_amount(response_data.get("primeTotale"))
-            if prime_totale > 0:
-                return prime_totale
-    # Repli — notamment FLOTTE : la reponse rc.flotte n'expose pas de PrimeTotale
-    # (elle est imbriquee sous "flotte"/"remorques"). ATTENTION : ce repli ne couvre
-    # que RC + cout de police, SANS taxes/FGA/CEDEAO. A revoir des que le format reel
-    # de tarification flotte sera connu (rc.flotte.request bloque cote ASS : bug
-    # serveur ga_def_recours, reproduit en production le 2026-08-28).
-    return contract.prime_rc_ass + contract.cout_police_ass
+    return None
+
+
+NO_PRIME_TOTALE_MESSAGE = (
+    "Prime totale ASS indisponible pour ce contrat : le net a verser ne peut pas "
+    "etre determine. Recalculer le devis."
+)
 
 
 def _parse_amount(value):
@@ -103,6 +127,8 @@ def confirm_manual_payment(*, contract, amount=None, external_reference="", crea
         raise PaymentConfirmationError("Un paiement confirme existe deja pour ce contrat.")
 
     expected_amount = expected_payment_amount(contract)
+    if expected_amount is None:
+        raise PaymentConfirmationError(NO_PRIME_TOTALE_MESSAGE)
     if amount in (None, ""):
         amount = expected_amount
     else:
@@ -132,12 +158,10 @@ def confirm_manual_payment(*, contract, amount=None, external_reference="", crea
         ) from exc
 
     contract.internal_status = Contract.InternalStatus.PAID
-    # ttc_ass porte la prime totale ASS, PAS le montant encaisse : depuis la
-    # regle du 28/08/2026 l'apporteur ne verse que TTC - cout de police. Le
-    # confondre avec le montant du paiement retrancherait deux fois le cout de
-    # police dans le calcul de commission.
-    contract.ttc_ass = _contract_ttc(contract)
-    contract.save(update_fields=["internal_status", "ttc_ass", "updated_at"])
+    # `ttc_ass` n'est plus touche ici : il est renseigne au calcul du devis,
+    # depuis la Prime Totale d'ASS. L'ecrire au paiement dupliquait la regle a
+    # deux endroits et laissait le contrat sans TTC affichable avant reglement.
+    contract.save(update_fields=["internal_status", "updated_at"])
     return payment
 
 
@@ -180,6 +204,8 @@ def initiate_om_payment(*, contract, created_by=None, client=None):
         _validate_payable_contract(contract)
 
         amount = expected_payment_amount(contract)
+        if amount is None:
+            raise PaymentConfirmationError(NO_PRIME_TOTALE_MESSAGE)
         if amount < OM_MIN_AMOUNT:
             # Orange rejette en dessous de 10 XOF. Sans ce garde-fou l'apporteur
             # recevait un 502 opaque venu de la passerelle, sur un devis dont le
@@ -310,10 +336,8 @@ def check_om_payment(*, payment, client=None, revive_cancelled=False):
                     ) from exc
 
                 contract.internal_status = Contract.InternalStatus.PAID
-                # Prime totale ASS, pas le montant encaisse : voir
-                # confirm_manual_payment.
-                contract.ttc_ass = _contract_ttc(contract)
-                contract.save(update_fields=["internal_status", "ttc_ass", "updated_at"])
+                # `ttc_ass` vient du devis : voir confirm_manual_payment.
+                contract.save(update_fields=["internal_status", "updated_at"])
                 # Le contrat est paye : toute autre demande OM encore en attente
                 # est caduque. Sans ce menage, la reconciliation d'un ancien QR
                 # laissait derriere elle un PENDING orphelin que plus rien ne

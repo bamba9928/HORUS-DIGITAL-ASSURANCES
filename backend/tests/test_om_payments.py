@@ -31,14 +31,38 @@ def make_contributor(username="om-contributor", org_code="OM-TEST"):
     return client, user
 
 
-def create_quote_ready_contract(contributor):
+def ass_quote_payload(*, prime_rc, cout_police=3_000, taxe=0, cedeao=0, fga=0):
+    """Reponse ASS au format REEL (racine PascalCase, montants en chaines).
+
+    Un contrat au devis calcule en porte toujours une : c'est d'elle que vient
+    la Prime Totale, et Horus n'en fabrique aucune.
+    """
+    prime_totale = prime_rc + cout_police + taxe + cedeao + fga
+    return {
+        "code": "2000",
+        "operationStatus": "SUCCESS",
+        "PrimeRC": str(prime_rc),
+        "Reduction": "0",
+        "CoutPolice": str(cout_police),
+        "PrimeAG": "0",
+        "Taxe": str(taxe),
+        "Fga": str(fga),
+        "Cedeao": str(cedeao),
+        "PrimeTotale": str(prime_totale),
+    }
+
+
+def create_quote_ready_contract(contributor, *, prime_rc=24_000, cout_police=3_000):
+    payload = ass_quote_payload(prime_rc=prime_rc, cout_police=cout_police)
     return Contract.objects.create(
         organization=contributor.organization,
         contributor=contributor,
         contract_type=Contract.ContractType.AUTO_MONO,
         internal_status=Contract.InternalStatus.QUOTE_READY,
-        prime_rc_ass=24_000,
-        cout_police_ass=3_000,
+        prime_rc_ass=prime_rc,
+        cout_police_ass=cout_police,
+        ttc_ass=int(payload["PrimeTotale"]),
+        ass_response_payload=payload,
     )
 
 
@@ -743,14 +767,7 @@ def test_status_confirms_on_the_real_orange_payload(settings, monkeypatch):
     """
     settings.OM_MOCK_ENABLED = True
     client, contributor = make_contributor()
-    contract = Contract.objects.create(
-        organization=contributor.organization,
-        contributor=contributor,
-        contract_type=Contract.ContractType.AUTO_MONO,
-        internal_status=Contract.InternalStatus.QUOTE_READY,
-        prime_rc_ass=10,
-        cout_police_ass=0,
-    )
+    contract = create_quote_ready_contract(contributor, prime_rc=10, cout_police=0)
     payment_id = initiate(client, contract).data["payment"]["id"]
 
     from integrations.orange_money.client import OmClient
@@ -779,15 +796,8 @@ def test_initiate_refuses_an_amount_below_the_orange_minimum(settings):
     """Orange refuse en dessous de 10 XOF : le dire clairement, pas via un 502."""
     settings.OM_MOCK_ENABLED = True
     client, contributor = make_contributor()
-    contract = Contract.objects.create(
-        organization=contributor.organization,
-        contributor=contributor,
-        contract_type=Contract.ContractType.AUTO_MONO,
-        internal_status=Contract.InternalStatus.QUOTE_READY,
-        # Net a verser = TTC - cout de police = 5 FCFA, sous le plancher Orange.
-        prime_rc_ass=5,
-        cout_police_ass=0,
-    )
+    # Net a verser = Prime Totale - cout de police = 5 FCFA, sous le plancher.
+    contract = create_quote_ready_contract(contributor, prime_rc=5, cout_police=0)
 
     response = initiate(client, contract)
 
@@ -857,3 +867,67 @@ def test_initiate_exposes_the_share_link_to_the_front(settings):
     qr = initiate(client, contract).data["qr"]
 
     assert qr["share_link"] == qr["deep_links"]["MAXIT"]
+
+
+# ─── Horus ne tarife pas : sans Prime Totale ASS, pas de net a verser ─────────
+
+
+def test_initiate_refuses_a_contract_without_an_ass_prime_totale(settings):
+    """Le repli qui fabriquait un TTC a disparu : le refus est explicite.
+
+    `prime_rc_ass + cout_police_ass` produisait un montant ampute des taxes, du
+    FGA et de la CEDEAO — et l'apporteur reglait ce chiffre errone.
+    """
+    settings.OM_MOCK_ENABLED = True
+    client, contributor = make_contributor()
+    contract = Contract.objects.create(
+        organization=contributor.organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.QUOTE_READY,
+        prime_rc_ass=24_000,
+        cout_police_ass=3_000,
+        # Reponse ASS sans PrimeTotale : le cas de la FLOTTE.
+        ass_response_payload={"operationStatus": "SUCCESS", "data": "24000"},
+    )
+
+    response = initiate(client, contract)
+
+    assert response.status_code == 400
+    assert "Prime totale ASS indisponible" in response.data["detail"]
+    assert not Payment.objects.filter(contract=contract).exists()
+    contract.refresh_from_db()
+    assert contract.internal_status == Contract.InternalStatus.QUOTE_READY
+
+
+def test_contract_api_exposes_net_a_verser(settings):
+    """Le front lit le net a verser, il ne le recalcule plus.
+
+    La regle vivait en triple — backend, web, mobile. Une divergence aurait fait
+    reclamer a l'apporteur un montant que le backend aurait ensuite refuse.
+    """
+    settings.OM_MOCK_ENABLED = True
+    client, contributor = make_contributor()
+    contract = create_quote_ready_contract(contributor)
+
+    data = client.get(f"/api/contracts/{contract.id}/").data
+
+    # Prime Totale 27 000 - cout de police 3 000.
+    assert data["net_a_verser"] == 24_000
+    assert data["ttc_ass"] == 27_000
+
+
+def test_contract_api_returns_null_net_a_verser_without_prime_totale(settings):
+    settings.OM_MOCK_ENABLED = True
+    client, contributor = make_contributor()
+    contract = Contract.objects.create(
+        organization=contributor.organization,
+        contributor=contributor,
+        contract_type=Contract.ContractType.AUTO_MONO,
+        internal_status=Contract.InternalStatus.QUOTE_READY,
+        prime_rc_ass=24_000,
+        cout_police_ass=3_000,
+        ass_response_payload={"operationStatus": "SUCCESS", "data": "24000"},
+    )
+
+    assert client.get(f"/api/contracts/{contract.id}/").data["net_a_verser"] is None

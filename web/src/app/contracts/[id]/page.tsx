@@ -167,21 +167,12 @@ export default function ContractDetailPage() {
     );
   }, [contract]);
 
-  const payableAmount = useMemo(() => {
-    if (!contract?.prime_rc_ass) return null;
-    // Net à verser = TTC − coût de police. L'apporteur retient le coût de police
-    // à la source, il ne verse que le solde (règle du 28/08/2026). Le backend
-    // applique la même formule dans payments.services.expected_payment_amount :
-    // envoyer le TTC entier ferait échouer la confirmation de paiement.
-    // TTC = prime totale ASS (taxe, CEDEAO, fonds de garantie…) quand elle
-    // existe ; sinon prime RC + coût de police.
-    const primeTotale = contract.quote_breakdown?.prime_totale;
-    const ttc =
-      primeTotale && primeTotale > 0
-        ? primeTotale
-        : contract.prime_rc_ass + contract.cout_police_ass;
-    return Math.max(0, ttc - contract.cout_police_ass);
-  }, [contract]);
+  // Net à verser : le SEUL montant calculé par Horus (Prime Totale ASS − coût de
+  // police). Il est calculé par le backend et lu ici tel quel. Il était
+  // auparavant recalculé en double — ici et sur le mobile — et une divergence
+  // aurait fait réclamer à l'apporteur un montant que le backend aurait refusé.
+  // `null` quand ASS n'a pas fourni de Prime Totale : rien n'est alors payable.
+  const payableAmount = contract?.net_a_verser ?? null;
 
   async function calculateQuote() {
     if (!contract) return;
@@ -673,6 +664,7 @@ export default function ContractDetailPage() {
                   canSeeAss={canSeeAss}
                   contractType={contract.contract_type}
                   freshQuote={quote}
+                  netAVerser={payableAmount}
                 />
 
                 {/* Attestations */}
@@ -1097,11 +1089,14 @@ function TarificationPanel({
   canSeeAss,
   contractType,
   freshQuote,
+  netAVerser,
 }: {
   breakdown: QuoteBreakdown | null;
   canSeeAss: boolean;
   contractType: string;
   freshQuote: ContractQuote | null;
+  /** Seule ligne calculée par Horus ; tout le reste vient d'ASS tel quel. */
+  netAVerser: number | null;
 }) {
   // Pas de données → rien à afficher
   if (!breakdown && !freshQuote) return null;
@@ -1159,6 +1154,11 @@ function TarificationPanel({
             value={formatMoney(b.prime_totale)}
             total
           />
+        ) : null}
+        {/* Tout ce qui précède vient d'ASS tel quel. Cette ligne est la nôtre :
+            ce que l'apporteur règle réellement, coût de police déduit. */}
+        {netAVerser !== null ? (
+          <QuoteRow label="Net à verser" value={formatMoney(netAVerser)} total />
         ) : null}
       </div>
 

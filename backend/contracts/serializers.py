@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from contracts.models import Contract
 from contracts.services import extract_rc_breakdown, validate_guarantee_configuration
+from payments.services import expected_payment_amount
 
 
 PHONE_PATTERN = re.compile(r"^7\d{0,8}$")
@@ -257,6 +258,17 @@ class ContractListSerializer(serializers.ModelSerializer):
     client_name = serializers.SerializerMethodField()
     client_phone = serializers.SerializerMethodField()
     effect_date = serializers.SerializerMethodField()
+    net_a_verser = serializers.SerializerMethodField()
+
+    def get_net_a_verser(self, contract):
+        """Le seul montant calcule par Horus : Prime Totale ASS - cout de police.
+
+        Expose ici pour que le web et le mobile cessent de le recalculer chacun
+        de leur cote — la regle vivait en triple, et une divergence aurait fait
+        reclamer a l'apporteur un montant que le backend aurait ensuite refuse.
+        `null` quand ASS n'a pas fourni de Prime Totale.
+        """
+        return expected_payment_amount(contract)
 
     def get_contributor_full_name(self, obj):
         user = obj.contributor
@@ -283,6 +295,7 @@ class ContractListSerializer(serializers.ModelSerializer):
             "prime_rc_ass",
             "cout_police_ass",
             "ttc_ass",
+            "net_a_verser",
             "immatriculation",
             "attestation_number",
             "reference_externe",
