@@ -387,7 +387,9 @@ def test_status_marks_payment_failed_on_terminal_statuses(settings, monkeypatch,
     assert response.status_code == 200
     assert response.data["payment"]["status"] == Payment.Status.FAILED
     contract.refresh_from_db()
-    assert contract.internal_status == Contract.InternalStatus.PAYMENT_PENDING
+    # Plus aucune demande ne court : le contrat redevient devisable au lieu de
+    # rester indefiniment en « paiement en attente ».
+    assert contract.internal_status == Contract.InternalStatus.QUOTE_READY
 
 
 @pytest.mark.parametrize("om_status", ["ACCEPTED", "INITIATED", "PENDING", "PRE_INITIATED"])
@@ -931,3 +933,122 @@ def test_contract_api_returns_null_net_a_verser_without_prime_totale(settings):
     )
 
     assert client.get(f"/api/contracts/{contract.id}/").data["net_a_verser"] is None
+
+
+# ─── Le contrat ne reste plus bloque en « paiement en attente » ───────────────
+
+
+def test_terminal_failure_releases_the_contract_back_to_quote_ready(settings, monkeypatch):
+    """PAYMENT_PENDING etait pose a l'initiation et n'etait JAMAIS repris.
+
+    Un paiement refuse laissait le contrat en « paiement en attente » alors que
+    plus aucune demande ne courait : l'apporteur ne savait pas s'il devait
+    relancer.
+    """
+    settings.OM_MOCK_ENABLED = True
+    client, contributor = make_contributor()
+    contract = create_quote_ready_contract(contributor)
+    payment_id = initiate(client, contract).data["payment"]["id"]
+
+    contract.refresh_from_db()
+    assert contract.internal_status == Contract.InternalStatus.PAYMENT_PENDING
+
+    from integrations.orange_money.client import OmClient
+
+    monkeypatch.setattr(
+        OmClient,
+        "find_transaction",
+        lambda self, *, reference, since=None: {
+            "status": "REJECTED",
+            "transactionId": "TXN-KO",
+            "amount": 24_000,
+        },
+    )
+
+    client.get(f"/api/payments/om/{payment_id}/status/")
+
+    assert Payment.objects.get(pk=payment_id).status == Payment.Status.FAILED
+    contract.refresh_from_db()
+    assert contract.internal_status == Contract.InternalStatus.QUOTE_READY
+
+
+def test_release_does_not_touch_a_contract_with_another_pending_payment(settings, monkeypatch):
+    """Deux demandes en vol : l'echec de la premiere ne libere pas le contrat."""
+    settings.OM_MOCK_ENABLED = True
+    client, contributor = make_contributor()
+    contract = create_quote_ready_contract(contributor)
+    first_id = initiate(client, contract).data["payment"]["id"]
+    # La seconde initiation annule la premiere ; on la remet en PENDING pour
+    # simuler deux demandes reellement concurrentes.
+    initiate(client, contract)
+    Payment.objects.filter(pk=first_id).update(status=Payment.Status.PENDING)
+
+    from integrations.orange_money.client import OmClient
+
+    monkeypatch.setattr(
+        OmClient,
+        "find_transaction",
+        lambda self, *, reference, since=None: {
+            "status": "FAILED",
+            "transactionId": "TXN-KO",
+            "amount": 24_000,
+        },
+    )
+
+    client.get(f"/api/payments/om/{first_id}/status/")
+
+    contract.refresh_from_db()
+    assert contract.internal_status == Contract.InternalStatus.PAYMENT_PENDING
+
+
+def test_reconcile_expires_a_stale_request_and_releases_the_contract(settings, monkeypatch):
+    """QR jamais scanne : Orange ne connaitra jamais de transaction.
+
+    Sans fermeture, le paiement restait PENDING et le contrat en « paiement en
+    attente » a vie — la reconciliation le rouvrait a chaque passage, pour rien.
+    """
+    settings.OM_MOCK_ENABLED = True
+    client, contributor = make_contributor()
+    contract = create_quote_ready_contract(contributor)
+    payment_id = initiate(client, contract).data["payment"]["id"]
+
+    from django.core.management import call_command
+    from django.utils import timezone as dj_timezone
+
+    Payment.objects.filter(pk=payment_id).update(
+        created_at=dj_timezone.now() - dj_timezone.timedelta(hours=30)
+    )
+
+    from integrations.orange_money.client import OmClient
+
+    monkeypatch.setattr(
+        OmClient, "find_transaction", lambda self, *, reference, since=None: None
+    )
+
+    call_command("om_reconcile", "--since-hours", "72")
+
+    assert Payment.objects.get(pk=payment_id).status == Payment.Status.CANCELLED
+    contract.refresh_from_db()
+    assert contract.internal_status == Contract.InternalStatus.QUOTE_READY
+
+
+def test_reconcile_keeps_a_recent_unpaid_request_open(settings, monkeypatch):
+    """Un QR de dix minutes est encore payable : on n'y touche pas."""
+    settings.OM_MOCK_ENABLED = True
+    client, contributor = make_contributor()
+    contract = create_quote_ready_contract(contributor)
+    payment_id = initiate(client, contract).data["payment"]["id"]
+
+    from django.core.management import call_command
+
+    from integrations.orange_money.client import OmClient
+
+    monkeypatch.setattr(
+        OmClient, "find_transaction", lambda self, *, reference, since=None: None
+    )
+
+    call_command("om_reconcile")
+
+    assert Payment.objects.get(pk=payment_id).status == Payment.Status.PENDING
+    contract.refresh_from_db()
+    assert contract.internal_status == Contract.InternalStatus.PAYMENT_PENDING

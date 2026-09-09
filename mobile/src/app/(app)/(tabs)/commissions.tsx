@@ -22,16 +22,15 @@ import {
   commissionStatusStyle,
   formatDate,
   formatFcfa,
-  formatPercent,
   joinMeta,
 } from "@/lib/format";
 import { colors, radius, spacing } from "@/lib/theme";
 
 const STATUS_FILTERS: { label: string; value: CommissionStatus | "" }[] = [
   { label: "Toutes", value: "" },
-  { label: "En attente", value: "PENDING" },
-  { label: "Payable", value: "PAYABLE" },
-  { label: "Versée", value: "PAID" },
+  { label: "À reverser", value: "PENDING" },
+  { label: "Prêt à reverser", value: "PAYABLE" },
+  { label: "Reversé", value: "PAID" },
   { label: "Contestée", value: "DISPUTED" },
   { label: "Annulée", value: "CANCELLED" },
 ];
@@ -208,9 +207,11 @@ function CommissionRow({ snapshot }: { snapshot: CommissionSnapshot }) {
 
       <View style={styles.amounts}>
         <View>
-          {/* Ce que l'apporteur GAGNE : c'est le chiffre de cet écran, donc le
-              seul en couleur d'accent. */}
-          <Text style={styles.amountLabel}>Commission</Text>
+          {/* Ce que l'apporteur GAGNE — non pas un versement à venir, mais le
+              coût de police qu'il a déjà retenu à la source en ne payant que le
+              net. C'est le chiffre de cet écran, donc le seul en couleur
+              d'accent. */}
+          <Text style={styles.amountLabel}>Votre retenue</Text>
           <Text style={[styles.amountValue, styles.amountAccent]}>
             {formatFcfa(snapshot.commission_total)}
           </Text>
@@ -233,15 +234,18 @@ function CommissionRow({ snapshot }: { snapshot: CommissionSnapshot }) {
           que la MEME chaine allongee de cinq caracteres se repliait
           correctement. Ni `numberOfLines` ni `textBreakStrategy` n'y changent
           rien : seul le fait de ne plus dependre d'un repli limite fonctionne. */}
+      {/* `commission_percent_used` valait ici « Taux 0 % » sur chaque carte :
+          depuis la règle du 28/08 la retenue est forfaitaire, plus aucune part
+          n'est proportionnelle. La ligne affiche donc ce qui varie vraiment. */}
       <Text numberOfLines={1} style={styles.footer}>
         {joinMeta([
           `TTC ${formatFcfa(snapshot.ttc_ass)}`,
-          `Taux ${formatPercent(snapshot.commission_percent_used)}`,
+          `Police ${formatFcfa(snapshot.cout_police_ass)}`,
         ])}
       </Text>
       <Text numberOfLines={1} style={styles.footerSecondary}>
         {snapshot.paid_at
-          ? `Versée le ${formatDate(snapshot.paid_at)}`
+          ? `Reversé à ASS le ${formatDate(snapshot.paid_at)}`
           : `Créée le ${formatDate(snapshot.created_at)}`}
       </Text>
     </Pressable>

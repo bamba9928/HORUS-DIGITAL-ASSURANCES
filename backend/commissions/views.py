@@ -21,12 +21,28 @@ class CommissionSnapshotListView(generics.ListAPIView):
             "contributor",
         )
         if user.is_admin_general:
-            return queryset
+            return self._apply_filters(queryset)
         if (user.is_admin_group or user.is_finance) and user.organization_id:
-            return queryset.filter(contract__organization_id=user.organization_id)
+            return self._apply_filters(
+                queryset.filter(contract__organization_id=user.organization_id)
+            )
         if user.is_contributor:
-            return queryset.filter(contributor=user)
-        return queryset.none()
+            queryset = queryset.filter(contributor=user)
+        else:
+            return queryset.none()
+        return self._apply_filters(queryset)
+
+    def _apply_filters(self, queryset):
+        """Filtre serveur sur le statut de reversement.
+
+        Le front filtrait la liste complete en memoire : au-dela de quelques
+        centaines de contrats emis, il telechargeait tout pour n'en afficher
+        qu'une poignee.
+        """
+        status_filter = self.request.query_params.get("status")
+        if status_filter and status_filter in CommissionSnapshot.Status.values:
+            queryset = queryset.filter(status=status_filter)
+        return queryset
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()

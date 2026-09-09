@@ -165,6 +165,30 @@ def confirm_manual_payment(*, contract, amount=None, external_reference="", crea
     return payment
 
 
+def release_payment_pending(contract_id):
+    """Ramene un contrat a QUOTE_READY quand plus aucune demande OM n'est active.
+
+    `PAYMENT_PENDING` etait pose a l'initiation et n'etait JAMAIS repris : un QR
+    expire ou une demande echouee laissait le contrat en « paiement en attente »
+    indefiniment, alors que plus rien ne courait. Le statut mentait sur l'etat
+    reel du dossier, et l'apporteur ne savait pas s'il devait relancer.
+
+    Retourne True si le statut a ete change.
+    """
+    with transaction.atomic():
+        contract = Contract.objects.select_for_update().get(pk=contract_id)
+        if contract.internal_status != Contract.InternalStatus.PAYMENT_PENDING:
+            return False
+        still_running = contract.payments.filter(
+            status__in=[Payment.Status.PENDING, Payment.Status.CONFIRMED]
+        ).exists()
+        if still_running:
+            return False
+        contract.internal_status = Contract.InternalStatus.QUOTE_READY
+        contract.save(update_fields=["internal_status", "updated_at"])
+        return True
+
+
 def has_confirmed_payment(contract):
     return contract.payments.filter(status=Payment.Status.CONFIRMED).exists()
 
@@ -264,6 +288,7 @@ def check_om_payment(*, payment, client=None, revive_cancelled=False):
     assert_om_mock_allowed()
     client = client or OmClient()
     mismatch_message = None
+    released = False
     revivable = {Payment.Status.PENDING}
     if revive_cancelled:
         revivable.add(Payment.Status.CANCELLED)
@@ -358,7 +383,12 @@ def check_om_payment(*, payment, client=None, revive_cancelled=False):
             payment.status = Payment.Status.FAILED
             payment.om_transaction_id = txn.get("transactionId") or ""
             payment.save(update_fields=["status", "om_transaction_id", "updated_at"])
+            released = True
 
     if mismatch_message:
         raise PaymentConfirmationError(mismatch_message)
+    # Hors du bloc atomique : le verrou de contrat est pris a part, dans le meme
+    # ordre que partout ailleurs (paiement puis contrat).
+    if released:
+        release_payment_pending(payment.contract_id)
     return payment

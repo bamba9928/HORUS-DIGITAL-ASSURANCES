@@ -146,14 +146,16 @@ export function roleLabel(role: string) {
   return ROLE_LABELS[role] ?? role;
 }
 
-// Statuts de commission. Les libellés viennent de `CommissionSnapshot.Status`
-// (backend) et les couleurs de `StatusBadge` (web) : « Payable » est bleu des
-// deux côtés, « Versé » vert. Un apporteur qui compare son écran mobile à celui
-// de son admin doit lire la même chose.
+// Statuts de commission. Ils suivent le REVERSEMENT DU SOLDE À ASS, réglé hors
+// plateforme — pas un versement à l'apporteur : celui-ci a déjà retenu le coût
+// de police à la source en ne payant que le net, rien ne lui est dû. Les
+// libellés viennent de `CommissionSnapshot.Status` (backend) et les couleurs de
+// `StatusBadge` (web) : un apporteur qui compare son écran mobile à celui de son
+// admin doit lire la même chose.
 const COMMISSION_STATUS_STYLES: Record<CommissionStatus, StatusStyle> = {
-  PENDING: { label: "En attente", background: colors.muted, foreground: colors.textMuted },
-  PAYABLE: { label: "Payable", background: colors.infoBg, foreground: colors.info },
-  PAID: { label: "Versée", background: colors.successBg, foreground: colors.success },
+  PENDING: { label: "À reverser", background: colors.muted, foreground: colors.textMuted },
+  PAYABLE: { label: "Prêt à reverser", background: colors.infoBg, foreground: colors.info },
+  PAID: { label: "Reversé à ASS", background: colors.successBg, foreground: colors.success },
   CANCELLED: { label: "Annulée", background: colors.dangerBg, foreground: colors.danger },
   DISPUTED: { label: "Contestée", background: colors.warningBg, foreground: colors.warning },
 };
@@ -166,22 +168,6 @@ export function commissionStatusStyle(status: string): StatusStyle {
       foreground: colors.textMuted,
     }
   );
-}
-
-/**
- * Taux rendu lisible. DRF sérialise les `DecimalField` en chaîne (« 12.50 »)
- * pour ne pas perdre de précision : l'afficher tel quel donnerait « 12.50 % »
- * avec un point décimal, là où le web montre « 12,5 % ».
- */
-export function formatPercent(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === "") {
-    return "—";
-  }
-  const numeric = typeof value === "number" ? value : Number(value);
-  if (Number.isNaN(numeric)) {
-    return String(value);
-  }
-  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(numeric)} %`;
 }
 
 /**

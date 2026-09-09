@@ -24,19 +24,25 @@ import { canSeeAssBranding, canUpdateCommissionStatus } from "@/lib/permissions"
 
 type StatusFilter = CommissionSnapshot["status"] | "";
 
+/**
+ * Le statut suit le REVERSEMENT DU SOLDE À ASS, réglé hors plateforme — pas un
+ * versement à l'apporteur. Celui-ci a déjà retenu le coût de police à la source
+ * en ne payant que le net : rien ne lui est dû, et l'ancien libellé « Payable /
+ * Payée » décrivait un paiement qui n'existe pas.
+ */
 const statusOptions: { value: StatusFilter; label: string }[] = [
   { value: "", label: "Tous les statuts" },
-  { value: "PENDING", label: "En attente" },
-  { value: "PAYABLE", label: "Payable" },
-  { value: "PAID", label: "Payée" },
+  { value: "PENDING", label: "À reverser" },
+  { value: "PAYABLE", label: "Prêt à reverser" },
+  { value: "PAID", label: "Reversé à ASS" },
   { value: "CANCELLED", label: "Annulée" },
   { value: "DISPUTED", label: "Contestée" },
 ];
 
 const STATUS_LABELS: Record<CommissionSnapshot["status"], string> = {
-  PENDING: "En attente",
-  PAYABLE: "Payable",
-  PAID: "Payée",
+  PENDING: "À reverser",
+  PAYABLE: "Prêt à reverser",
+  PAID: "Reversé à ASS",
   CANCELLED: "Annulée",
   DISPUTED: "Contestée",
 };
@@ -141,12 +147,17 @@ export default function CommissionsPage() {
   const pendingCount = countByStatus(snapshots, "PENDING");
   const payableCount = countByStatus(snapshots, "PAYABLE");
   const paidCount = countByStatus(snapshots, "PAID");
-  const payableAmount = snapshots
-    .filter((s) => s.status === "PAYABLE")
-    .reduce((t, s) => t + s.commission_total, 0);
-  const totalCommissionAmount = snapshots
+  // Ce qui reste dû à ASS, hors plateforme : le seul argent qui doit encore
+  // bouger. L'ancien calcul sommait `commission_total`, c'est-à-dire la retenue
+  // déjà encaissée par les apporteurs — un montant que personne n'attend.
+  const aReverserAmount = snapshots
+    .filter((s) => s.status === "PENDING" || s.status === "PAYABLE")
+    .reduce((t, s) => t + s.montant_reverse_ass, 0);
+  // Revenu de Horus : la commission d'apport ASS. La carte affichait jusqu'ici
+  // le total des retenues apporteurs, qui n'est pas notre chiffre d'affaires.
+  const margeHorusTotal = snapshots
     .filter((s) => s.status !== "CANCELLED")
-    .reduce((t, s) => t + s.commission_total, 0);
+    .reduce((t, s) => t + s.marge_horus, 0);
 
   return (
     <AppShell
@@ -170,28 +181,32 @@ export default function CommissionsPage() {
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
           <MetricCard
             icon={BadgePercent}
-            label="En attente"
+            label="À reverser"
             value={isLoading ? "—" : pendingCount}
           />
           <MetricCard
-            detail={!isLoading && payableAmount > 0 ? `${formatMoney(payableAmount)} à verser` : undefined}
+            detail={
+              !isLoading && aReverserAmount > 0
+                ? `${formatMoney(aReverserAmount)} dus à ASS`
+                : undefined
+            }
             icon={CircleDollarSign}
-            label="Payables"
+            label="Prêts à reverser"
             tone="warning"
             value={isLoading ? "—" : payableCount}
           />
           <MetricCard
             icon={WalletCards}
-            label="Payées"
+            label="Reversés"
             tone="success"
             value={isLoading ? "—" : paidCount}
           />
           <MetricCard
-            detail="Hors annulations"
+            detail="Commission d'apport, hors annulations"
             icon={Banknote}
-            label="Total commissions"
+            label="Marge Horus"
             tone="primary"
-            value={isLoading ? "—" : formatMoney(totalCommissionAmount)}
+            value={isLoading ? "—" : formatMoney(margeHorusTotal)}
           />
         </div>
 
@@ -253,7 +268,8 @@ export default function CommissionsPage() {
                     <th>Date</th>
                     <th>Statut</th>
                     <th className="num">{canSeeAss ? "Montants ASS" : "Montants"}</th>
-                    <th className="num">Commission</th>
+                    <th className="num">Retenue apporteur</th>
+                    <th className="num">{canSeeAss ? "À reverser ASS" : "À reverser"}</th>
                     <th className="num">Marge Horus</th>
                   </tr>
                 </thead>
@@ -296,7 +312,7 @@ export default function CommissionsPage() {
 
                       <td data-label="Statut">
                         <div className="flex flex-wrap items-center gap-2">
-                          <StatusBadge status={snapshot.status} />
+                          <StatusBadge domain="commission" status={snapshot.status} />
                           {canUpdateStatus &&
                           ALLOWED_TRANSITIONS[snapshot.status].length ? (
                             <select
@@ -324,7 +340,7 @@ export default function CommissionsPage() {
                         </div>
                         {snapshot.paid_at ? (
                           <p className="cell-sub mt-1">
-                            Payée le {formatDate(snapshot.paid_at)}
+                            Reversé à ASS le {formatDate(snapshot.paid_at)}
                             {snapshot.paid_by_username
                               ? ` par ${snapshot.paid_by_username}`
                               : ""}
@@ -339,14 +355,24 @@ export default function CommissionsPage() {
                         <p className="cell-sub">TTC {formatMoney(snapshot.ttc_ass)}</p>
                       </td>
 
-                      <td className="num" data-label="Commission">
+                      {/* Ce que l'apporteur a GARDÉ, pas ce qu'on lui doit : il a
+                          retenu le coût de police à la source. Le sous-détail
+                          « N RC + N police » a disparu — depuis la règle du
+                          28/08 la part RC vaut toujours 0 et la part police le
+                          total, il affichait « 0 FCFA RC + 3 000 FCFA police »
+                          sur chaque ligne. */}
+                      <td className="num" data-label="Retenue apporteur">
                         <p className="text-[13.5px] font-black text-strong">
                           {formatMoney(snapshot.commission_total)}
                         </p>
-                        <p className="cell-sub">
-                          {formatMoney(snapshot.commission_prime_rc_amount)} RC +{" "}
-                          {formatMoney(snapshot.commission_policy_fee_amount)} police
+                        <p className="cell-sub">retenue à la source</p>
+                      </td>
+
+                      <td className="num" data-label="À reverser ASS">
+                        <p className="text-[13.5px] font-bold text-strong">
+                          {formatMoney(snapshot.montant_reverse_ass)}
                         </p>
+                        <p className="cell-sub">hors plateforme</p>
                       </td>
 
                       <td className="num" data-label="Marge Horus">

@@ -163,3 +163,84 @@ def test_snapshot_freezes_the_rate_used():
     snapshot.refresh_from_db()
     assert snapshot.ass_partner_commission_rate_used == Decimal("40.00")
     assert snapshot.ass_partner_commission == 20_000
+
+
+# ─── Filtre serveur et semantique du statut (2026-09-09) ─────────────────────
+
+
+@pytest.mark.django_db
+def test_commission_list_filters_by_status_on_the_server():
+    """Le front filtrait la liste complete en memoire : il telechargeait tout."""
+    from accounts.models import User
+    from commissions.models import CommissionSnapshot
+    from contracts.models import Contract
+    from organizations.models import Organization
+    from rest_framework.test import APIClient
+
+    organization = Organization.objects.create(name="Groupe Filtre", code="FILTRE")
+    admin = User.objects.create_user(
+        username="admin-filtre",
+        password="test",
+        role=User.Role.ADMIN_GENERAL,
+        organization=organization,
+    )
+    contributor = User.objects.create_user(
+        username="apporteur-filtre",
+        password="test",
+        role=User.Role.CONTRIBUTOR,
+        organization=organization,
+    )
+
+    def make_snapshot(status):
+        contract = Contract.objects.create(
+            organization=organization,
+            contributor=contributor,
+            contract_type=Contract.ContractType.AUTO_MONO,
+            internal_status=Contract.InternalStatus.ISSUED,
+            prime_rc_ass=24_000,
+            cout_police_ass=3_000,
+            ttc_ass=27_000,
+        )
+        return CommissionSnapshot.objects.create(
+            contract=contract,
+            contributor=contributor,
+            status=status,
+            prime_rc_ass=24_000,
+            cout_police_ass=3_000,
+            ttc_ass=27_000,
+            commission_percent_used=0,
+            commission_fixed_policy_fee_used=3_000,
+            commission_prime_rc_amount=0,
+            commission_policy_fee_amount=3_000,
+            commission_total=3_000,
+            ass_partner_commission=4_800,
+            montant_reverse_ass=19_200,
+            marge_horus=4_800,
+        )
+
+    make_snapshot(CommissionSnapshot.Status.PENDING)
+    paid = make_snapshot(CommissionSnapshot.Status.PAID)
+
+    client = APIClient()
+    client.force_authenticate(admin)
+
+    assert len(client.get("/api/commissions/snapshots/").data["results"]) == 2
+
+    filtered = client.get("/api/commissions/snapshots/?status=PAID").data["results"]
+    assert [item["id"] for item in filtered] == [paid.id]
+
+    # Un statut inconnu est ignore plutot que de renvoyer une liste vide.
+    assert len(client.get("/api/commissions/snapshots/?status=NIMPORTE").data["results"]) == 2
+
+
+def test_commission_status_labels_describe_the_ass_reversal():
+    """Le statut suit le reversement a ASS, pas un versement a l'apporteur.
+
+    L'apporteur a deja retenu le cout de police a la source : « Payable » puis
+    « Payee » decrivaient un paiement qui n'existe pas.
+    """
+    from commissions.models import CommissionSnapshot
+
+    assert CommissionSnapshot.Status.PENDING.label == "A reverser"
+    assert CommissionSnapshot.Status.PAYABLE.label == "Pret a reverser"
+    assert CommissionSnapshot.Status.PAID.label == "Reverse a ASS"

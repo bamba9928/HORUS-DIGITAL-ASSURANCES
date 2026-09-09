@@ -335,6 +335,15 @@ def finalize_contract_issue(*, contract_id, request_payload, ass_response, issue
     if contract.internal_status != Contract.InternalStatus.ISSUING:
         raise ContractIssueError("La reservation d'emission ASS n'est plus active.")
 
+    if contract.ttc_ass is None:
+        # `build_commission_snapshot_values` ferait `int(None)`. Ne peut plus
+        # arriver sur un contrat neuf — le paiement exige la Prime Totale — mais
+        # un contrat devise avant la regle du 2026-09-09 n'a pas de `ttc_ass`.
+        raise ContractIssueError(
+            "Prime totale ASS absente du contrat : recalculer le devis avant "
+            "l'emission, la commission ne peut pas etre figee sans elle."
+        )
+
     # Assiette de commission != montant envoye a ASS : voir contract_commission_basis.
     snapshot_values = build_commission_snapshot_values(
         prime_nette=contract_commission_basis(contract),

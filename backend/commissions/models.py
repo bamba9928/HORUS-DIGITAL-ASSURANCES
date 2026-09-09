@@ -2,10 +2,23 @@ from django.db import models
 
 
 class CommissionSnapshot(models.Model):
+    """Photo comptable d'un contrat emis, figee a l'emission.
+
+    Le STATUT suit le seul flux d'argent qui reste a faire apres l'emission :
+    le reversement de `montant_reverse_ass` a ASS, hors plateforme.
+
+    Il ne suit PAS `commission_total`. Depuis la regle du 2026-08-28 celle-ci
+    vaut le cout de police, que l'apporteur a deja retenu a la source en ne
+    versant que le net : rien ne lui sera jamais paye, et un cycle
+    « en attente / payable / payee » sur cette ligne decrivait un versement qui
+    n'existe pas.
+    """
+
     class Status(models.TextChoices):
-        PENDING = "PENDING", "En attente"
-        PAYABLE = "PAYABLE", "Payable"
-        PAID = "PAID", "Payee"
+        # Etats du reversement du solde a ASS.
+        PENDING = "PENDING", "A reverser"
+        PAYABLE = "PAYABLE", "Pret a reverser"
+        PAID = "PAID", "Reverse a ASS"
         CANCELLED = "CANCELLED", "Annulee"
         DISPUTED = "DISPUTED", "Contestee"
 
@@ -54,13 +67,18 @@ class CommissionSnapshot(models.Model):
     # Marge nette de Horus. Depuis la regle du 2026-08-28 elle vaut exactement la
     # commission d'apport : le cout de police est retenu par l'apporteur.
     marge_horus = models.IntegerField(default=0)
-    paid_at = models.DateTimeField(null=True, blank=True)
+    # Date et auteur du REVERSEMENT A ASS, pas d'un paiement a l'apporteur :
+    # les noms sont historiques, la migration serait sans benefice.
+    paid_at = models.DateTimeField(
+        null=True, blank=True, help_text="Date du reversement a ASS."
+    )
     paid_by = models.ForeignKey(
         "accounts.User",
         on_delete=models.SET_NULL,
         related_name="paid_commission_snapshots",
         null=True,
         blank=True,
+        help_text="Utilisateur ayant marque le solde comme reverse a ASS.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -72,6 +90,16 @@ class CommissionSnapshot(models.Model):
     def net_a_verser(self):
         """Montant paye par l'apporteur via Orange Money = TTC - cout de police."""
         return self.ttc_ass - self.cout_police_ass
+
+    @property
+    def retenue_apporteur(self):
+        """Ce que l'apporteur garde : le cout de police, retenu a la source.
+
+        Aucun versement ne lui est du — il a deja soustrait ce montant du net
+        qu'il a paye. Alias lisible de `commission_total`, dont le nom laissait
+        croire a une dette envers lui.
+        """
+        return self.commission_total
 
     def __str__(self):
         return f"Commission {self.commission_total} FCFA - {self.status}"

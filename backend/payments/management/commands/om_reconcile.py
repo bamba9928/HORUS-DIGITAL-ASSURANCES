@@ -26,11 +26,20 @@ from django.utils import timezone
 
 from integrations.orange_money.exceptions import OmIntegrationError
 from payments.models import Payment
-from payments.services import PaymentConfirmationError, check_om_payment
+from payments.services import (
+    PaymentConfirmationError,
+    check_om_payment,
+    release_payment_pending,
+)
 
 # Orange garantit un statut final sous 24 h ; on ratisse deux fois plus large
 # pour absorber une panne de cron d'une journee.
 DEFAULT_SINCE_HOURS = 48
+
+# Passe ce delai sans qu'Orange ne connaisse la moindre transaction, la demande
+# est morte : le QR a expire sans etre scanne. On la ferme pour que le contrat
+# quitte « paiement en attente », ou il restait sinon indefiniment.
+DEFAULT_EXPIRE_AFTER_HOURS = 24
 
 
 class Command(BaseCommand):
@@ -42,6 +51,15 @@ class Command(BaseCommand):
             type=int,
             default=DEFAULT_SINCE_HOURS,
             help=f"Fenetre d'examen en heures (defaut : {DEFAULT_SINCE_HOURS}).",
+        )
+        parser.add_argument(
+            "--expire-after-hours",
+            type=int,
+            default=DEFAULT_EXPIRE_AFTER_HOURS,
+            help=(
+                "Age a partir duquel une demande sans transaction cote Orange est "
+                f"fermee et le contrat libere (defaut : {DEFAULT_EXPIRE_AFTER_HOURS})."
+            ),
         )
         parser.add_argument(
             "--dry-run",
@@ -64,7 +82,10 @@ class Command(BaseCommand):
             .order_by("created_at")
         )
 
-        confirmed = failed = unchanged = errors = 0
+        expiry_cutoff = timezone.now() - timezone.timedelta(
+            hours=options["expire_after_hours"]
+        )
+        confirmed = failed = unchanged = errors = expired = 0
         total = candidates.count()
         self.stdout.write(f"{total} paiement(s) Orange Money a examiner depuis {since:%Y-%m-%d %H:%M}.")
 
@@ -90,11 +111,25 @@ class Command(BaseCommand):
             elif updated.status == Payment.Status.FAILED:
                 failed += 1
                 self.stdout.write(f"  {label} : echec definitif cote Orange")
+            elif (
+                updated.status == Payment.Status.PENDING
+                and updated.created_at < expiry_cutoff
+            ):
+                # Orange ne connait aucune transaction pour cette reference et le
+                # delai de statut final est passe : le QR a expire sans etre
+                # scanne. Sans cette fermeture, le contrat restait a vie en
+                # « paiement en attente ».
+                updated.status = Payment.Status.CANCELLED
+                updated.save(update_fields=["status", "updated_at"])
+                expired += 1
+                self.stdout.write(f"  {label} : demande expiree, contrat libere")
+                release_payment_pending(updated.contract_id)
             else:
                 unchanged += 1
 
         if not options["dry_run"]:
             self.stdout.write(
                 f"Bilan : {confirmed} confirme(s), {failed} echec(s), "
-                f"{unchanged} toujours en attente, {errors} a examiner."
+                f"{expired} expiree(s), {unchanged} toujours en attente, "
+                f"{errors} a examiner."
             )

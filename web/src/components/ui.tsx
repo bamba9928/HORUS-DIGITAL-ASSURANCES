@@ -288,11 +288,30 @@ export function SectionHeader({
 }
 
 /* ── StatusBadge ─────────────────────────────────────────────────── */
+/**
+ * Trois statuts sont ambigus parce que la table ci-dessous est indexée par
+ * chaîne brute, tous domaines confondus : `PENDING`, `PAYABLE` et `PAID` ne
+ * veulent pas dire la même chose pour un paiement et pour une commission.
+ *
+ * Sur un snapshot de commission, le statut suit le REVERSEMENT DU SOLDE À ASS —
+ * pas un versement à l'apporteur, qui a déjà retenu le coût de police à la
+ * source. Sans cette table, le badge affichait « Payable / Payé » à côté d'un
+ * menu qui proposait « Prêt à reverser / Reversé à ASS ».
+ */
+const COMMISSION_STATUS_LABELS: Record<string, string> = {
+  PENDING: "À reverser",
+  PAYABLE: "Prêt à reverser",
+  PAID: "Reversé à ASS",
+};
+
 export function StatusBadge({
   status,
+  domain,
   showAssLabel = true,
 }: {
   status: string;
+  /** "commission" requalifie PENDING/PAYABLE/PAID en étapes de reversement. */
+  domain?: "commission";
   /** VALIDE/BROUILLON/ANNULE sont le statut brut ASS : le nom du fournisseur
    *  n'a rien à faire sous les yeux d'un apporteur (`canSeeAssBranding`). */
   showAssLabel?: boolean;
@@ -310,7 +329,6 @@ export function StatusBadge({
     CANCELLED:       { label: "Annulé",            className: "bg-red-50 text-red-600",            dot: "bg-red-400",     icon: AlertCircle   },
     PENDING:         { label: "En attente",        className: "bg-slate-100 text-slate-600",       dot: "bg-slate-400",   icon: CircleDashed  },
     PAYABLE:         { label: "Payable",           className: "bg-blue-50 text-blue-700",          dot: "bg-blue-500",    icon: CheckCircle2  },
-    PAID_OUT:        { label: "Versé",             className: "bg-emerald-50 text-emerald-700",    dot: "bg-emerald-500", icon: CheckCircle2  },
     DISPUTED:        { label: "Contesté",          className: "bg-amber-50 text-amber-700",        dot: "bg-amber-400",   icon: AlertCircle   },
     CONFIRMED:       { label: "Confirmé",          className: "bg-emerald-50 text-emerald-700",    dot: "bg-emerald-500", icon: CheckCircle2  },
     FAILED:          { label: "Échoué",            className: "bg-red-50 text-red-600",            dot: "bg-red-400",     icon: AlertCircle   },
@@ -328,12 +346,14 @@ export function StatusBadge({
     SUSPENDED:       { label: "Suspendu",            className: "bg-amber-50 text-amber-700",         dot: "bg-amber-400",   icon: AlertCircle   },
   };
 
-  const config = statusConfig[status] ?? {
+  const base = statusConfig[status] ?? {
     label: humanize(status),
     className: "bg-slate-100 text-slate-600",
     dot: "bg-slate-400",
     icon: CircleDashed,
   };
+  const override = domain === "commission" ? COMMISSION_STATUS_LABELS[status] : undefined;
+  const config = override ? { ...base, label: override } : base;
 
   return (
     <span
