@@ -13,7 +13,6 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { useAuth } from "@/components/AuthProvider";
 import {
   AlertMessage,
   ContractTypeBadge,
@@ -26,7 +25,6 @@ import {
   type ContractInternalStatus,
   type ContractListItem,
 } from "@/lib/api";
-import { canSeeAssBranding } from "@/lib/permissions";
 
 const statusFilters: { label: string; value: ContractInternalStatus | "" }[] = [
   { label: "Tous les statuts", value: "" },
@@ -49,8 +47,6 @@ const typeFilters = [
 ];
 
 export function DashboardRecentContracts() {
-  const { auth } = useAuth();
-  const canSeeAss = canSeeAssBranding(auth?.user);
   const [contracts, setContracts] = useState<ContractListItem[]>([]);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -219,13 +215,13 @@ export function DashboardRecentContracts() {
                 <th>Échéance</th>
                 <th>Statut</th>
                 <th>Apporteur / groupe</th>
-                <th className="num">{canSeeAss ? "Prime ASS" : "Prime"}</th>
+                <th className="num">Net à verser</th>
                 <th className="num">Actions</th>
               </tr>
             </thead>
             <tbody>
               {contracts.map((contract) => (
-                <ContractRow canSeeAss={canSeeAss} contract={contract} key={contract.id} />
+                <ContractRow contract={contract} key={contract.id} />
               ))}
             </tbody>
           </table>
@@ -287,19 +283,7 @@ export function DashboardRecentContracts() {
   );
 }
 
-function ContractRow({
-  canSeeAss,
-  contract,
-}: {
-  canSeeAss: boolean;
-  contract: ContractListItem;
-}) {
-  // `ttc_ass` porte la Prime Totale d'ASS, posee des le calcul du devis. Le
-  // repli « prime RC + cout de police » qui existait ici fabriquait un TTC
-  // ampute des taxes, du FGA et de la CEDEAO : le tableau de bord affichait
-  // donc un total qui n'etait celui de personne.
-  const totalPrime = contract.ttc_ass;
-
+function ContractRow({ contract }: { contract: ContractListItem }) {
   return (
     <tr>
       <td className="row-head" data-label="Police">
@@ -330,9 +314,6 @@ function ContractRow({
         <p className="cell-mono">
           {contract.immatriculation || registrationFromLabel(contract.vehicle_label) || "—"}
         </p>
-        <p className="cell-sub max-w-40 truncate">
-          {contract.vehicle_label || "Véhicule non renseigné"}
-        </p>
       </td>
       <td data-label="Effet">
         <span className="cell-main">{formatDate(contract.effect_date)}</span>
@@ -349,12 +330,11 @@ function ContractRow({
         </p>
         <p className="cell-sub max-w-40 truncate">{contract.organization_name || "—"}</p>
       </td>
-      <td className="num" data-label={canSeeAss ? "Prime ASS" : "Prime"}>
+      {/* Le montant que l'apporteur règle réellement, pas la prime totale ASS :
+          c'est celui qu'il retrouve sur la fiche et à l'étape paiement. */}
+      <td className="num" data-label="Net à verser">
         <p className="text-[13.5px] font-black text-strong">
-          {totalPrime === null ? "—" : formatMoney(totalPrime)}
-        </p>
-        <p className="cell-sub">
-          RC {contract.prime_rc_ass === null ? "—" : formatMoney(contract.prime_rc_ass)}
+          {contract.net_a_verser === null ? "—" : formatMoney(contract.net_a_verser)}
         </p>
       </td>
       <td className="num" data-label="Actions">

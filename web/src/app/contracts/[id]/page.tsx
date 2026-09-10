@@ -12,6 +12,7 @@ import {
   Send,
   ShieldCheck,
   Smartphone,
+  Wallet,
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
@@ -19,6 +20,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useId, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
+import { computeExpirationDate } from "@/lib/coverage";
 import { useEscapeKey } from "@/lib/useEscapeKey";
 import { useAuth } from "@/components/AuthProvider";
 import { OmPaymentDialog } from "@/components/OmPaymentDialog";
@@ -175,6 +177,23 @@ export default function ContractDetailPage() {
   // aurait fait réclamer à l'apporteur un montant que le backend aurait refusé.
   // `null` quand ASS n'a pas fourni de Prime Totale : rien n'est alors payable.
   const payableAmount = contract?.net_a_verser ?? null;
+  // Echeance projetee pour l'en-tete : la couverture vit dans le brouillon,
+  // a un endroit different selon le produit.
+  const headerExpiration = useMemo(() => {
+    if (!contract) return "";
+    const payload = contract.draft_payload as DraftPayload;
+    const source =
+      contract.contract_type === "FLEET"
+        ? payload.fleet
+        : contract.contract_type === "GARAGE"
+          ? payload.garage
+          : payload.vehicle;
+    return computeExpirationDate(
+      source?.effectDate,
+      source?.duration,
+      source?.periodicity,
+    );
+  }, [contract]);
   // Identifiants des champs du dialogue d'annulation : leurs libelles n'etaient
   // relies a rien, cliquer dessus ne placait pas le curseur dans le champ.
   const cancelMethodId = useId();
@@ -433,10 +452,13 @@ export default function ContractDetailPage() {
                     value: effectDate ? formatDate(effectDate) : "—",
                   },
                   {
+                    hint: "Date de fin de couverture. Tant que le contrat n'est pas émis, elle est projetée à partir de la date d'effet et de la durée.",
                     label: "Échéance",
                     value: contract.date_expiration
                       ? formatDate(contract.date_expiration)
-                      : "—",
+                      : headerExpiration
+                        ? `${formatDate(headerExpiration)} (prévue)`
+                        : "—",
                   },
                   {
                     label: "Attestation",
@@ -698,7 +720,6 @@ export default function ContractDetailPage() {
                   contractType={contract.contract_type}
                   freshQuote={quote}
                   netAVerser={payableAmount}
-                  remiseHorus={contract.remise_horus}
                 />
 
                 {/* Attestations */}
@@ -855,6 +876,12 @@ function DraftDetailsPanel({ contract }: { contract: ContractDetail }) {
     return `${v.duration} ${v.periodicity === "JOUR" ? "jour(s)" : "mois"}`;
   }
 
+  const projectedExpiration = computeExpirationDate(
+    coverage.effectDate,
+    coverage.duration,
+    coverage.periodicity,
+  );
+
   return (
     <Panel icon={FileText} title="Détails du contrat">
       {isEmpty ? (
@@ -941,10 +968,16 @@ function DraftDetailsPanel({ contract }: { contract: ContractDetail }) {
                 value={coverage.effectDate ? formatDate(coverage.effectDate) : "—"}
               />
               <DataRow label="Durée" value={durationLabel(coverage) || "—"} />
+              {/* Avant émission, ASS n'a encore rien daté : on projette la même
+                  échéance que l'assistant plutôt que d'afficher un tiret. */}
               <DataRow
                 label="Échéance"
                 value={
-                  contract.date_expiration ? formatDate(contract.date_expiration) : "—"
+                  contract.date_expiration
+                    ? formatDate(contract.date_expiration)
+                    : projectedExpiration
+                      ? `${formatDate(projectedExpiration)} (prévue)`
+                      : "—"
                 }
               />
               <DataRow
@@ -1044,14 +1077,10 @@ function QuoteRow({
   label,
   value,
   total = false,
-  reduction = false,
-  text = false,
 }: {
   label: string;
   value: string;
   total?: boolean;
-  reduction?: boolean;
-  text?: boolean;
 }) {
   return (
     <div
@@ -1072,9 +1101,7 @@ function QuoteRow({
         className={`tabular-nums ${
           total
             ? "text-[15px] font-black text-primary"
-            : `text-[13px] font-extrabold ${
-                reduction ? "text-emerald-600" : text ? "text-strong" : "text-strong"
-              }`
+            : "text-[13px] font-extrabold text-strong"
         }`}
       >
         {value}
@@ -1132,16 +1159,15 @@ function TarificationPanel({
   contractType,
   freshQuote,
   netAVerser,
-  remiseHorus,
 }: {
   breakdown: QuoteBreakdown | null;
   canSeeAss: boolean;
   contractType: string;
   freshQuote: ContractQuote | null;
-  /** Seule ligne calculée par Horus ; tout le reste vient d'ASS tel quel. */
+  /** Seule ligne calculée par Horus ; tout le reste vient d'ASS tel quel.
+      La remise Horus et la réduction ASS y sont déjà déduites, sans être
+      détaillées : la ventilation ne montre que les lignes ASS. */
   netAVerser: number | null;
-  /** Remise Horus (genres TPC uniquement), déjà déduite du net à verser. */
-  remiseHorus: number;
 }) {
   // Pas de données → rien à afficher
   if (!breakdown && !freshQuote) return null;
@@ -1187,13 +1213,6 @@ function TarificationPanel({
         {b.prime_ag !== undefined && b.prime_ag !== null && b.prime_ag > 0 ? (
           <QuoteRow label="Prime AG" value={formatMoney(b.prime_ag)} />
         ) : null}
-        {b.reduction !== undefined && b.reduction !== null && b.reduction > 0 ? (
-          <QuoteRow
-            label="Réduction"
-            value={`−${formatMoney(b.reduction)}`}
-            reduction
-          />
-        ) : null}
         {b.prime_totale !== undefined && b.prime_totale !== null ? (
           <QuoteRow
             label="Prime totale"
@@ -1201,21 +1220,21 @@ function TarificationPanel({
             total
           />
         ) : null}
-        {/* Tout ce qui précède vient d'ASS tel quel. Les lignes suivantes sont
-            les nôtres. Sans afficher la remise, le net à verser ne
-            correspondrait plus à « prime totale moins coût de police » et le
-            lecteur chercherait l'erreur. */}
-        {remiseHorus > 0 ? (
-          <QuoteRow
-            label="Remise Horus"
-            reduction
-            value={`−${formatMoney(remiseHorus)}`}
-          />
-        ) : null}
-        {netAVerser !== null ? (
-          <QuoteRow label="Net à verser" value={formatMoney(netAVerser)} total />
-        ) : null}
       </div>
+
+      {/* Seul montant calculé par Horus : même bandeau vert que dans
+          l'assistant de souscription, pour qu'on le reconnaisse d'un œil. */}
+      {netAVerser !== null ? (
+        <div className="mx-3 mb-3 flex items-center justify-between gap-3 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-white shadow-sm shadow-emerald-500/25">
+          <span className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.06em]">
+            <Wallet size={14} strokeWidth={2.4} />
+            Net à verser
+          </span>
+          <span className="shrink-0 whitespace-nowrap text-[17px] font-black tabular-nums">
+            {formatMoney(netAVerser)}
+          </span>
+        </div>
+      ) : null}
 
       {/* Véhicules flotte si disponibles en mémoire */}
       {isFleet && fleetItems.length > 0 ? (

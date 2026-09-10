@@ -23,6 +23,7 @@ import {
   TriangleAlert,
   UserRound,
   Users,
+  Wallet,
   Warehouse,
   type LucideIcon,
 } from "lucide-react";
@@ -32,6 +33,7 @@ import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } fr
 
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
+import { computeExpirationDate } from "@/lib/coverage";
 import { OmPaymentDialog } from "@/components/OmPaymentDialog";
 import { DatePicker } from "@/components/DatePicker";
 import { SelectSearch } from "@/components/SelectSearch";
@@ -407,6 +409,11 @@ function NewContractPageContent() {
   const isMoto = !isFleet && !isBusSchool && !isGarage && vehicle.category === "C5";
   const effectiveContractType = isMoto ? "MOTO" : contractType;
   const coverageSource = isFleet ? fleetCoverage : vehicle;
+  // Libellés lisibles pour le résumé : les selects stockent les codes ASS.
+  const vehicleCategoryLabel = useMemo(
+    () => categories.find((option) => String(option.value) === vehicle.category)?.label ?? vehicle.category ?? "",
+    [categories, vehicle.category],
+  );
   const summaryOptionLabels = guaranteeLabels(guarantees, selectedGuarantees);
   const summaryOptionText = guaranteeOptionSummary(guaranteeOptions);
 
@@ -1220,10 +1227,9 @@ function NewContractPageContent() {
                 {/* Client */}
                 <SummarySection icon={UserRound} title="Client">
                   <SummaryGrid>
-                    <SummaryItem label="Souscripteur" value={personLabel(policyholder)} />
                     <SummaryItem
                       label="Assuré"
-                      value={sameAsPolicyholder ? "Identique au souscripteur" : personLabel(insured)}
+                      value={personName(sameAsPolicyholder ? policyholder : insured)}
                     />
                     <SummaryItem label="Téléphone" value={policyholder.phone || "—"} />
                     {policyholder.email ? <SummaryItem label="Email" value={policyholder.email} /> : null}
@@ -1246,14 +1252,13 @@ function NewContractPageContent() {
                     <FleetSummary fleetVehicles={fleetVehicles} />
                   ) : isGarage ? (
                     <SummaryGrid>
-                      <SummaryItem label="Type de contrat" value={selectedContractType?.label ?? "—"} />
                       <SummaryItem label="Genre" value={garage.subcategory || "—"} />
                       <SummaryItem label="Immatriculation" value={garage.registration || "—"} />
                       <SummaryItem label="Nombre de cartes" value={garage.nombreCarte || "—"} />
                     </SummaryGrid>
                   ) : (
                     <SummaryGrid>
-                      <SummaryItem label="Type de contrat" value={selectedContractType?.label ?? "—"} />
+                      <SummaryItem label="Catégorie" value={vehicleCategoryLabel || "—"} />
                       <SummaryItem label="Immatriculation" value={vehicle.registration || "—"} />
                       <SummaryItem label="Marque / Modèle" value={`${vehicle.brand || "—"} ${vehicle.model || ""}`.trim()} />
                       <SummaryItem label="Genre" value={vehicle.subcategory || "—"} />
@@ -1278,9 +1283,22 @@ function NewContractPageContent() {
                       label="Durée"
                       value={
                         (isGarage ? garage.duration : coverageSource.duration)
-                          ? `${isGarage ? garage.duration : coverageSource.duration} mois`
+                          ? `${isGarage ? garage.duration : coverageSource.duration} ${
+                              (isGarage ? garage.periodicity : coverageSource.periodicity) === "JOUR" ? "jours" : "mois"
+                            }`
                           : "—"
                       }
+                    />
+                    {/* Échéance = date d'effet + durée − 1 jour : même règle que le backend. */}
+                    <SummaryItem
+                      label="Échéance"
+                      value={formatDisplayDate(
+                        computeExpirationDate(
+                          isGarage ? garage.effectDate : coverageSource.effectDate,
+                          isGarage ? garage.duration : coverageSource.duration,
+                          isGarage ? garage.periodicity : coverageSource.periodicity,
+                        ),
+                      )}
                     />
                     {isFleet ? (
                       <SummaryItem
@@ -1292,71 +1310,78 @@ function NewContractPageContent() {
                 </SummarySection>
               </div>
 
-              {/* ── Ligne 2 : Garanties · Devis ── */}
-              <div className="grid gap-4 lg:grid-cols-2">
-                {/* Garanties */}
-                <SummarySection icon={ShieldCheck} title="Garanties">
-                  <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-black/35">Incluses</p>
-                  <div className="mb-4 flex flex-wrap gap-2">
-                    {["RC", "CEDEAO"].map((g) => (
-                      <span
-                        key={g}
-                        className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-extrabold text-emerald-700"
-                      >
-                        <Check size={11} strokeWidth={3} />
-                        {g}
-                      </span>
-                    ))}
+              {/* ── Ligne 2 : Garanties, sur une seule ligne horizontale ── */}
+              <section className="app-surface overflow-hidden">
+                <div className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:gap-6">
+                  <div className="flex shrink-0 items-center gap-2.5">
+                    <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10">
+                      <ShieldCheck size={14} className="text-primary" strokeWidth={2.2} />
+                    </div>
+                    <h3 className="text-sm font-extrabold uppercase tracking-wide text-primary">Garanties</h3>
                   </div>
-                  <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-black/35">Optionnelles</p>
-                  {summaryOptionLabels.length ? (
-                    <div className="flex flex-wrap gap-2">
-                      {summaryOptionLabels.map((label) => (
+                  <div className="flex flex-1 flex-wrap items-center gap-x-6 gap-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-black/35">Incluses</span>
+                      {["RC", "CEDEAO"].map((g) => (
                         <span
-                          key={label}
-                          className="flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/5 px-3 py-1 text-xs font-extrabold text-primary"
+                          key={g}
+                          className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-extrabold text-emerald-700"
                         >
                           <Check size={11} strokeWidth={3} />
-                          {label}
+                          {g}
                         </span>
                       ))}
                     </div>
-                  ) : (
-                    <p className="text-sm font-semibold text-black/35">Aucune garantie optionnelle</p>
-                  )}
-                  {summaryOptionText && summaryOptionText !== "-" ? (
-                    <p className="mt-3 rounded-lg bg-primary/5 px-3 py-2 text-xs font-bold text-primary/70">
-                      {summaryOptionText}
-                    </p>
-                  ) : null}
-                </SummarySection>
-
-                {/* Devis */}
-                {quote ? (
-                  <QuoteResultPanel canSeeAss={canSeeAss} quote={quote} />
-                ) : (
-                  <div className="app-surface flex flex-col items-center gap-3 p-6 text-center">
-                    <div className="flex size-12 items-center justify-center rounded-2xl bg-amber-100">
-                      <FileText size={22} className="text-amber-600" />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-black/35">Optionnelles</span>
+                      {summaryOptionLabels.length ? (
+                        summaryOptionLabels.map((label) => (
+                          <span
+                            key={label}
+                            className="flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/5 px-3 py-1 text-xs font-extrabold text-primary"
+                          >
+                            <Check size={11} strokeWidth={3} />
+                            {label}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs font-semibold text-black/35">Aucune</span>
+                      )}
                     </div>
-                    <div>
-                      <p className="text-sm font-extrabold text-black/70">Devis non calculé</p>
-                      <p className="mt-1 text-xs font-semibold text-black/40">
-                        Revenez à l&apos;étape Options pour obtenir un devis.
-                      </p>
-                    </div>
-                    <button
-                      className="h-9 rounded-xl border border-border px-4 text-xs font-extrabold transition hover:bg-muted"
-                      onClick={() => { clearCalculatedState(); goToStep(2); }}
-                      type="button"
-                    >
-                      Aller aux options
-                    </button>
                   </div>
-                )}
-              </div>
+                </div>
+                {summaryOptionText && summaryOptionText !== "-" ? (
+                  <p className="border-t border-border bg-primary/5 px-5 py-2.5 text-xs font-bold text-primary/70">
+                    {summaryOptionText}
+                  </p>
+                ) : null}
+              </section>
 
-              {/* ── Ligne 3 : Actions ── */}
+              {/* ── Devis : pleine largeur ── */}
+              {quote ? (
+                <QuoteResultPanel canSeeAss={canSeeAss} quote={quote} />
+              ) : (
+                <div className="app-surface flex flex-col items-center gap-3 p-6 text-center">
+                  <div className="flex size-12 items-center justify-center rounded-2xl bg-amber-100">
+                    <FileText size={22} className="text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-extrabold text-black/70">Devis non calculé</p>
+                    <p className="mt-1 text-xs font-semibold text-black/40">
+                      Revenez à l&apos;étape Options pour obtenir un devis.
+                    </p>
+                  </div>
+                  <button
+                    className="h-9 rounded-xl border border-border px-4 text-xs font-extrabold transition hover:bg-muted"
+                    onClick={() => { clearCalculatedState(); goToStep(2); }}
+                    type="button"
+                  >
+                    Aller aux options
+                  </button>
+                </div>
+              )}
+
+              {/* ── Actions ── */}
               <div className="app-surface space-y-2.5 p-4">
                 <button
                   className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-extrabold text-white shadow-sm shadow-primary/30 transition hover:bg-[var(--primary-strong)] disabled:cursor-not-allowed disabled:bg-black/20 disabled:shadow-none"
@@ -1389,13 +1414,8 @@ function NewContractPageContent() {
 
           {step === 4 ? (
             <div className="max-w-5xl space-y-5">
-              <section className="app-surface p-5 sm:p-6">
+              <section className="app-surface p-5 text-center sm:p-6">
                 <h2 className="text-lg font-black">Paiement et émission</h2>
-                <p className="mt-1 text-sm font-medium text-black/50">
-                  {`L'émission${
-                    canSeeAss ? " ASS" : ""
-                  } consomme un QR code uniquement après paiement confirmé.`}
-                </p>
               </section>
               {quote ? (
                 <PaymentIssuePanel
@@ -2245,41 +2265,35 @@ function QuoteResultPanel({
   return (
     <section className="app-surface overflow-hidden">
       <div className="flex items-center justify-between gap-3 border-b border-border bg-primary/5 px-5 py-4">
-        <h3 className="font-extrabold text-primary">
-          {canSeeAss ? "Devis ASS calculé" : "Devis calculé"}
-        </h3>
+        <h3 className="font-extrabold text-primary">{canSeeAss ? "Devis ASS" : "Devis"}</h3>
         <span className="rounded-full bg-primary px-2.5 py-1 text-[11px] font-black text-white">
           {quote.type}
         </span>
       </div>
-      <div className="p-5 space-y-5">
+      <div className="space-y-5 p-5">
         {/* Section PRIMES - breakdown complet si disponible */}
         <div>
           <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-black/40">Primes</p>
           {hasBreakdown ? (
-            <div className="overflow-hidden rounded-lg border border-border">
-              <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-2 sm:divide-x sm:divide-y-0">
-                {/* Colonne gauche */}
+            <div className="overflow-hidden rounded-xl border border-border">
+              {/* Deux lignes par colonne : trois colonnes de hauteur égale, sans
+                  la colonne courte qui laissait un vide sous « Prime A.G ». */}
+              <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-3">
                 <div className="divide-y divide-border">
                   <QuoteRow label="Prime RC" value={quote.prime_rc} />
+                  <QuoteRow label="Prime A.G" value={quote.prime_ag ?? 0} />
+                </div>
+                <div className="divide-y divide-border">
                   <QuoteRow label="Coût de la police" value={quote.cout_police ?? quote.policy_fee_ass} />
                   <QuoteRow label="Taxe" value={quote.taxe ?? 0} />
-                  <QuoteRow label="CEDEAO" value={quote.cedeao ?? 0} />
                 </div>
-                {/* Colonne droite */}
                 <div className="divide-y divide-border">
-                  {quote.reduction ? (
-                    <QuoteRow label="Réduction" value={quote.reduction} isReduction />
-                  ) : null}
-                  <QuoteRow label="Prime A.G" value={quote.prime_ag ?? 0} />
+                  <QuoteRow label="CEDEAO" value={quote.cedeao ?? 0} />
                   <QuoteRow label="Fonds de garantie" value={quote.fonds_garantie ?? 0} />
-                  <QuoteRow label="Prime Totale" value={quote.prime_totale ?? 0} isTotal />
-                  {/* Tout ce qui précède vient d'ASS tel quel ; cette ligne est
-                      la nôtre : ce que l'apporteur règle, police déduite. */}
-                  {netAVerser !== null ? (
-                    <QuoteRow label="Net à verser" value={netAVerser} isTotal />
-                  ) : null}
                 </div>
+              </div>
+              <div className="border-t border-border">
+                <QuoteRow label="Prime Totale" value={quote.prime_totale ?? 0} isTotal />
               </div>
             </div>
           ) : (
@@ -2289,13 +2303,23 @@ function QuoteResultPanel({
                 value={`${formatAmount(quote.prime_rc)} FCFA`}
               />
               <SummaryItem label="Coût de police" value={`${formatAmount(quote.policy_fee_ass)} FCFA`} />
-              <SummaryItem
-                label="Net à verser"
-                value={netAVerser === null ? "—" : `${formatAmount(netAVerser)} FCFA`}
-              />
             </dl>
           )}
         </div>
+
+        {/* Tout ce qui précède vient d'ASS tel quel ; ce bandeau est le nôtre :
+            ce que l'apporteur règle réellement, coût de police déduit. */}
+        {netAVerser !== null ? (
+          <div className="animate-net-pulse flex w-full flex-col items-center justify-between gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-5 py-4 text-white shadow-sm shadow-emerald-500/30 sm:flex-row">
+            <span className="flex items-center gap-2 text-sm font-black uppercase tracking-widest">
+              <Wallet size={17} strokeWidth={2.4} />
+              Net à verser
+            </span>
+            <span className="whitespace-nowrap text-2xl font-black tabular-nums">
+              {formatAmount(netAVerser)} FCFA
+            </span>
+          </div>
+        ) : null}
 
         {/* Détail flotte */}
         {quote.items.length ? (
@@ -2340,23 +2364,21 @@ function QuoteResultPanel({
 function QuoteRow({
   label,
   value,
-  isReduction = false,
   isTotal = false,
 }: {
   label: string;
   value: number;
-  isReduction?: boolean;
   isTotal?: boolean;
 }) {
   return (
     <div className={`flex items-center justify-between gap-3 px-4 py-3 ${isTotal ? "bg-primary/5" : ""}`}>
-      <span className={`text-xs font-bold ${isTotal ? "text-primary font-extrabold" : "text-black/55"}`}>
+      <span className={`text-xs font-bold ${isTotal ? "font-extrabold text-primary" : "text-black/55"}`}>
         {label}
       </span>
-      <span className={`shrink-0 whitespace-nowrap text-right tabular-nums font-extrabold ${
-        isTotal ? "text-primary" : isReduction ? "text-emerald-600" : "text-foreground"
+      <span className={`shrink-0 whitespace-nowrap text-right font-extrabold tabular-nums ${
+        isTotal ? "text-primary" : "text-foreground"
       }`}>
-        {isReduction && value > 0 ? "−" : ""}{formatAmount(value)} FCFA
+        {formatAmount(value)} FCFA
       </span>
     </div>
   );
@@ -2397,20 +2419,32 @@ function PaymentIssuePanel({
   return (
     <div className="space-y-5">
       <section className="app-surface overflow-hidden">
-        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-xs font-extrabold uppercase text-black/40">Montant à confirmer</p>
-            <p className="mt-1 text-3xl font-black tabular-nums text-primary">
+        <div className="flex flex-col items-center gap-3 p-5">
+          {/* Meme bandeau que le « Net à verser » du résumé : l'apporteur retrouve
+              le montant exact qu'il vient de valider. Il cesse de pulser une fois
+              le paiement confirmé : il n'y a plus rien à faire. */}
+          <div
+            className={`flex w-full flex-col items-center justify-center gap-2 rounded-xl bg-gradient-to-r px-5 py-5 text-white shadow-sm sm:flex-row sm:justify-between ${
+              payment
+                ? "from-emerald-600 to-emerald-700 shadow-emerald-600/30"
+                : "animate-net-pulse from-emerald-500 to-emerald-600 shadow-emerald-500/30"
+            }`}
+          >
+            <span className="flex items-center gap-2 text-sm font-black uppercase tracking-widest">
+              <Wallet size={17} strokeWidth={2.4} />
+              {payment ? "Montant réglé" : "Montant à confirmer"}
+            </span>
+            <span className="whitespace-nowrap text-3xl font-black tabular-nums">
               {payableAmount === null ? "—" : `${formatAmount(payableAmount)} FCFA`}
-            </p>
-            <p className="mt-1 text-xs font-medium text-black/45">
-              {payableAmount === null
-                ? "Prime totale ASS indisponible — rien à encaisser."
-                : canSeeAss
-                  ? "Net à verser : prime totale ASS moins le coût de police"
-                  : "Net à verser : prime totale moins le coût de police"}
-            </p>
+            </span>
           </div>
+          <p className="text-xs font-medium text-black/45">
+            {payableAmount === null
+              ? "Prime totale ASS indisponible — rien à encaisser."
+              : canSeeAss
+                ? "Net à verser : prime totale ASS moins le coût de police"
+                : "Net à verser : prime totale moins le coût de police"}
+          </p>
           <span
             className={`inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-extrabold ${
               payment
@@ -2422,7 +2456,7 @@ function PaymentIssuePanel({
             {payment ? "Paiement confirmé" : "En attente de confirmation"}
           </span>
         </div>
-        <div className="flex flex-col gap-3 border-t border-border p-5 sm:flex-row sm:items-center">
+        <div className="flex flex-col items-center gap-3 border-t border-border p-5 sm:flex-row sm:flex-wrap sm:justify-center">
           {/* Régler ici plutôt que de ressortir vers la fiche du contrat : c'est
               le moment naturel, l'apporteur est déjà devant le bon montant.
               Action principale, en couleur Orange Money. */}
@@ -2478,7 +2512,7 @@ function PaymentIssuePanel({
             </Link>
           ) : null}
           {payment ? (
-            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 sm:ml-auto">
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700">
               <Check size={12} />
               Reçu : {formatAmount(payment.amount)} FCFA
             </span>
@@ -3093,8 +3127,10 @@ function hasRequiredPerson(person: PersonForm) {
   );
 }
 
-function personLabel(person: PersonForm) {
-  return [person.lastName, person.firstName, person.phone].filter(Boolean).join(" ") || "-";
+// Dans le résumé, le téléphone a sa propre ligne juste à côté : le répéter
+// dans le nom de l'assuré ne faisait qu'allonger la valeur.
+function personName(person: PersonForm) {
+  return [person.lastName, person.firstName].filter(Boolean).join(" ") || "—";
 }
 
 function guaranteeLabels(guarantees: SelectOption[], selectedGuarantees: number[]) {

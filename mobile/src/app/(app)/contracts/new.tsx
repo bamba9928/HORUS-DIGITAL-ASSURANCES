@@ -1765,7 +1765,6 @@ function QuoteStep({
           <QuoteRow label="Fonds de garantie" value={formatFcfa(quote.fonds_garantie)} />
         ) : null}
         {quote.cedeao ? <QuoteRow label="CEDEAO" value={formatFcfa(quote.cedeao)} /> : null}
-        {quote.reduction ? <QuoteRow label="Réduction" value={formatFcfa(-quote.reduction)} /> : null}
         <QuoteRow label="Coût de police" value={formatFcfa(quote.cout_police ?? quote.policy_fee_ass)} />
         {/* Tout ce qui précède vient d'ASS tel quel ; cette ligne est la nôtre. */}
         {netAVerser !== null ? (
