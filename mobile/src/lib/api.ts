@@ -262,7 +262,9 @@ export type ContractListItem = {
   prime_rc: number | null;
   cout_police_ass: number;
   ttc_ass: number | null;
-  /** Net à verser : Prime Totale ASS − coût de police. `null` si ASS n'en fournit pas. */
+  /** Remise Horus (genres TPC), déjà déduite du net à verser. 0 ailleurs. */
+  remise_horus: number;
+  /** Net à verser : Prime Totale ASS − coût de police − remise Horus. */
   net_a_verser: number | null;
   immatriculation: string;
   attestation_number: string;

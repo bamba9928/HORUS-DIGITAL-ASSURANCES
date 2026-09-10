@@ -260,6 +260,18 @@ class ContractListSerializer(serializers.ModelSerializer):
     effect_date = serializers.SerializerMethodField()
     net_a_verser = serializers.SerializerMethodField()
     prime_rc = serializers.SerializerMethodField()
+    remise_horus = serializers.SerializerMethodField()
+
+    def get_remise_horus(self, contract):
+        """Remise accordee par Horus, deduite du net a verser. 0 hors TPC.
+
+        Exposee pour que la ventilation reste verifiable a l'ecran : sans cette
+        ligne, le net a verser ne correspondrait plus a « prime totale moins
+        cout de police » et le lecteur chercherait l'erreur.
+        """
+        from contracts.services import contract_horus_rebate
+
+        return contract_horus_rebate(contract)
 
     def get_prime_rc(self, contract):
         """La `PrimeRC` de la ventilation ASS — celle qui s'affiche.
@@ -317,6 +329,7 @@ class ContractListSerializer(serializers.ModelSerializer):
             "prime_rc",
             "cout_police_ass",
             "ttc_ass",
+            "remise_horus",
             "net_a_verser",
             "immatriculation",
             "attestation_number",

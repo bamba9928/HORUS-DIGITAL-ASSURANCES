@@ -40,6 +40,7 @@ class CommissionSnapshotSerializer(serializers.ModelSerializer):
             "ass_partner_commission_rate_used",
             "ass_partner_commission",
             "montant_reverse_ass",
+            "remise_horus",
             "marge_horus",
             "paid_at",
             "paid_by",

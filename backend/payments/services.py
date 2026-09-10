@@ -54,18 +54,25 @@ def expected_payment_amount(contract):
     viennent d'ASS et ne sont jamais recalcules ici : ils sont recopies tels
     quels pour l'affichage.
 
-    `Prime Totale ASS - cout de police`. L'apporteur retient le cout de police
-    a la source — c'est sa remuneration — et ne verse que le solde. Horus y
-    preleve ensuite sa commission d'apport et reverse le reste a ASS hors
-    plateforme (voir commissions.services).
+    `Prime Totale ASS - cout de police - remise Horus`. L'apporteur retient le
+    cout de police a la source — c'est sa remuneration — et ne verse que le
+    solde. Horus y preleve ensuite sa commission d'apport et reverse le reste a
+    ASS hors plateforme (voir commissions.services).
+
+    La remise Horus ne concerne que les genres TPC : elle comble les 20 points
+    que l'API d'ASS refuse d'appliquer au-dela de son plafond, et sort de la
+    commission de Horus, pas de la part d'ASS (voir contract_horus_rebate).
 
     Retourne None quand ASS n'a pas fourni de Prime Totale : sans elle il n'y a
     rien a encaisser, et fabriquer un montant reviendrait a tarifer nous-memes.
     """
+    # Import local : contracts.services importe deja payments.services.
+    from contracts.services import contract_horus_rebate
+
     prime_totale = ass_prime_totale(contract)
     if prime_totale is None:
         return None
-    return max(0, prime_totale - contract.cout_police_ass)
+    return max(0, prime_totale - contract.cout_police_ass - contract_horus_rebate(contract))
 
 
 def ass_prime_totale(contract):

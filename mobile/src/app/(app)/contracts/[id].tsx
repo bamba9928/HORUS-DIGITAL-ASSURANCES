@@ -235,7 +235,11 @@ export default function ContractScreen() {
           <Row label="Prime RC" value={formatFcfa(contract.prime_rc)} />
           <Row label="Coût de police" value={formatFcfa(contract.cout_police_ass)} />
           <Row label="Total TTC" value={formatFcfa(contract.ttc_ass)} />
-          {/* Celle-ci est la nôtre : ce que l'apporteur règle réellement. */}
+          {/* Les suivantes sont les nôtres. Sans la remise affichée, le net à
+              verser ne correspondrait plus au TTC moins le coût de police. */}
+          {contract.remise_horus > 0 ? (
+            <Row label="Remise Horus" value={`− ${formatFcfa(contract.remise_horus)}`} />
+          ) : null}
           <Row emphasis label="Net à verser" value={formatFcfa(contract.net_a_verser)} />
         </Section>
 

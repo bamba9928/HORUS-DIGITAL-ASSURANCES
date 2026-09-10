@@ -244,3 +244,93 @@ def test_commission_status_labels_describe_the_ass_reversal():
     assert CommissionSnapshot.Status.PENDING.label == "A reverser"
     assert CommissionSnapshot.Status.PAYABLE.label == "Pret a reverser"
     assert CommissionSnapshot.Status.PAID.label == "Reverse a ASS"
+
+
+# ─── Remise Horus sur les genres TPC (2026-09-10) ────────────────────────────
+
+
+def test_horus_rebate_completes_the_ass_remise_on_tpc():
+    """ASS plafonne sa remise a 20 %, Horus complete les 20 points manquants.
+
+    Le bareme TPC est passe a 40 % sur les comptes classiques d'ASS, mais leur
+    API refuse toujours `remise_rc > 20` (HTTP 400 verifie en production le
+    2026-09-10). Un client TPC souscrivant par la plateforme paierait donc
+    20 points de plus qu'au guichet : Horus comble l'ecart sur sa commission.
+    """
+    from contracts.models import Contract
+    from contracts.services import contract_horus_rebate
+
+    reponse_ass = {
+        "operationStatus": "SUCCESS",
+        "PrimeRC": "3162",      # nette des 20 % appliques par ASS
+        "Reduction": "791",     # ... soit 20 % de la brute 3953
+        "CoutPolice": "3000",
+        "Taxe": "863",
+        "Cedeao": "300",
+        "Fga": "79",
+        "PrimeTotale": "7404",
+    }
+    tpc = Contract(
+        contract_type=Contract.ContractType.AUTO_MONO,
+        draft_payload={"vehicle": {"subcategory": "TPC"}},
+        ass_response_payload=reponse_ass,
+    )
+    vp = Contract(
+        contract_type=Contract.ContractType.AUTO_MONO,
+        draft_payload={"vehicle": {"subcategory": "VP"}},
+        ass_response_payload=reponse_ass,
+    )
+
+    # 20 % de la prime RC BRUTE (3162 + 791), la meme assiette qu'ASS.
+    assert contract_horus_rebate(tpc) == 791
+    # Hors TPC, ASS applique deja la totalite du bareme : rien a completer.
+    assert contract_horus_rebate(vp) == 0
+
+
+def test_horus_rebate_comes_out_of_the_margin_never_out_of_the_ass_share():
+    """La remise est un geste de Horus : ASS touche la meme chose qu'ailleurs."""
+    from commissions.services import calculate_commission_amounts
+
+    sans = calculate_commission_amounts(
+        prime_nette=4_253, ttc_ass=7_404, cout_police_ass=3_000,
+        ass_partner_commission_rate=40,
+    )
+    avec = calculate_commission_amounts(
+        prime_nette=4_253, ttc_ass=7_404, cout_police_ass=3_000,
+        ass_partner_commission_rate=40, remise_horus=791,
+    )
+
+    # Ce que Horus doit a ASS ne bouge pas d'un franc.
+    assert avec["montant_reverse_ass"] == sans["montant_reverse_ass"] == 4_404 - 1_701
+    # La remise sort integralement de la marge de Horus.
+    assert sans["marge_horus"] == 1_701
+    assert avec["marge_horus"] == 1_701 - 791
+    assert avec["remise_horus"] == 791
+
+
+def test_the_books_balance_with_a_horus_rebate():
+    """Encaisse - reverse a ASS = marge. L'invariant doit tenir avec la remise."""
+    from commissions.services import calculate_commission_amounts, net_a_verser
+
+    values = calculate_commission_amounts(
+        prime_nette=4_253, ttc_ass=7_404, cout_police_ass=3_000,
+        ass_partner_commission_rate=40, remise_horus=791,
+    )
+    encaisse = net_a_verser(ttc_ass=7_404, cout_police_ass=3_000, remise_horus=791)
+
+    assert encaisse == 3_613
+    assert encaisse - values["montant_reverse_ass"] == values["marge_horus"]
+
+
+def test_a_rebate_larger_than_the_commission_is_refused():
+    """Garde-fou : Horus ne doit jamais payer pour vendre."""
+    import pytest as _pytest
+    from django.core.exceptions import ValidationError
+
+    from commissions.services import calculate_commission_amounts
+
+    with _pytest.raises(ValidationError, match="paierait pour vendre"):
+        calculate_commission_amounts(
+            prime_nette=1_000, ttc_ass=7_404, cout_police_ass=3_000,
+            ass_partner_commission_rate=20, remise_horus=5_000,
+        )

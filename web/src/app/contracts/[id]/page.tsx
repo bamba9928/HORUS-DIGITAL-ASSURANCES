@@ -698,6 +698,7 @@ export default function ContractDetailPage() {
                   contractType={contract.contract_type}
                   freshQuote={quote}
                   netAVerser={payableAmount}
+                  remiseHorus={contract.remise_horus}
                 />
 
                 {/* Attestations */}
@@ -1131,6 +1132,7 @@ function TarificationPanel({
   contractType,
   freshQuote,
   netAVerser,
+  remiseHorus,
 }: {
   breakdown: QuoteBreakdown | null;
   canSeeAss: boolean;
@@ -1138,6 +1140,8 @@ function TarificationPanel({
   freshQuote: ContractQuote | null;
   /** Seule ligne calculée par Horus ; tout le reste vient d'ASS tel quel. */
   netAVerser: number | null;
+  /** Remise Horus (genres TPC uniquement), déjà déduite du net à verser. */
+  remiseHorus: number;
 }) {
   // Pas de données → rien à afficher
   if (!breakdown && !freshQuote) return null;
@@ -1197,8 +1201,17 @@ function TarificationPanel({
             total
           />
         ) : null}
-        {/* Tout ce qui précède vient d'ASS tel quel. Cette ligne est la nôtre :
-            ce que l'apporteur règle réellement, coût de police déduit. */}
+        {/* Tout ce qui précède vient d'ASS tel quel. Les lignes suivantes sont
+            les nôtres. Sans afficher la remise, le net à verser ne
+            correspondrait plus à « prime totale moins coût de police » et le
+            lecteur chercherait l'erreur. */}
+        {remiseHorus > 0 ? (
+          <QuoteRow
+            label="Remise Horus"
+            reduction
+            value={`−${formatMoney(remiseHorus)}`}
+          />
+        ) : null}
         {netAVerser !== null ? (
           <QuoteRow label="Net à verser" value={formatMoney(netAVerser)} total />
         ) : null}

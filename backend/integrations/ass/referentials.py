@@ -321,6 +321,30 @@ COMMISSION_GENRES_TPC = frozenset(
 )
 
 
+def horus_extra_rebate_rate(genre):
+    """Points de remise que Horus accorde en plus de ceux qu'ASS applique.
+
+    ASS a porte les genres TPC a 40 % sur les comptes classiques, mais son API
+    plafonne toujours `remise_rc` a 20 (verifie en production le 2026-09-10 :
+    au-dela, HTTP 400 « la remise RC doit etre compris entre 0 et 20% »). Un
+    client TPC souscrivant par la plateforme paierait donc 20 points de plus que
+    le meme client au guichet.
+
+    Horus comble l'ecart sur sa propre commission : la remise est deduite du net
+    a verser, et le reversement a ASS n'en est pas affecte.
+
+    Le taux se deduit du bareme, il n'est pas fixe en dur : le jour ou ASS
+    relevera le plafond de son API, `ASS_REMISE_RC_SENT` passera a 40 et cette
+    fonction renverra 0 d'elle-meme, sans qu'on ait a y penser.
+    """
+    return max(0, commission_rate_for_genre(genre) - ASS_REMISE_RC_SENT)
+
+
+def horus_extra_rebate_rate_for_genres(genres):
+    """Taux commun a un lot de vehicules (flotte). Voir commission_rate_for_genres."""
+    return max(0, commission_rate_for_genres(genres) - ASS_REMISE_RC_SENT)
+
+
 def commission_rate_for_genre(genre):
     """Taux de commission d'apport Horus (en %) applicable a un genre ASS."""
     if genre in COMMISSION_GENRES_TPC:

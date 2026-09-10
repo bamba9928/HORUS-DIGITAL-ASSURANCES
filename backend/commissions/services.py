@@ -10,13 +10,17 @@ def _round_half_up(value):
     return int(Decimal(value).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
-def net_a_verser(*, ttc_ass, cout_police_ass=ASS_POLICY_FEE):
+def net_a_verser(*, ttc_ass, cout_police_ass=ASS_POLICY_FEE, remise_horus=0):
     """Montant que l'apporteur paie via Orange Money avant emission.
 
     L'apporteur retient le cout de police a la source : il ne verse que le
     reste. C'est le seul montant qui transite reellement par la plateforme.
+
+    `remise_horus` ne concerne que les genres TPC : elle comble les 20 points de
+    remise que l'API d'ASS refuse au-dela de son plafond, et sort de la
+    commission de Horus.
     """
-    return int(ttc_ass) - int(cout_police_ass)
+    return int(ttc_ass) - int(cout_police_ass) - int(remise_horus)
 
 
 def calculate_commission_amounts(
@@ -25,6 +29,7 @@ def calculate_commission_amounts(
     ttc_ass,
     cout_police_ass=ASS_POLICY_FEE,
     ass_partner_commission_rate=HORUS_COMMISSION_RATE_DEFAULT,
+    remise_horus=0,
 ):
     """Ventile un contrat entre l'apporteur, Horus et ASS.
 
@@ -37,7 +42,9 @@ def calculate_commission_amounts(
     - Horus garde la commission d'apport ASS : `prime nette x taux` (20 %, 40 %
       sur les genres TPC) ;
     - le solde part a ASS, reglement HORS PLATEFORME :
-      `TTC - cout de police - commission`.
+      `TTC - cout de police - commission`. Il est calcule AVANT la remise Horus :
+      celle-ci sort de la commission de Horus, pas de la part d'ASS, qui touche
+      donc la meme chose que sur un contrat sans remise.
 
     Il n'y a plus de taux par apporteur : les champs `commission_*` du compte
     utilisateur ne participent plus au calcul. Les cles `commission_*` renvoyees
@@ -47,8 +54,9 @@ def calculate_commission_amounts(
     prime_nette = int(prime_nette)
     ttc_ass = int(ttc_ass)
     cout_police_ass = int(cout_police_ass)
+    remise_horus = int(remise_horus)
 
-    if prime_nette < 0 or ttc_ass < 0 or cout_police_ass < 0:
+    if prime_nette < 0 or ttc_ass < 0 or cout_police_ass < 0 or remise_horus < 0:
         raise ValidationError("Les montants ASS ne peuvent pas etre negatifs.")
 
     rate = Decimal(str(ass_partner_commission_rate))
@@ -62,16 +70,25 @@ def calculate_commission_amounts(
 
     # Retenue a la source de l'apporteur = la totalite du cout de police.
     commission_apporteur = cout_police_ass
-    montant_encaisse = net_a_verser(ttc_ass=ttc_ass, cout_police_ass=cout_police_ass)
+    montant_encaisse = net_a_verser(
+        ttc_ass=ttc_ass, cout_police_ass=cout_police_ass, remise_horus=remise_horus
+    )
 
     # Revenu de Horus : la commission d'apport ASS sur la prime nette.
     ass_partner_commission = _round_half_up(Decimal(prime_nette) * rate / Decimal("100"))
 
-    montant_reverse_ass = montant_encaisse - ass_partner_commission
+    # Part d'ASS : calculee AVANT la remise Horus. Celle-ci est un geste de
+    # Horus envers le client, elle ne doit pas amputer ce qu'on doit a ASS.
+    montant_reverse_ass = (ttc_ass - cout_police_ass) - ass_partner_commission
     if montant_reverse_ass < 0:
         raise ValidationError(
             "La commission d'apport depasse le montant encaisse : "
             f"{ass_partner_commission} FCFA pour un net a verser de {montant_encaisse} FCFA."
+        )
+    if ass_partner_commission < remise_horus:
+        raise ValidationError(
+            f"La remise Horus ({remise_horus} FCFA) depasse la commission d'apport "
+            f"({ass_partner_commission} FCFA) : Horus paierait pour vendre."
         )
 
     return {
@@ -87,9 +104,11 @@ def calculate_commission_amounts(
         "ass_partner_commission_rate_used": rate,
         "ass_partner_commission": ass_partner_commission,
         "montant_reverse_ass": montant_reverse_ass,
-        # Horus ne touche que la commission d'apport : le cout de police est
-        # integralement retenu par l'apporteur.
-        "marge_horus": ass_partner_commission,
+        "remise_horus": remise_horus,
+        # Horus ne touche que la commission d'apport — le cout de police est
+        # integralement retenu par l'apporteur — diminuee de la remise qu'il a
+        # lui-meme accordee au client.
+        "marge_horus": ass_partner_commission - remise_horus,
     }
 
 
@@ -99,10 +118,12 @@ def build_commission_snapshot_values(
     ttc_ass,
     cout_police_ass=ASS_POLICY_FEE,
     ass_partner_commission_rate=HORUS_COMMISSION_RATE_DEFAULT,
+    remise_horus=0,
 ):
     return calculate_commission_amounts(
         prime_nette=prime_nette,
         ttc_ass=ttc_ass,
         cout_police_ass=cout_police_ass,
         ass_partner_commission_rate=ass_partner_commission_rate,
+        remise_horus=remise_horus,
     )

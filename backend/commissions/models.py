@@ -62,8 +62,13 @@ class CommissionSnapshot(models.Model):
     # Commission d'apport reversee par ASS a Horus sur la prime nette (revenu Horus).
     ass_partner_commission = models.PositiveIntegerField(default=0)
     # Part du net a verser reversee a ASS, hors plateforme :
-    # TTC - cout de police - commission d'apport.
+    # TTC - cout de police - commission d'apport. Calculee AVANT `remise_horus` :
+    # la remise sort de la poche de Horus, pas de celle d'ASS.
     montant_reverse_ass = models.PositiveIntegerField(default=0)
+    # Remise accordee par Horus au client, deduite du net a verser. Ne concerne
+    # que les genres TPC : elle comble les 20 points que l'API d'ASS refuse
+    # au-dela de son plafond (voir horus_extra_rebate_rate).
+    remise_horus = models.PositiveIntegerField(default=0)
     # Marge nette de Horus. Depuis la regle du 2026-08-28 elle vaut exactement la
     # commission d'apport : le cout de police est retenu par l'apporteur.
     marge_horus = models.IntegerField(default=0)
@@ -88,8 +93,8 @@ class CommissionSnapshot(models.Model):
 
     @property
     def net_a_verser(self):
-        """Montant paye par l'apporteur via Orange Money = TTC - cout de police."""
-        return self.ttc_ass - self.cout_police_ass
+        """Montant paye par l'apporteur = TTC - cout de police - remise Horus."""
+        return self.ttc_ass - self.cout_police_ass - self.remise_horus
 
     @property
     def retenue_apporteur(self):

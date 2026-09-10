@@ -13,10 +13,14 @@ from commissions.services import build_commission_snapshot_values
 from contracts.models import Contract
 from integrations.ass.client import AssClient, extract_available_qr, parse_ass_amount
 from integrations.ass.constants import ASS_CANCEL_METHODS, ASS_POLICY_FEE, ASS_SUCCESS_STATUS
+from decimal import ROUND_HALF_UP, Decimal
+
 from integrations.ass.referentials import (
     ASS_REMISE_RC_SENT,
     commission_rate_for_genre,
     commission_rate_for_genres,
+    horus_extra_rebate_rate,
+    horus_extra_rebate_rate_for_genres,
 )
 from integrations.ass.exceptions import AssIntegrationError
 from payments.services import has_confirmed_payment
@@ -355,6 +359,7 @@ def finalize_contract_issue(*, contract_id, request_payload, ass_response, issue
         cout_police_ass=contract.cout_police_ass,
         ttc_ass=contract.ttc_ass,
         ass_partner_commission_rate=contract_commission_rate(contract),
+        remise_horus=contract_horus_rebate(contract),
     )
     CommissionSnapshot.objects.get_or_create(
         contract=contract,
@@ -1010,6 +1015,42 @@ def contract_commission_rate(contract):
     if contract.contract_type == Contract.ContractType.GARAGE:
         return commission_rate_for_genre((draft.get("garage") or {}).get("subcategory"))
     return commission_rate_for_genre((draft.get("vehicle") or {}).get("subcategory"))
+
+
+def contract_horus_rebate(contract):
+    """Remise accordee par Horus, en FCFA, deduite du net a verser.
+
+    Elle comble les 20 points que l'API d'ASS refuse d'appliquer aux genres TPC
+    (voir horus_extra_rebate_rate). Assiette : la prime RC BRUTE, hors CEDEAO —
+    exactement celle sur laquelle ASS calcule sa propre `Reduction`, pour que
+    les deux remises s'additionnent au taux annonce.
+
+    Financee par Horus sur sa commission d'apport : le reversement a ASS est
+    calcule avant deduction, ASS touche la meme chose qu'un contrat sans remise.
+
+    Retourne 0 des que le taux est nul (tous les genres hors TPC) ou que la
+    ventilation ASS est absente — on ne remise pas sur un montant qu'on ignore.
+    """
+    draft = contract.draft_payload or {}
+    if contract.contract_type == Contract.ContractType.FLEET:
+        vehicles = (draft.get("fleet") or {}).get("vehicles") or []
+        rate = horus_extra_rebate_rate_for_genres(
+            vehicle.get("subcategory") for vehicle in vehicles
+        )
+    elif contract.contract_type == Contract.ContractType.GARAGE:
+        rate = horus_extra_rebate_rate((draft.get("garage") or {}).get("subcategory"))
+    else:
+        rate = horus_extra_rebate_rate((draft.get("vehicle") or {}).get("subcategory"))
+    if not rate:
+        return 0
+
+    breakdown = extract_rc_breakdown(contract.ass_response_payload or {})
+    if not breakdown or not breakdown.get("prime_rc_ass"):
+        return 0
+    # Prime RC brute : la PrimeRC renvoyee est nette de la remise ASS.
+    brute = breakdown["prime_rc_ass"] + breakdown.get("reduction", 0)
+    montant = Decimal(brute) * Decimal(rate) / Decimal(100)
+    return int(montant.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 def extract_rc_breakdown(ass_response):

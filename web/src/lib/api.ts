@@ -530,9 +530,15 @@ export type ContractListItem = {
   cout_police_ass: number;
   ttc_ass: number | null;
   /**
+   * Remise accordée par Horus sur sa propre commission, déduite du net à
+   * verser. Ne concerne que les genres TPC : elle comble les 20 points que
+   * l'API d'ASS refuse au-delà de son plafond. 0 partout ailleurs.
+   */
+  remise_horus: number;
+  /**
    * Net à verser — le seul montant calculé par Horus : Prime Totale ASS moins
-   * le coût de police, que l'apporteur retient à la source. `null` quand ASS
-   * n'a pas fourni de Prime Totale.
+   * le coût de police, que l'apporteur retient à la source, moins la remise
+   * Horus. `null` quand ASS n'a pas fourni de Prime Totale.
    */
   net_a_verser: number | null;
   immatriculation: string;
