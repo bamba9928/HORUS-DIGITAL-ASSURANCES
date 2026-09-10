@@ -108,20 +108,31 @@ textarea:focus-visible {
 }
 
 /* ─── Fields ────────────────────────────────────────────────────────── */
+/* Largeur et retraits par defaut des champs : ils DOIVENT vivre dans
+   `@layer components`. Hors couche ils battaient les utilitaires Tailwind quelle
+   que soit la specificite — `w-auto` / `sm:w-auto` etaient ignores (les selects
+   de filtre s'etalaient sur toute la ligne au lieu de se poser a cote de la
+   recherche) et `pl-10` aussi (l'icone de recherche recouvrait la premiere
+   lettre du placeholder). Les utilitaires passent apres `components`. */
+@layer components {
+  .app-field {
+    width: 100%;
+    padding: 0 12px;
+  }
+
+  .app-field-with-icon { padding-left: 42px; }
+}
+
 .app-field {
   min-height: 44px;
-  width: 100%;
   border: 1.5px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
-  padding: 0 12px;
   color: var(--foreground);
   font-size: 14px;
   font-weight: 500;
   transition: border-color 150ms ease, box-shadow 150ms ease;
 }
-
-.app-field-with-icon { padding-left: 42px; }
 
 .app-field:hover:not(:disabled) { border-color: var(--border-strong); }
 
@@ -407,6 +418,16 @@ select.app-field:disabled {
 .animate-fade-in  { animation: fadeIn   220ms ease both; }
 .animate-slide-up { animation: slideUp  270ms ease both; }
 .animate-scale-in { animation: scaleIn  240ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+/* Bandeau « Net à verser » : respiration verte, discrète mais visible. */
+@keyframes netPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
+  50%      { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+}
+.animate-net-pulse { animation: netPulse 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-net-pulse { animation: none; }
+}
 
 /* ─── Scrollbar ─────────────────────────────────────────────────────── */
 ::-webkit-scrollbar        { width: 5px; height: 5px; }
