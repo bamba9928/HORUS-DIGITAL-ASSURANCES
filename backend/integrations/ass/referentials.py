@@ -283,11 +283,24 @@ def filter_subcategories(category=None, contract_type=None):
 # remise renvoyait bien 17982, la brute reconstituee aujourd'hui a partir de
 # 14386 + 3596.
 #
-# Depuis la regle de commissionnement du 2026-08-28, Horus GARDE sa commission
-# au lieu de la reverser au client : aucune remise n'est donc accordee. Envoyer
-# autre chose que 0 offrirait deux fois la meme commission — une fois au client
-# via ASS, une fois retenue sur le versement a ASS.
-ASS_REMISE_RC_SENT = 0
+# Valeur retablie a 20 le 2026-09-10 sur decision de l'utilisateur : le client
+# doit payer le TARIF DE LA GRILLE ASS, pas le tarif brut. Verifie contre l'API
+# de production le meme jour, sur un VP 6 CV 1 mois (5 places) :
+#
+#   remise_rc = 0   -> PrimeRC 3953, Reduction 0,   PrimeTotale 8325
+#   remise_rc = 20  -> PrimeRC 3162, Reduction 791, PrimeTotale 7404  <- la grille
+#   remise_rc = 40  -> HTTP 400 « Erreur (8OO) : la remise RC doit etre compris
+#                      entre 0 et 20%. »
+#
+# 20 est donc le PLAFOND DUR de l'API. Les genres TPC, commissionnes a 40 %, ne
+# peuvent pas recevoir davantage par ce canal : leur 40 % reste la commission
+# d'apport de Horus, reglee hors plateforme (HORUS_COMMISSION_RATE_TPC), et le
+# client n'obtient que les 20 % que la passerelle autorise.
+#
+# ⚠️ Avec une remise non nulle, la `PrimeRC` renvoyee est NETTE : l'assiette de
+# commission doit etre reconstituee en y rajoutant `Reduction`, sinon Horus se
+# commissionne sur une base amputee de 20 %. Voir contract_commission_basis().
+ASS_REMISE_RC_SENT = 20
 
 
 # ─── Commission d'apport reversee par ASS a Horus ─────────────────────────

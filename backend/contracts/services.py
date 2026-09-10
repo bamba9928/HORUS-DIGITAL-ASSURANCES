@@ -969,11 +969,12 @@ def contract_commission_basis(contract):
     fonds de garantie. Decision metier du 2026-06-11, reconduite le 2026-08-28 :
     la CEDEAO fait partie de l'assiette, pas les prelevements fiscaux.
 
-    Depuis le passage de `remise_rc` a 0 (voir ASS_REMISE_RC_SENT), cette
-    `PrimeRC` est la prime BRUTE : ASS n'applique plus aucune remise, donc la
-    valeur renvoyee est directement l'assiette, sans reconstitution. Avant ce
-    changement elle etait nette de la remise, et commissionner dessus aurait
-    sous-estime l'assiette de 20 %.
+    La `PrimeRC` renvoyee est NETTE de la remise accordee au client : depuis le
+    retablissement de `remise_rc` a 20 (voir ASS_REMISE_RC_SENT), il faut y
+    rajouter `Reduction` pour retrouver la prime brute. Verifie contre l'API de
+    production le 2026-09-10 : 3162 + 791 = 3953, exactement la PrimeRC renvoyee
+    quand la remise vaut 0. Sans cette reconstitution, Horus se commissionnerait
+    sur une assiette amputee de 20 %.
 
     Volontairement distincte de `contract.prime_rc_ass`, qui porte le `data`
     d'ASS parce que c'est la seule valeur qu'ils acceptent a l'emission (voir
@@ -986,7 +987,11 @@ def contract_commission_basis(contract):
     """
     breakdown = extract_rc_breakdown(contract.ass_response_payload or {})
     if breakdown and breakdown.get("prime_rc_ass"):
-        return breakdown["prime_rc_ass"] + breakdown.get("cedeao", 0)
+        return (
+            breakdown["prime_rc_ass"]
+            + breakdown.get("reduction", 0)
+            + breakdown.get("cedeao", 0)
+        )
     return contract.prime_rc_ass
 
 

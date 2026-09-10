@@ -497,8 +497,8 @@ def test_fleet_issue_payload_reuses_rc_amounts_returned_by_ass_quote():
     assert payload["souscripteur"]["nom"] == "DIOP"
     assert payload["items"][0]["assure"]["nom"] == "NDIAYE"
     assert payload["cout_police"] == 3_000
-    # Plus aucune remise accordee au client : Horus garde sa commission.
-    assert payload["remise_rc"] == 0
+    # Remise de la grille ASS accordee au client (plafond dur de l'API a 20).
+    assert payload["remise_rc"] == 20
 
 
 def test_trailer_issue_payload_uses_issued_vehicle_reference_and_pdf_expiration_date():
@@ -642,32 +642,36 @@ def test_commission_rate_for_genres(genres, expected):
     assert commission_rate_for_genres(genres) == expected
 
 
-def test_rc_payloads_grant_no_remise_to_the_client():
-    """Regle du 2026-08-28 : Horus garde sa commission au lieu de la reverser.
+def test_rc_payloads_grant_the_price_list_remise_to_the_client():
+    """Decision du 2026-09-10 : le client paie le TARIF DE LA GRILLE ASS.
 
-    Envoyer un remise_rc non nul la donnerait une premiere fois au client via
-    ASS, alors qu'elle est deja retenue sur le versement a ASS.
+    `remise_rc = 20` reproduit exactement la grille — verifie contre l'API de
+    production sur un VP 6 CV 1 mois : PrimeTotale 7 404, contre 8 325 sans
+    remise. La commission d'apport de Horus est preservee en reconstituant la
+    prime brute dans `contract_commission_basis`.
     """
     vp = build_auto_rc_payload({"subcategory": "VP", "fiscalPower": "8"})
     utilitaire = build_auto_rc_payload({"subcategory": "TPC3T500", "fiscalPower": "8"})
     moto = build_moto_rc_payload({"subcategory": "2RMOT", "cylinder": "300"})
 
-    assert vp["remise_rc"] == 0
-    assert utilitaire["remise_rc"] == 0
-    assert moto["remise_rc"] == 0
+    assert vp["remise_rc"] == 20
+    assert utilitaire["remise_rc"] == 20
+    assert moto["remise_rc"] == 20
     assert vp["cout_police"] == 3_000
 
 
 def test_no_genre_can_produce_a_rate_the_ass_api_would_reject():
-    """Garde-fou : l'API rejette tout remise_rc > 20 avec un 400 (2026-08-06).
+    """Garde-fou : l'API rejette tout remise_rc > 20 avec un 400.
 
-    Le taux de commission, lui, peut valoir 40 : il ne part jamais chez ASS.
-    Ce test verifie donc le payload, pas le bareme.
+    Reconfirme contre la production le 2026-09-10 : `remise_rc = 40` repond
+    « Erreur (8OO) : la remise RC doit etre compris entre 0 et 20%. » Aucun
+    genre, TPC compris, ne doit donc depasser 20 dans le payload — leur 40 %
+    reste la commission d'apport, qui ne part jamais chez ASS.
     """
     from integrations.ass.referentials import VEHICLE_SUBCATEGORIES
 
     for item in VEHICLE_SUBCATEGORIES:
         payload = build_auto_rc_payload({"subcategory": item["value"], "fiscalPower": "8"})
-        assert payload["remise_rc"] == 0, (
+        assert 0 <= payload["remise_rc"] <= 20, (
             f"{item['value']} produit remise_rc={payload['remise_rc']}"
         )

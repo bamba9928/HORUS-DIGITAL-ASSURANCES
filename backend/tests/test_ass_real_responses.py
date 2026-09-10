@@ -170,22 +170,37 @@ def test_extract_prime_rc_sends_data_even_when_it_looks_wrong(response):
 @pytest.mark.parametrize(
     ("response", "expected"),
     [
-        (REAL_RC_GARAGE_RESPONSE, 68_831 + 300),
-        (REAL_RC_BUS_RESPONSE, 16_899 + 300),
+        # Prime BRUTE : la PrimeRC renvoyee est nette des 20 % de remise, il faut
+        # y rajouter `Reduction` avant d'ajouter la CEDEAO.
+        (REAL_RC_GARAGE_RESPONSE, 68_831 + 17_208 + 300),
+        (REAL_RC_BUS_RESPONSE, 16_899 + 4_225 + 300),
     ],
 )
 def test_commission_basis_ignores_data_when_it_diverges(response, expected):
-    """La commission ne se calcule pas sur `data`.
+    """La commission ne se calcule pas sur `data`, et pas sur la prime nette.
 
     Sur ces deux reponses reelles, `data` depasse la prime totale encaissee :
     commissionner dessus paierait Horus sur plus que ce que le client a paye.
-    L'assiette repart de la ventilation : PrimeRC + CEDEAO, hors taxes et fonds
-    de garantie.
+    L'assiette repart de la ventilation.
+
+    Elle reconstitue la prime BRUTE. Depuis le retablissement de `remise_rc` a 20
+    le 2026-09-10, la `PrimeRC` renvoyee est nette de la remise accordee au
+    client : s'en tenir a `PrimeRC + CEDEAO` amputerait l'assiette de 20 %.
     """
     contract = Contract(prime_rc_ass=int(response["data"]), ass_response_payload=response)
+    basis = contract_commission_basis(contract)
 
-    assert contract_commission_basis(contract) == expected
-    assert contract_commission_basis(contract) < int(response["PrimeTotale"])
+    assert basis == expected
+    # Le garde-fou d'origine — « assiette < prime totale » — ne tient plus depuis
+    # la reconstitution du brut, et c'est normal : sur le garage la remise
+    # (17 208) pese plus lourd que les taxes, si bien que la RC brute depasse de
+    # 2,9 % la prime effectivement payee. Ce qui compte est ailleurs :
+    #   1. l'assiette n'a plus rien a voir avec `data`, l'aberration d'origine ;
+    #   2. la commission qui en decoule reste tres inferieure a l'encaissement,
+    #      seule contrainte que `calculate_commission_amounts` fait respecter.
+    assert basis < int(response["data"]) / 1.5
+    encaisse = int(response["PrimeTotale"]) - int(response["CoutPolice"])
+    assert basis * 0.40 < encaisse
 
 
 def test_commission_basis_falls_back_when_no_breakdown():
@@ -353,3 +368,75 @@ def test_reduction_reelle_est_bien_appliquee_par_ass():
     """remise_rc=20 envoye -> ASS renvoie Reduction=894 et une PrimeTotale reduite."""
     assert REAL_ISSUE_RESPONSE["Reduction"] == "894"
     assert int(REAL_ISSUE_RESPONSE["PrimeTotale"]) < 8_927
+
+
+# ─── Retablissement de remise_rc a 20 (2026-09-10) ───────────────────────────
+
+# Reponse REELLE de l'API de production ASS pour un VP 6 CV, 1 mois, 5 places,
+# avec `remise_rc = 20`. Correspond exactement a la grille tarifaire ASS
+# « CATEGORIE 1 Particuliers 5 Places, 3 a 6 CV » : R. Civil 3 162, Frais 3 000,
+# Taxe 863, F.G.A 79, Prime T 7 404.
+REAL_RC_VP_WITH_REMISE = {
+    "operationStatus": "SUCCESS",
+    "operationMessage": "Opération effectuée avec succès.",
+    "data": "4553",
+    "PrimeRC": "3162",
+    "Reduction": "791",
+    "CoutPolice": "3000",
+    "Taxe": "863",
+    "Cedeao": "300",
+    "Fga": "79",
+    "PrimeTotale": "7404",
+}
+
+
+def test_remise_sent_to_ass_is_the_gateway_maximum():
+    """20 est un plafond DUR de l'API ASS, pas une preference.
+
+    Verifie contre la production le 2026-09-10 : `remise_rc = 40` repond
+    HTTP 400 « Erreur (8OO) : la remise RC doit etre compris entre 0 et 20%. »
+    Les genres TPC gardent donc leur 40 % en commission d'apport hors
+    plateforme ; le client, lui, ne peut recevoir que 20 %.
+    """
+    from integrations.ass.referentials import (
+        ASS_REMISE_RC_SENT,
+        HORUS_COMMISSION_RATE_TPC,
+    )
+
+    assert ASS_REMISE_RC_SENT == 20
+    assert HORUS_COMMISSION_RATE_TPC == 40, (
+        "Le 40 % TPC reste la commission d'apport Horus : il ne transite pas par "
+        "`remise_rc`, que la passerelle plafonne a 20."
+    )
+
+
+def test_quote_with_remise_matches_the_ass_price_list():
+    """Le decompte renvoye reproduit la grille tarifaire ASS, ligne a ligne."""
+    breakdown = extract_rc_breakdown(REAL_RC_VP_WITH_REMISE)
+
+    assert breakdown["prime_rc_ass"] == 3_162
+    assert breakdown["cout_police"] == 3_000
+    assert breakdown["taxe"] == 863
+    assert breakdown["fonds_garantie"] == 79
+    assert breakdown["prime_totale"] == 7_404
+    somme = (
+        breakdown["prime_rc_ass"]
+        + breakdown["cout_police"]
+        + breakdown["taxe"]
+        + breakdown["cedeao"]
+        + breakdown["fonds_garantie"]
+    )
+    assert somme == breakdown["prime_totale"]
+
+
+def test_commission_basis_reconstitutes_the_gross_premium():
+    """La remise ne doit pas amputer l'assiette de commission de Horus.
+
+    3 162 (net) + 791 (remise) = 3 953, soit exactement la PrimeRC que l'API
+    renvoie quand `remise_rc` vaut 0. Verifie sur la production le 2026-09-10.
+    """
+    contract = Contract(
+        prime_rc_ass=4_553, ass_response_payload=REAL_RC_VP_WITH_REMISE
+    )
+
+    assert contract_commission_basis(contract) == 3_953 + 300
