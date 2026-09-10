@@ -18,6 +18,7 @@ import {
   Scale,
   ShieldCheck,
   ShieldPlus,
+  Smartphone,
   Sparkles,
   TriangleAlert,
   UserRound,
@@ -31,6 +32,7 @@ import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } fr
 
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
+import { OmPaymentDialog } from "@/components/OmPaymentDialog";
 import { DatePicker } from "@/components/DatePicker";
 import { SelectSearch } from "@/components/SelectSearch";
 import { AlertMessage, StatusBadge } from "@/components/ui";
@@ -262,6 +264,7 @@ function NewContractPageContent() {
   const [savedDraftId, setSavedDraftId] = useState<number | null>(null);
   const [quote, setQuote] = useState<ContractQuote | null>(null);
   const [payment, setPayment] = useState<ConfirmedPayment | null>(null);
+  const [showOmDialog, setShowOmDialog] = useState(false);
   const [issueResult, setIssueResult] = useState<IssueResult | null>(null);
   const [autoSaveState, setAutoSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [showErrors, setShowErrors] = useState(false);
@@ -901,6 +904,23 @@ function NewContractPageContent() {
   const userCanCreateContract = canCreateContract(auth?.user);
   const userCanConfirmPayment = canConfirmContractPayment(auth?.user);
   const userCanIssueContract = canManageContractWorkflow(auth?.user);
+  // Payer en ligne releve du meme droit qu'emettre : l'apporteur regle son
+  // propre net a verser. La confirmation manuelle, elle, reste a la finance.
+  const userCanPayOnline = canManageContractWorkflow(auth?.user);
+
+  function handleOmConfirmed() {
+    setShowOmDialog(false);
+    const amount = quote ? quoteNetAVerser(quote) : null;
+    // Le backend vient de creer le paiement CONFIRME et de passer le contrat en
+    // PAYE ; on reflete l'etat localement pour debloquer l'emission sans
+    // recharger tout l'assistant.
+    setPayment({
+      id: 0,
+      amount: amount ?? 0,
+      status: "CONFIRMED",
+      confirmed_at: new Date().toISOString(),
+    });
+  }
   const wizardDescription = canSeeAss ? "Souscription et émission ASS" : "Souscription et émission";
 
   if (isAuthLoading) {
@@ -1385,8 +1405,10 @@ function NewContractPageContent() {
                   contractId={savedDraftId}
                   issueResult={issueResult}
                   issuing={issuing}
+                  canPayOnline={userCanPayOnline}
                   onConfirmPayment={confirmPayment}
                   onIssue={issueMockContract}
+                  onPayOnline={() => setShowOmDialog(true)}
                   paying={paying}
                   payment={payment}
                   quote={quote}
@@ -1398,6 +1420,15 @@ function NewContractPageContent() {
                   } depuis l'étape options.`}
                 </div>
               )}
+              {/* Monté seulement à l'ouverture : le dialogue repart d'un état
+                  neuf et relance une demande QR à chaque fois. */}
+              {showOmDialog && savedDraftId ? (
+                <OmPaymentDialog
+                  contractId={savedDraftId}
+                  onClose={() => setShowOmDialog(false)}
+                  onConfirmed={handleOmConfirmed}
+                />
+              ) : null}
               <div className="flex">
                 <button
                   className="h-10 rounded-lg border border-border px-4 text-sm font-bold transition hover:bg-muted"
@@ -2334,18 +2365,23 @@ function QuoteRow({
 function PaymentIssuePanel({
   canConfirmPayment,
   canIssue,
+  canPayOnline,
   canSeeAss,
   contractId,
   issueResult,
   issuing,
   onConfirmPayment,
   onIssue,
+  onPayOnline,
   paying,
   payment,
   quote,
 }: {
   canConfirmPayment: boolean;
   canIssue: boolean;
+  /** Régler en ligne : l'apporteur paie lui-même son net à verser. */
+  canPayOnline: boolean;
+  onPayOnline: () => void;
   canSeeAss: boolean;
   contractId: number | null;
   issueResult: IssueResult | null;
@@ -2387,9 +2423,27 @@ function PaymentIssuePanel({
           </span>
         </div>
         <div className="flex flex-col gap-3 border-t border-border p-5 sm:flex-row sm:items-center">
+          {/* Régler ici plutôt que de ressortir vers la fiche du contrat : c'est
+              le moment naturel, l'apporteur est déjà devant le bon montant.
+              Action principale, en couleur Orange Money. */}
+          {canPayOnline ? (
+            <button
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#ff7900] px-5 text-sm font-extrabold text-white shadow-sm shadow-[#ff7900]/25 transition hover:brightness-105 disabled:bg-black/20 disabled:shadow-none"
+              disabled={
+                Boolean(payment) || paying || payableAmount === null || !contractId
+              }
+              onClick={onPayOnline}
+              type="button"
+            >
+              <Smartphone size={15} />
+              Payer par Orange Money
+            </button>
+          ) : null}
+          {/* Déclaration hors ligne — espèces au bureau, virement. Volontairement
+              en second plan : elle n'encaisse rien, elle atteste. */}
           {canConfirmPayment ? (
             <button
-              className="h-11 rounded-lg bg-primary px-5 text-sm font-extrabold text-white shadow-sm shadow-primary/20 transition hover:bg-[var(--primary-strong)] disabled:bg-black/20 disabled:shadow-none"
+              className="h-11 rounded-lg border border-border bg-white px-5 text-sm font-extrabold text-black/70 shadow-xs transition hover:bg-muted disabled:text-black/25"
               disabled={Boolean(payment) || paying || payableAmount === null}
               onClick={onConfirmPayment}
               type="button"
@@ -2398,9 +2452,9 @@ function PaymentIssuePanel({
                 ? "Confirmation…"
                 : payableAmount === null
                   ? "Montant indisponible"
-                  : `Confirmer ${formatAmount(payableAmount)} FCFA`}
+                  : "Déclarer un paiement reçu"}
             </button>
-          ) : (
+          ) : canPayOnline ? null : (
             <span className="text-sm font-semibold text-amber-700">
               Paiement en attente de confirmation par la finance.
             </span>
