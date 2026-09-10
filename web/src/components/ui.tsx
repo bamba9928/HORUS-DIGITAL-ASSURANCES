@@ -91,6 +91,8 @@ export function MetricCard({
   tone = "neutral",
   trend,
   loading = false,
+  onClick,
+  active = false,
 }: {
   label: string;
   value: string | number;
@@ -99,10 +101,24 @@ export function MetricCard({
   tone?: "neutral" | "primary" | "success" | "warning";
   trend?: { value: string; up: boolean };
   loading?: boolean;
+  /** Rend la carte cliquable : elle sert alors de filtre. */
+  onClick?: () => void;
+  /** Filtre actuellement appliqué : la carte le montre. */
+  active?: boolean;
 }) {
   const cfg = toneConfig[tone];
+  // Une carte-filtre doit être atteignable au clavier et s'annoncer comme
+  // un bouton ; les cartes purement informatives restent de simples divs.
+  const Root = onClick ? "button" : "div";
   return (
-    <div className="app-surface flex min-w-0 flex-col overflow-hidden transition hover:shadow-md">
+    <Root
+      {...(onClick
+        ? { type: "button" as const, onClick, "aria-pressed": active }
+        : {})}
+      className={`app-surface flex min-w-0 flex-col overflow-hidden text-left transition hover:shadow-md ${
+        onClick ? "cursor-pointer hover:-translate-y-px" : ""
+      } ${active ? "ring-2 ring-primary/40" : ""}`}
+    >
       {/* Colored top strip */}
       <div className={`h-[3px] ${cfg.bar}`} />
       <div className="flex min-w-0 flex-1 flex-col p-3.5">
@@ -146,7 +162,7 @@ export function MetricCard({
           ) : null}
         </div>
       </div>
-    </div>
+    </Root>
   );
 }
 

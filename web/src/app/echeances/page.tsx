@@ -86,6 +86,19 @@ export default function EcheancesPage() {
     void refresh(next);
   }
 
+  // Ouvrir la page sur « ≤ 30 jours » et n'y trouver personne alors que le
+  // compteur « Expirés » affiche 3 laissait le lecteur dans une impasse :
+  // on lui indique la fenêtre qui a de la matière.
+  const suggestedWindow = useMemo(() => {
+    if (!summary) return null;
+    const counts: { value: ExpirationWindow; label: string; count: number }[] = [
+      { value: "expired", label: "Expirés", count: summary.expired ?? 0 },
+      { value: "30", label: "≤ 30 jours", count: summary.expiring_30 ?? 0 },
+      { value: "60", label: "≤ 60 jours", count: summary.expiring_60 ?? 0 },
+    ];
+    return counts.find((c) => c.value !== windowFilter && c.count > 0) ?? null;
+  }, [summary, windowFilter]);
+
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return items;
@@ -124,27 +137,35 @@ export default function EcheancesPage() {
       <div className="space-y-5">
         {/* ── KPI row ──────────────────────────────────────────── */}
         <div className="grid grid-cols-1 gap-3 min-[520px]:grid-cols-3">
+          {/* Les compteurs sont les fenêtres elles-mêmes : cliquer dessus filtre
+              la liste, plutôt que d'obliger à viser la puce correspondante. */}
           <MetricCard
+            active={windowFilter === "expired"}
             detail="Attestation dépassée"
             icon={AlertTriangle}
             label="Expirés"
             loading={isLoading || !summary}
+            onClick={() => updateWindow("expired")}
             tone="warning"
             value={summary?.expired ?? 0}
           />
           <MetricCard
+            active={windowFilter === "30"}
             detail="À relancer en priorité"
             icon={Clock}
             label="≤ 30 jours"
             loading={isLoading || !summary}
+            onClick={() => updateWindow("30")}
             tone="primary"
             value={summary?.expiring_30 ?? 0}
           />
           <MetricCard
+            active={windowFilter === "60"}
             detail="À anticiper"
             icon={CalendarClock}
             label="≤ 60 jours"
             loading={isLoading || !summary}
+            onClick={() => updateWindow("60")}
             value={summary?.expiring_60 ?? 0}
           />
         </div>
@@ -253,7 +274,26 @@ export default function EcheancesPage() {
             </div>
           ) : (
             <EmptyState
-              description="Aucun contrat émis dans cette fenêtre d'échéance."
+              action={
+                !isLoading && suggestedWindow ? (
+                  <button
+                    className="h-9 rounded-xl border border-border px-4 text-xs font-extrabold transition hover:bg-muted"
+                    onClick={() => updateWindow(suggestedWindow.value)}
+                    type="button"
+                  >
+                    Voir les {suggestedWindow.label.toLowerCase()}
+                  </button>
+                ) : null
+              }
+              description={
+                isLoading
+                  ? undefined
+                  : suggestedWindow
+                    ? `Rien à relancer ici, mais ${suggestedWindow.count} contrat${
+                        suggestedWindow.count > 1 ? "s" : ""
+                      } attend${suggestedWindow.count > 1 ? "ent" : ""} dans « ${suggestedWindow.label} ».`
+                    : "Aucun contrat émis dans cette fenêtre d'échéance."
+              }
               title={isLoading ? "Chargement des échéances…" : "Aucune échéance"}
             />
           )}

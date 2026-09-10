@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, RefreshCw, UserPlus, Users, X } from "lucide-react";
+import { Pencil, RefreshCw, ShieldCheck, UserCheck, UserPlus, Users, X } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
@@ -121,13 +121,30 @@ export default function UsersPage() {
     >
       <div className="space-y-5">
         {/* ── KPI cards ──────────────────────── */}
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+        {/* Quatre compteurs, comme sur Organisations : deux cartes dans une
+            grille de trois laissaient un vide à droite du bandeau. */}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <MetricCard icon={Users} label="Utilisateurs" value={users.length} />
           <MetricCard
             icon={UserPlus}
             label="Apporteurs"
             tone="primary"
             value={users.filter((u) => u.role === "CONTRIBUTOR").length}
+          />
+          <MetricCard
+            icon={ShieldCheck}
+            label="Administrateurs"
+            value={
+              users.filter((u) => ["ADMIN_GENERAL", "ADMIN_GROUP"].includes(u.role))
+                .length
+            }
+          />
+          <MetricCard
+            detail="Comptes pouvant se connecter"
+            icon={UserCheck}
+            label="Actifs"
+            tone="success"
+            value={users.filter((u) => u.is_active).length}
           />
         </div>
 
