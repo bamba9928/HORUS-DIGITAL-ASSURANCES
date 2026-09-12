@@ -3,6 +3,7 @@ from datetime import date, timedelta
 import re
 from uuid import uuid4
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
@@ -69,6 +70,16 @@ def calculate_contract_quote(contract, ass_client=None):
         response_payload = ass_response
         quote = _build_quote("MOTO", prime_rc_ass, breakdown, [])
     elif contract.contract_type == Contract.ContractType.FLEET:
+        # rc.flotte.request renvoie un NameError cote serveur ASS (ga_def_recours
+        # jamais assigne dans leur handler), reproduit en production sur toutes
+        # les variantes de payload testees : aucun contournement client possible.
+        # Bloque ici avec un message clair plutot que de laisser remonter
+        # l'erreur ASS brute. Le mock reste ouvert pour le developpement.
+        if not settings.ASS_MOCK_ENABLED:
+            raise QuoteCalculationError(
+                "Flotte temporairement indisponible : l'API ASS de calcul flotte "
+                "est en panne côté serveur (bug confirmé, hors de notre contrôle)."
+            )
         fleet_request_payload = build_fleet_rc_payload(contract.draft_payload)
         fleet_response = ass_client.calculate_fleet_rc(fleet_request_payload)
         items = extract_fleet_items(fleet_response)

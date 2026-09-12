@@ -1,7 +1,11 @@
 CONTRACT_TYPES = [
     {"value": "AUTO_MONO", "label": "Auto mono", "enabled": True},
     {"value": "MOTO", "label": "Moto", "enabled": True},
-    {"value": "FLEET", "label": "Flotte", "enabled": True},
+    # Desactive le 2026-09-12 : rc.flotte.request renvoie un NameError cote
+    # serveur ASS (ga_def_recours jamais assigne dans leur handler), reproduit
+    # en production sur toutes les variantes de payload testees. Aucun devis
+    # flotte n'est calculable tant qu'ASS n'a pas corrige. Voir [[project-ass-go-live]].
+    {"value": "FLEET", "label": "Flotte", "enabled": False},
     {"value": "BUS_SCHOOL", "label": "Bus ecole", "enabled": True},
     {"value": "GARAGE", "label": "Garage", "enabled": True},
     # REMORQUE n'est pas un contrat standalone : il se crée depuis la page d'un contrat tracteur existant.

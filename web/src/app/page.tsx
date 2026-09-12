@@ -7,7 +7,6 @@ import {
   CarFront,
   FilePlus2,
   Wrench,
-  Truck,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -42,16 +41,9 @@ const contractTypes = [
     text: "text-violet-700",
     ring: "ring-violet-200",
   },
-  {
-    name: "Flotte",
-    description: "Multi-véhicules + remorques",
-    href: "/contracts/new?type=FLEET",
-    icon: Truck,
-    gradient: "from-sky-500 to-sky-700",
-    bg: "bg-sky-50",
-    text: "text-sky-700",
-    ring: "ring-sky-200",
-  },
+  // Flotte retiree le 2026-09-12 : rc.flotte.request est en panne cote
+  // serveur ASS (NameError ga_def_recours, confirme en production), aucun
+  // devis flotte n'est calculable. Voir integrations/ass/referentials.py.
   {
     name: "Bus École",
     description: "Transport scolaire",
