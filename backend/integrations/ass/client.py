@@ -1,12 +1,13 @@
 import logging
 import time
-from calendar import monthrange
-from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from urllib.parse import urlsplit
 
 import requests
 from django.conf import settings
+from django.core.exceptions import ValidationError
+
+from integrations.ass.dates import calculate_expiration_date
 
 from integrations.ass.constants import (
     ASS_ENDPOINT_ISSUE_AUTO,
@@ -564,32 +565,17 @@ def _coerce_stock_int(value):
     return parse_ass_amount(value)
 
 
-def _mock_add_months(value, months):
-    month_index = value.month - 1 + months
-    year = value.year + month_index // 12
-    month = month_index % 12 + 1
-    day = min(value.day, monthrange(year, month)[1])
-    return value.replace(year=year, month=month, day=day)
-
-
 def _mock_expiration_date(effect_date, duration, periodicity):
-    """Echeance du mock : meme regle que `calculate_expiration_date`
-    (contracts/services.py, non importable ici sans import circulaire) —
-    effet + duree - 1 jour. Sans elle le mock renvoyait une date fixe,
-    parfois anterieure a la date d'effet demandee.
+    """Echeance du mock, au format datetime des reponses ASS.
+
+    Reutilise la regle unique d'`integrations.ass.dates` : sans elle, le mock
+    renvoyait une date fixe, parfois anterieure a la date d'effet demandee.
     """
-    if not effect_date:
-        return ""
     try:
-        start_date = date.fromisoformat(effect_date)
-    except ValueError:
+        expiration = calculate_expiration_date(effect_date, int(duration or 1), periodicity)
+    except (ValidationError, TypeError, ValueError):
         return ""
-    duration = int(duration or 1)
-    if periodicity == "JOUR":
-        expiration = start_date + timedelta(days=duration) - timedelta(days=1)
-    else:
-        expiration = _mock_add_months(start_date, duration) - timedelta(days=1)
-    return f"{expiration.isoformat()}T23:59:59"
+    return f"{expiration}T23:59:59" if expiration else ""
 
 
 def _build_rc_breakdown(prime_rc):

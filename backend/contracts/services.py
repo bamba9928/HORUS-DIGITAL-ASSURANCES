@@ -14,6 +14,7 @@ from commissions.services import build_commission_snapshot_values
 from contracts.models import Contract
 from integrations.ass.client import AssClient, extract_available_qr, parse_ass_amount
 from integrations.ass.constants import ASS_CANCEL_METHODS, ASS_POLICY_FEE, ASS_SUCCESS_STATUS
+from integrations.ass.dates import add_months, calculate_expiration_date  # noqa: F401
 from decimal import ROUND_HALF_UP, Decimal
 
 from integrations.ass.referentials import (
@@ -1231,29 +1232,6 @@ def parse_ass_datetime(value):
     if parsed and timezone.is_naive(parsed):
         return timezone.make_aware(parsed, timezone.get_current_timezone())
     return parsed
-
-
-def calculate_expiration_date(effect_date, duration, periodicity):
-    if not effect_date:
-        return ""
-
-    try:
-        start_date = date.fromisoformat(effect_date)
-    except ValueError as exc:
-        raise ValidationError("Date d'effet invalide.") from exc
-    if periodicity == "JOUR":
-        expiration = start_date + timedelta(days=duration) - timedelta(days=1)
-    else:
-        expiration = add_months(start_date, duration) - timedelta(days=1)
-    return expiration.isoformat()
-
-
-def add_months(value, months):
-    month_index = value.month - 1 + months
-    year = value.year + month_index // 12
-    month = month_index % 12 + 1
-    day = min(value.day, monthrange(year, month)[1])
-    return value.replace(year=year, month=month, day=day)
 
 
 def normalize_moto_usage(value):
