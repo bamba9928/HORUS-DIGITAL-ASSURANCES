@@ -70,20 +70,30 @@ class AssVerifyRegistrationView(APIView):
         immatriculation = serializer.validated_data["immatriculation"]
         date_effet_prevue = serializer.validated_data.get("date_effet")
 
-        bloque, message, details = check_vehicule(immatriculation, date_effet_prevue)
+        result = check_vehicule(immatriculation, date_effet_prevue)
+
+        # UNAVAILABLE n'est pas NOT_FOUND : le registre etait injoignable, on
+        # laisse passer la vente (FAIL_OPEN) mais le front doit annoncer
+        # « verification indisponible », pas « immatriculation libre ».
+        if not result.available:
+            operation_status = "UNAVAILABLE"
+        elif result.blocked:
+            operation_status = "SUCCESS"
+        else:
+            operation_status = "NOT_FOUND"
 
         payload = {
             "mode": "mock" if settings.AAS_DIOTALI_MOCK_ENABLED else "real",
-            "operation_status": "SUCCESS" if bloque else "NOT_FOUND",
-            "operation_message": message or "",
+            "operation_status": operation_status,
+            "operation_message": result.message or "",
             "immatriculation": immatriculation,
-            "is_registered": bloque,
+            "is_registered": result.blocked,
             # Le registre AAS Diotali ne fournit pas les caracteristiques du
             # vehicule (marque/genre/etc.) au sens du formulaire (categorie,
             # energie...) : `vehicle` reste None. `details` porte ce que le
             # contrat existant fournit reellement, pour l'alerte de blocage.
             "vehicle": None,
-            "details": details,
+            "details": result.details,
             "raw_response": {},
         }
         response_serializer = AssVerifyRegistrationSerializer(payload)

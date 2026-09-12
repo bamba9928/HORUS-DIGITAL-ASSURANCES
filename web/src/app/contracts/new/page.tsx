@@ -482,11 +482,23 @@ function NewContractPageContent() {
           return;
         }
 
+        setRegistrationBlockDetails(null);
+
+        // Registre injoignable : ne pas annoncer « immatriculation libre »,
+        // la vérification n'a pas eu lieu. La saisie continue quand même
+        // (le backend laisse passer la vente sur une panne du tiers).
+        if (response.operation_status === "UNAVAILABLE") {
+          setRegistrationLookupState("error");
+          setRegistrationLookupMessage(
+            "Vérification indisponible. Vous pouvez continuer la saisie manuellement.",
+          );
+          return;
+        }
+
         setRegistrationLookupState("not_found");
         setRegistrationLookupMessage(
           "Immatriculation libre : aucune assurance digitale active.",
         );
-        setRegistrationBlockDetails(null);
       } catch {
         if (registrationLookupRequestRef.current !== requestId) {
           return;
@@ -586,6 +598,7 @@ function NewContractPageContent() {
     lastRegistrationLookupRef.current = "";
     setRegistrationLookupState("idle");
     setRegistrationLookupMessage("");
+    setRegistrationBlockDetails(null);
   }
 
   function updateVehicle(field: keyof VehicleForm, value: string) {

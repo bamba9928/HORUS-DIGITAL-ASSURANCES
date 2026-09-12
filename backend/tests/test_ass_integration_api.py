@@ -1,4 +1,7 @@
+from unittest.mock import patch
+
 import pytest
+import requests
 from django.test import override_settings
 from rest_framework.test import APIClient
 
@@ -176,6 +179,39 @@ def test_verify_registration_lets_through_when_existing_cover_expires_before_new
     assert before_expiry.data["details"]["date_echeance"] == "2026-12-31"
     # Sans date d'effet (formulaire pas encore arrive a la couverture) : bloque par defaut.
     assert no_date_provided.data["is_registered"] is True
+
+
+@pytest.mark.django_db
+@override_settings(AAS_DIOTALI_MOCK_ENABLED=False)
+@patch("integrations.aas_diotali.client.AasDiotaliClient.verify_vehicle")
+def test_verify_registration_says_unavailable_instead_of_free_when_registry_is_down(
+    verify_vehicle,
+):
+    """Une panne du tiers laisse passer la vente, mais ne doit pas la maquiller
+    en « immatriculation libre » : sans verification, on ne sait rien."""
+    verify_vehicle.side_effect = requests.exceptions.Timeout("registre injoignable")
+    organization = Organization.objects.create(name="Groupe Panne", code="OUTAGE")
+    contributor = User.objects.create_user(
+        username="contributor-aas-outage",
+        password="test-pass-123",
+        role=User.Role.CONTRIBUTOR,
+        organization=organization,
+    )
+    client = APIClient()
+    client.force_authenticate(contributor)
+
+    response = client.post(
+        "/api/integrations/ass/verify-registration/",
+        {"immatriculation": "DK-7788-HZ"},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    # FAIL_OPEN : la vente n'est pas bloquee...
+    assert response.data["is_registered"] is False
+    # ... mais le statut dit clairement que rien n'a pu etre verifie.
+    assert response.data["operation_status"] == "UNAVAILABLE"
+    assert response.data["details"] is None
 
 
 @pytest.mark.django_db

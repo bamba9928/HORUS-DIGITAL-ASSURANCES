@@ -169,7 +169,9 @@ REST_FRAMEWORK = {
     'NUM_PROXIES': config('NUM_PROXIES', default=1, cast=int),
     'DEFAULT_THROTTLE_RATES': {
         'auth_login': config('AUTH_LOGIN_THROTTLE_RATE', default='10/min'),
-        # Les CGU ASS imposent une frequence limite : borne les appels sandbox/prod par utilisateur.
+        # Verification d'immatriculation : chaque appel part vers le registre
+        # public AAS Diotali (tiers), et le formulaire le declenche a la saisie
+        # de la plaque comme au changement de date d'effet. Borne par utilisateur.
         'ass_verify': config('ASS_VERIFY_THROTTLE_RATE', default='30/min'),
         # Renouvellement et revocation de jeton : plus permissif que la
         # connexion (aucun mot de passe n'y transite) mais borne quand meme.

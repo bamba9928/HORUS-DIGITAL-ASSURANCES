@@ -20,6 +20,15 @@ logger = logging.getLogger("integrations.aas_diotali")
 
 REGISTRATION_STRIP_PATTERN = re.compile(r"[\s\-–—]+")
 
+# Session partagee : le formulaire interroge le registre a chaque saisie de
+# plaque et a chaque changement de date d'effet. Une Session par appel
+# repayait un handshake TLS a chaque fois. Le client reste instancie par appel
+# (il lit les settings, que les tests surchargent) mais reutilise ce pool.
+_SHARED_SESSION = requests.Session()
+_SHARED_SESSION.headers.update(
+    {"Accept": "application/json", "User-Agent": "horus-assurances/1.0"}
+)
+
 
 class AasDiotaliClient:
     DEFAULT_BASE_URL = "https://apiaas.diotali.com/applicationtiers"
@@ -30,9 +39,7 @@ class AasDiotaliClient:
             base_url or getattr(settings, "AAS_PUBLIC_BASE_URL", self.DEFAULT_BASE_URL)
         ).rstrip("/")
         self.timeout = timeout or self.DEFAULT_TIMEOUT
-        self.session = session or requests.Session()
-        self.session.headers.setdefault("Accept", "application/json")
-        self.session.headers.setdefault("User-Agent", "horus-assurances/1.0")
+        self.session = session or _SHARED_SESSION
 
     @staticmethod
     def normalize_immat(value: str) -> str:

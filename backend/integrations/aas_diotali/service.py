@@ -8,6 +8,7 @@ regle metier, adaptee au style fonctionnel de ce backend. Voir la memoire
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import date, datetime
 from email.utils import parsedate_to_datetime
 
@@ -23,6 +24,27 @@ logger = logging.getLogger("integrations.aas_diotali")
 FAIL_OPEN = True
 
 DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d")
+
+
+@dataclass(frozen=True)
+class VerificationResult:
+    """Verdict du registre AAS Diotali.
+
+    `available` distingue « verifie, vehicule libre » de « pas pu verifier ».
+    Les deux laissent passer la vente (FAIL_OPEN), mais annoncer
+    « immatriculation libre » alors que le registre etait injoignable
+    trompe l'apporteur : l'appelant doit pouvoir dire « verification
+    indisponible » a la place.
+    """
+
+    blocked: bool
+    message: str | None = None
+    details: dict | None = None
+    available: bool = True
+
+    @classmethod
+    def unavailable(cls) -> VerificationResult:
+        return cls(blocked=False, available=False)
 
 
 def _parse_date(value) -> date | None:
@@ -73,22 +95,23 @@ def check_vehicule(
     date_effet_prevue: date | None = None,
     *,
     client: AasDiotaliClient | None = None,
-) -> tuple[bool, str | None, dict | None]:
+) -> VerificationResult:
     """Verifie si le vehicule est deja assure via le registre AAS Diotali.
 
     Si une assurance existe mais que son echeance est strictement anterieure a
     `date_effet_prevue`, le vehicule ne sera plus couvert a cette date : on
     laisse passer.
 
-    Retourne (True, message, details) si BLOQUE, (False, None, None) si OK.
     `details` porte les champs structures du contrat trouve (marque, modele,
     numero d'attestation, dates ISO) pour un affichage riche cote appelant,
-    en plus du message deja pret a l'emploi.
+    en plus du message deja pret a l'emploi. `available=False` signale une
+    panne du tiers : la vente passe quand meme, mais l'appelant ne doit pas
+    annoncer que l'immatriculation est libre.
     """
     client = client or AasDiotaliClient()
     immat_clean = client.normalize_immat(immatriculation)
     if not immat_clean:
-        return False, None, None
+        return VerificationResult(blocked=False)
 
     try:
         payload = client.verify_vehicle(immat_clean)
@@ -99,9 +122,12 @@ def check_vehicule(
             dt_fin = _parse_date(data.get("dateEcheance"))
             dt_debut = _parse_date(data.get("dateEffet"))
 
-            # Echeance illisible : impossible de prouver l'expiration, on
-            # bloque par securite (fail-closed sur le parsing, different du
-            # fail-open sur la panne ci-dessous).
+            # Nouvelle date d'effet strictement apres l'echeance existante :
+            # le vehicule ne sera plus couvert a cette date, on laisse passer.
+            # Si `dt_fin` est illisible on tombe volontairement dans le cas
+            # bloquant plus bas : impossible de prouver l'expiration
+            # (fail-closed sur le parsing, a l'inverse du fail-open sur la
+            # panne du tiers).
             if date_effet_prevue and dt_fin and date_effet_prevue > dt_fin:
                 logger.info(
                     "Vehicule %s : contrat AAS Diotali expire le %s, "
@@ -110,7 +136,7 @@ def check_vehicule(
                     dt_fin,
                     date_effet_prevue,
                 )
-                return False, None, None
+                return VerificationResult(blocked=False)
 
             immat_display = data.get("immatriculation") or immatriculation.upper()
             marque = (data.get("marque") or "").strip()
@@ -136,48 +162,39 @@ def check_vehicule(
                 "date_effet": dt_debut.isoformat() if dt_debut else "",
                 "date_echeance": dt_fin.isoformat() if dt_fin else "",
             }
-            return True, " ".join(parts), details
+            return VerificationResult(blocked=True, message=" ".join(parts), details=details)
 
+        # Le registre a repondu : rien trouve, le vehicule est bien libre.
         if status in {"ERROR", "NOT_FOUND", "FAILED"}:
-            return False, None, None
+            return VerificationResult(blocked=False)
 
+        logger.warning("AAS Diotali : statut inconnu %r pour %s", status, immat_clean)
         if FAIL_OPEN:
-            return False, None, None
-        return True, "Reponse inattendue du registre AAS Diotali.", None
+            return VerificationResult.unavailable()
+        return VerificationResult(
+            blocked=True, message="Reponse inattendue du registre AAS Diotali."
+        )
 
     except ValueError:
         logger.error("AAS Diotali : JSON invalide pour %s", immat_clean)
-        return (
-            (False, None, None)
-            if FAIL_OPEN
-            else (True, "Erreur technique de verification.", None)
-        )
+        return _on_outage("Erreur technique de verification.")
     except requests.HTTPError as exc:
         status_code = exc.response.status_code if exc.response is not None else "?"
         logger.warning("AAS Diotali : HTTP %s pour %s", status_code, immat_clean)
-        return (
-            (False, None, None)
-            if FAIL_OPEN
-            else (True, "Service de verification indisponible.", None)
-        )
+        return _on_outage("Service de verification indisponible.")
     except requests.exceptions.Timeout:
         logger.warning("AAS Diotali : timeout pour %s", immat_clean)
-        return (
-            (False, None, None)
-            if FAIL_OPEN
-            else (True, "Le service de verification ne repond pas.", None)
-        )
+        return _on_outage("Le service de verification ne repond pas.")
     except requests.exceptions.RequestException as exc:
         logger.warning("AAS Diotali : erreur reseau pour %s : %s", immat_clean, exc)
-        return (
-            (False, None, None)
-            if FAIL_OPEN
-            else (True, "Impossible de joindre le serveur de verification.", None)
-        )
+        return _on_outage("Impossible de joindre le serveur de verification.")
     except Exception:
         logger.exception("AAS Diotali : erreur inattendue pour %s", immat_clean)
-        return (
-            (False, None, None)
-            if FAIL_OPEN
-            else (True, "Erreur interne de verification.", None)
-        )
+        return _on_outage("Erreur interne de verification.")
+
+
+def _on_outage(blocking_message: str) -> VerificationResult:
+    """Panne du tiers : laisse passer (FAIL_OPEN) mais sans pretendre avoir verifie."""
+    if FAIL_OPEN:
+        return VerificationResult.unavailable()
+    return VerificationResult(blocked=True, message=blocking_message)
