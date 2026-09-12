@@ -2,6 +2,8 @@ import re
 
 from rest_framework import serializers
 
+from integrations.ass.registrations import format_registration, normalize_registration
+
 
 REGISTRATION_PATTERN = re.compile(r"^[A-Z0-9-]+$")
 
@@ -29,12 +31,15 @@ class AssVerifyRegistrationRequestSerializer(serializers.Serializer):
     def validate_immatriculation(self, value):
         if not value:
             raise serializers.ValidationError("Immatriculation requise.")
-        normalized = value.upper()
-        if not REGISTRATION_PATTERN.fullmatch(normalized):
+        if not REGISTRATION_PATTERN.fullmatch(value.upper()):
             raise serializers.ValidationError(
                 "L'immatriculation accepte uniquement les lettres, les chiffres et les tirets."
             )
-        return normalized
+        if not normalize_registration(value):
+            raise serializers.ValidationError("Immatriculation requise.")
+        # Forme canonique des ici : « AA-917-VL » et « AA917VL » designent le
+        # meme vehicule et doivent donner la MEME reponse, echo compris.
+        return format_registration(value)
 
 
 class AssVehicleDataSerializer(serializers.Serializer):

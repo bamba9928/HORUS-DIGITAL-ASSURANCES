@@ -394,3 +394,68 @@ def test_issue_verifies_every_fleet_registration_including_trailers():
 
     with pytest.raises(ContractIssueError, match="deja assure"):
         issue_contract(contract, ass_client=NeverCalledAssClient())
+
+
+class AlreadyInsuredAtAssClient:
+    """La base ASS declare le vehicule couvert ; le registre public l'ignore."""
+
+    def verify_registration(self, payload):
+        # `status` ERREUR dans les deux cas : seul le code 5006 distingue.
+        self.seen = payload["immatriculation"]
+        return {
+            "code": "5006",
+            "message": (
+                "Ce vehicule AA-917-XQ dispose deja d'une police "
+                "d'assurance chez: ASKIA"
+            ),
+            "status": "ERREUR",
+            "data": "",
+        }
+
+    def stock_qr(self, payload=None):
+        raise AssertionError("Le stock QR ne doit pas etre interroge sur un doublon.")
+
+    def issue_auto_contract(self, payload):
+        raise AssertionError("L'emission ne doit pas etre tentee sur un doublon.")
+
+
+class FreeAtAssClient(SuccessfulAssClient):
+    """Base ASS interrogee, vehicule libre (code 4000) : l'emission continue."""
+
+    def verify_registration(self, payload):
+        self.verified = payload["immatriculation"]
+        return {
+            "code": "4000",
+            "message": "L'attestation d'assurance n'est pas valide.",
+            "status": "ERROR",
+            "data": "",
+        }
+
+
+@pytest.mark.django_db
+def test_issue_is_blocked_when_ass_knows_the_vehicle_is_already_insured():
+    """Doublon connu d'ASS mais absent du registre public : bloque avant le QR.
+
+    C'est le trou que le registre Diotali seul laissait : on ne l'apprenait
+    qu'au retour de `qrcode.request`, en pleine emission.
+    """
+    contract = create_paid_contract()
+
+    with pytest.raises(ContractIssueError, match="ASKIA"):
+        issue_contract(contract, ass_client=AlreadyInsuredAtAssClient())
+
+    contract.refresh_from_db()
+    assert contract.internal_status == Contract.InternalStatus.PAID
+
+
+@pytest.mark.django_db
+def test_issue_asks_ass_with_the_canonical_registration():
+    """La plaque part chez ASS sous la forme tiretee de leurs propres exemples."""
+    contract = create_paid_contract()
+    contract.draft_payload["vehicle"]["registration"] = "aa917vl"
+    contract.save(update_fields=["draft_payload"])
+    client = FreeAtAssClient(contract.id)
+
+    issue_contract(contract, ass_client=client)
+
+    assert client.verified == "AA-917-VL"

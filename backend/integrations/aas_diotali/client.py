@@ -9,16 +9,16 @@ sur un doublon. Porte depuis `askia_insurance/contracts/applicationtiers_client.
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 from urllib.parse import quote
 
 import requests
 from django.conf import settings
 
+from integrations.ass.registrations import normalize_registration
+
 logger = logging.getLogger("integrations.aas_diotali")
 
-REGISTRATION_STRIP_PATTERN = re.compile(r"[\s\-–—]+")
 
 # Session partagee : le formulaire interroge le registre a chaque saisie de
 # plaque et a chaque changement de date d'effet. Une Session par appel
@@ -43,9 +43,9 @@ class AasDiotaliClient:
 
     @staticmethod
     def normalize_immat(value: str) -> str:
-        if not value:
-            return ""
-        return REGISTRATION_STRIP_PATTERN.sub("", value.strip().upper())
+        # Delegue a la regle unique du projet : le registre doit voir la meme
+        # cle que celle qui sert a comparer deux plaques ailleurs.
+        return normalize_registration(value)
 
     def verify_vehicle(self, immatriculation: str) -> dict[str, Any]:
         immat_clean = self.normalize_immat(immatriculation)

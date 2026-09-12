@@ -23,6 +23,7 @@ from integrations.ass.referentials import (
     commission_rate_for_genre,
     commission_rate_for_genres,
 )
+from integrations.ass.registrations import format_registration, normalize_registration
 from organizations.models import Organization
 
 
@@ -675,3 +676,23 @@ def test_no_genre_can_produce_a_rate_the_ass_api_would_reject():
         assert 0 <= payload["remise_rc"] <= 20, (
             f"{item['value']} produit remise_rc={payload['remise_rc']}"
         )
+
+
+def test_registration_is_canonical_whatever_the_typing():
+    """« AA-917-VL », « AA917VL » et « aa 917 vl » sont le meme vehicule.
+
+    Le registre AAS Diotali normalise de son cote, mais ASS garde ce qu'on lui
+    envoie : sans forme canonique, la meme plaque produisait deux payloads,
+    deux plaques stockees et deux reponses de verification differentes.
+    """
+    for raw in ["AA-917-VL", "AA917VL", "aa 917 vl", "aa–917–vl"]:
+        assert normalize_registration(raw) == "AA917VL"
+        assert format_registration(raw) == "AA-917-VL"
+
+
+def test_registration_keeps_non_standard_plates_untouched():
+    """Plaque W, remorque, format inconnu : jamais de tirets inventes."""
+    assert format_registration("W-1234-AB-56") == "W1234AB56"
+    assert format_registration("ASS001") == "ASS001"
+    assert format_registration("") == ""
+    assert format_registration(None) == ""

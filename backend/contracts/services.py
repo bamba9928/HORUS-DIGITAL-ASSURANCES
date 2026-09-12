@@ -14,9 +14,14 @@ from commissions.services import build_commission_snapshot_values
 from contracts.models import Contract
 from integrations.ass.client import AssClient, extract_available_qr, parse_ass_amount
 from integrations.ass.constants import ASS_CANCEL_METHODS, ASS_POLICY_FEE, ASS_SUCCESS_STATUS
+from integrations.ass.duplicates import already_insured_at_ass
 from integrations.ass.dates import add_months, calculate_expiration_date  # noqa: F401
 from decimal import ROUND_HALF_UP, Decimal
 
+from integrations.ass.registrations import (
+    format_registration,
+    normalize_registration,
+)
 from integrations.ass.referentials import (
     ASS_REMISE_RC_SENT,
     commission_rate_for_genre,
@@ -185,7 +190,7 @@ def issue_contract(contract, ass_client=None):
 
     exchange = {}
     try:
-        _check_not_already_insured(contract)
+        _check_not_already_insured(contract, ass_client)
         _check_qr_stock(ass_client)
         request_payload, ass_response, issue_data = call_ass_issue(
             contract, ass_client, exchange=exchange
@@ -210,8 +215,8 @@ def issue_contract(contract, ass_client=None):
     return build_issue_result(contract)
 
 
-def _check_not_already_insured(contract):
-    """Dernier filet AAS Diotali avant de consommer un QR reel.
+def _check_not_already_insured(contract, ass_client=None):
+    """Dernier filet « deja assure » avant de consommer un QR reel.
 
     Le formulaire interroge deja le registre pendant la saisie, mais ce
     controle-la vit dans le navigateur : un brouillon repris, un appel direct
@@ -219,8 +224,11 @@ def _check_not_already_insured(contract):
     verification n'ait eu lieu. ASS ne refuse le doublon qu'APRES avoir
     consomme le QR, sans repli possible — d'ou ce re-controle serveur.
 
-    Les pannes du tiers laissent passer (FAIL_OPEN, voir
-    integrations/aas_diotali/service) : seul un doublon prouve bloque.
+    DEUX bases, pas une : le registre AAS Diotali (public, national) et la
+    base d'ASS elle-meme (`verif.immatriculation`). Un vehicule couvert chez
+    ASKIA peut manquer au registre public — il passait alors notre controle
+    pour se faire refuser par ASS a l'emission. Les pannes laissent passer
+    (FAIL_OPEN) : seul un doublon prouve bloque.
     """
     if contract.contract_type == Contract.ContractType.GARAGE:
         # Plaques W du concessionnaire : hors perimetre du registre, comme
@@ -234,6 +242,26 @@ def _check_not_already_insured(contract):
                 result.message
                 or f"Vehicule {immatriculation} deja assure : emission impossible."
             )
+        _check_ass_registration(ass_client, immatriculation)
+
+
+def _check_ass_registration(ass_client, immatriculation):
+    """Complement du registre public : la base d'ASS via `verif.immatriculation`.
+
+    Bloquer ici ne coute aucune vente : ASS refuse de toute facon l'emission
+    d'un vehicule qu'elle sait couvert (`qrcode.request` -> ERREUR, « dispose
+    deja d'une police d'assurance chez ASKIA »). Le seul changement est le
+    moment : un message clair avant d'engager quoi que ce soit, au lieu d'un
+    echec au milieu de l'emission — et, pour une flotte, avant d'avoir emis
+    les vehicules precedents.
+
+    Cet endpoint ne renvoie aucune date : un renouvellement anticipe est donc
+    refuse ici, comme il l'aurait ete par ASS quelques lignes plus loin. Voir
+    integrations/ass/duplicates.py pour le detail des pieges de la reponse.
+    """
+    message = already_insured_at_ass(ass_client, immatriculation)
+    if message:
+        raise ContractIssueError(message)
 
 
 def _registrations_to_verify(contract):
@@ -252,7 +280,7 @@ def _registrations_to_verify(contract):
     pairs = []
 
     def add(registration, raw_effect_date):
-        immat = str(registration or "").strip().upper()
+        immat = normalize_registration(registration)
         if not immat or immat in seen:
             return
         seen.add(immat)
@@ -671,7 +699,7 @@ def build_moto_issue_vehicle_payload(vehicle):
         "cylindre": to_int(vehicle.get("cylindree"), default=0),
         "dateMiseCirculation": vehicle.get("firstCirculationDate") or "",
         "nombrePlace": to_int(vehicle.get("seats"), default=1),
-        "immatriculation": vehicle.get("registration") or "",
+        "immatriculation": format_registration(vehicle.get("registration")),
         "energie": vehicle.get("energy") or "",
         "genre": vehicle.get("subcategory") or "",
         "modele": vehicle.get("model") or "",
@@ -766,7 +794,7 @@ def build_issue_vehicle_payload(vehicle, guarantees=None, guarantee_options=None
         "nombrePlace": to_int(vehicle.get("seats"), default=1),
         "valeurNeuve": to_int(vehicle.get("newValue"), default=0),
         "valeurActuelle": to_int(vehicle.get("currentValue"), default=0),
-        "immatriculation": vehicle.get("registration") or "",
+        "immatriculation": format_registration(vehicle.get("registration")),
         "energie": vehicle.get("energy") or "",
         "genre": vehicle.get("subcategory") or "",
         "modele": vehicle.get("model") or "",
@@ -839,7 +867,7 @@ def build_trailer_rc_payload(vehicle, trailer, fleet=None):
             default=1,
         ),
         "periodicite": periodicity,
-        "referenceVehicule": vehicle.get("registration")
+        "referenceVehicule": format_registration(vehicle.get("registration"))
         or vehicle.get("chassis")
         or vehicle.get("id")
         or "",
@@ -915,7 +943,7 @@ def build_fleet_trailer_issue_payloads(
                             default=vehicle_person_type(vehicle, default="MORALE"),
                         ),
                     ),
-                    "immatriculation": trailer.get("registration") or "",
+                    "immatriculation": format_registration(trailer.get("registration")),
                     "marque": trailer.get("brand") or "",
                     "modele": trailer.get("model") or "",
                     "energie": vehicle.get("energy") or "",
@@ -999,7 +1027,7 @@ def build_garage_issue_payload(contract, reference):
         "periodicite": periodicity,
         "genre": garage.get("subcategory"),
         "nombreCarte": to_int(garage.get("nombreCarte"), default=1),
-        "immatriculation": garage.get("registration") or "",
+        "immatriculation": format_registration(garage.get("registration")),
         "police": f"HORUS-GARAGE-{contract.id}",
         "referenceTrxPartner": reference,
         "cout_police": ASS_POLICY_FEE,

@@ -1776,7 +1776,7 @@ function GarageFields({
             label="Immatriculation"
             maxLength={50}
             onChange={(value) => updateGarage("registration", value)}
-            placeholder="AA123BC"
+            placeholder="AA-123-BC"
             value={garage.registration}
           />
           <div>
@@ -1890,7 +1890,7 @@ function VehicleFields({
               label="Immatriculation"
               maxLength={50}
               onChange={(value) => updateVehicle("registration", value)}
-              placeholder="AA123BC"
+              placeholder="AA-123-BC"
               required
               value={vehicle.registration}
             />
@@ -3206,7 +3206,7 @@ function upsertOption(options: SelectOption[], option: SelectOption) {
 }
 
 function normalizeRegistrationLookup(value: string) {
-  return sanitizeRegistration(value);
+  return compactRegistration(value);
 }
 
 function sanitizePhone(value: string) {
@@ -3231,8 +3231,26 @@ function getPhoneValidationMessage(value: string) {
   return "";
 }
 
+// Schéma standard sénégalais : 2 lettres, 3 ou 4 chiffres, 2 lettres. Miroir
+// exact de backend/integrations/ass/registrations.py — toute évolution doit
+// se faire des deux côtés.
+const STANDARD_REGISTRATION_PATTERN = /^([A-Z]{2})(\d{3,4})([A-Z]{2})$/;
+
+// Clé de comparaison : ni espace, ni tiret. « AA-917-VL » et « AA917VL »
+// désignent le même véhicule, donc la même requête au registre et la même
+// clé de déduplication du lookup.
+function compactRegistration(value: string) {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 50);
+}
+
 function sanitizeRegistration(value: string) {
-  return value.toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 50);
+  const compact = compactRegistration(value);
+  // Dès que la plaque est complète et standard, on la remet sous la forme
+  // tiretée d'ASS (ses propres exemples utilisent « AA-111-KL »). Une plaque
+  // dont on ne reconnaît pas la structure (W garage, remorque, format ancien)
+  // n'est jamais réécrite.
+  const match = STANDARD_REGISTRATION_PATTERN.exec(compact);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : compact;
 }
 
 function mergeAssVehicleData(

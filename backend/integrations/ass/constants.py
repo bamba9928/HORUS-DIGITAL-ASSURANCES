@@ -30,4 +30,11 @@ ASS_POLICY_FEE = 3000
 
 ASS_SUCCESS_STATUS = "SUCCESS"
 
+# Codes de `verif.immatriculation`. Le `status` de la reponse vaut ERREUR/ERROR
+# dans les deux cas — seul le `code` distingue « deja assure » de « libre »
+# (releve sandbox du 2026-06-11). Attention : sur les endpoints d'EMISSION, le
+# PDF ASS documente 5006 comme « reference non unique », sens different.
+ASS_ALREADY_INSURED_CODE = "5006"
+ASS_NO_COVERAGE_CODE = "4000"
+
 ASS_CANCEL_METHODS = {"ANNULER", "RESILIER", "SUSPENDRE"}

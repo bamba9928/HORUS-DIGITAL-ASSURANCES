@@ -129,7 +129,9 @@ def test_can_verify_registration_with_aas_diotali_mock_in_debug_mode():
     # vehicule, seulement l'existence (ou non) d'un contrat en cours.
     assert already_insured.status_code == 200
     assert already_insured.data["mode"] == "mock"
-    assert already_insured.data["immatriculation"] == "AAS-001"
+    # Echo canonique : "AAS001" n'est pas une plaque standard (2 lettres,
+    # 3-4 chiffres, 2 lettres), donc pas de tirets inventes.
+    assert already_insured.data["immatriculation"] == "AAS001"
     assert already_insured.data["is_registered"] is True
     assert already_insured.data["vehicle"] is None
     assert "MOCK ASSURANCES" in already_insured.data["operation_message"]
@@ -275,3 +277,35 @@ def test_verify_registration_requires_authentication_even_in_debug():
     )
 
     assert response.status_code in {401, 403}
+
+
+@pytest.mark.django_db
+@override_settings(AAS_DIOTALI_MOCK_ENABLED=True, ASS_MOCK_ENABLED=True)
+def test_verify_registration_answers_the_same_however_the_plate_is_typed():
+    """« AA-917-VL » et « AA917VL » sont le meme vehicule, donc la meme reponse.
+
+    Sans forme canonique, l'echo renvoyait la saisie brute et la meme plaque
+    semblait donner deux resultats differents a l'apporteur.
+    """
+    organization = Organization.objects.create(name="Groupe Format", code="FORMAT")
+    contributor = User.objects.create_user(
+        username="contributor-format",
+        password="test-pass-123",
+        role=User.Role.CONTRIBUTOR,
+        organization=organization,
+    )
+    client = APIClient()
+    client.force_authenticate(contributor)
+
+    responses = [
+        client.post(
+            "/api/integrations/ass/verify-registration/",
+            {"immatriculation": raw},
+            format="json",
+        ).data
+        for raw in ["AA-917-VL", "aa917vl", "AA917VL"]
+    ]
+
+    assert all(response["immatriculation"] == "AA-917-VL" for response in responses)
+    assert len({response["operation_status"] for response in responses}) == 1
+    assert len({response["is_registered"] for response in responses}) == 1
