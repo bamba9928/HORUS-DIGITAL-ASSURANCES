@@ -198,8 +198,9 @@ export default function ContractDetailPage() {
     );
   }, [contract]);
   // Genre du vehicule (carte Attestations) : meme logique de source que
-  // l'echeance projetee ci-dessus.
-  const vehicleCategory = useMemo(() => {
+  // l'echeance projetee ci-dessus. C'est bien le genre ASS (VP, TPC...) et
+  // non la categorie (C1, C2...), comme partout ailleurs dans la fiche.
+  const vehicleGenre = useMemo(() => {
     if (!contract) return "";
     const payload = contract.draft_payload as DraftPayload;
     if (contract.contract_type === "GARAGE") return payload.garage?.subcategory || "";
@@ -542,7 +543,7 @@ export default function ContractDetailPage() {
                     chose que l'apporteur doit voir et pouvoir partager sur le terrain. */}
                 <AttestationsPanel
                   attestations={contract.ass_attestations}
-                  category={vehicleCategory}
+                  genre={vehicleGenre}
                   clientName={contract.client_name}
                   effectDate={contract.effect_date}
                   fallback={{
@@ -562,9 +563,17 @@ export default function ContractDetailPage() {
                   }}
                   isActive={isAttestationActive}
                   policyNumber={contract.policy_number}
-                  renewHref={`/contracts/new?type=${
-                    contract.contract_type === "MOTO" ? "AUTO_MONO" : contract.contract_type
-                  }`}
+                  // Flotte reste bloquee tant que rc.flotte.request est en
+                  // panne cote ASS : pas de renouvellement propose pour ce type.
+                  renewHref={
+                    contract.contract_type === "FLEET"
+                      ? ""
+                      : `/contracts/new?type=${
+                          contract.contract_type === "MOTO"
+                            ? "AUTO_MONO"
+                            : contract.contract_type
+                        }`
+                  }
                 />
 
                 <DraftDetailsPanel contract={contract} />
@@ -1322,16 +1331,15 @@ function whatsappShareHref(a: {
 
 function AttestationsPanel({
   attestations,
-  category,
   clientName,
   effectDate,
   fallback,
+  genre,
   isActive,
   policyNumber,
   renewHref,
 }: {
   attestations: ContractDetail["ass_attestations"];
-  category: string;
   clientName: string;
   effectDate: string;
   fallback: {
@@ -1342,6 +1350,7 @@ function AttestationsPanel({
     linkCarteBrune: string;
     referenceExterne: string;
   };
+  genre: string;
   isActive: boolean;
   policyNumber: string;
   renewHref: string;
@@ -1362,9 +1371,8 @@ function AttestationsPanel({
           },
         ]
       : [];
-  // Flotte reste bloquee tant que rc.flotte.request est en panne cote ASS :
-  // pas de renouvellement propose pour ce type (voir referentials.py).
-  const canRenew = renewHref && !renewHref.endsWith("type=FLEET");
+  // `renewHref` vide = renouvellement non propose pour ce produit (flotte).
+  const canRenew = Boolean(renewHref);
 
   return (
     <section className="app-surface overflow-hidden">
@@ -1404,9 +1412,9 @@ function AttestationsPanel({
                       </p>
                     </div>
                     <div>
-                      <p className="eyebrow">Catégorie</p>
+                      <p className="eyebrow">Genre</p>
                       <p className="mt-0.5 text-[13.5px] font-black text-strong">
-                        {category || "—"}
+                        {genre || "—"}
                       </p>
                     </div>
                     <div>

@@ -513,11 +513,17 @@ class ContractDetailSerializer(ContractListSerializer):
         if not contract.attestation_number and not contract.reference_externe:
             return []
 
+        # `contract.immatriculation` n'est pose qu'a l'emission et reste vide
+        # sur des contrats plus anciens : meme repli que get_vehicle_label,
+        # sinon la carte Attestations affiche un tiret la ou le brouillon a
+        # bien la plaque.
+        vehicle = self._as_dict(self._as_dict(contract.draft_payload).get("vehicle"))
+
         return [
             self._build_attestation_item(
                 kind="VEHICLE",
                 label=self.get_vehicle_label(contract) or "Vehicule",
-                immatriculation=contract.immatriculation,
+                immatriculation=contract.immatriculation or vehicle.get("registration", ""),
                 data={
                     "referenceExterne": contract.reference_externe,
                     "attestationNumber": contract.attestation_number,
