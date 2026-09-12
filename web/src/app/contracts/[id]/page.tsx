@@ -5,12 +5,13 @@ import {
   Banknote,
   Calculator,
   Download,
-  ExternalLink,
   FilePenLine,
   FileText,
   LoaderCircle,
+  RefreshCw,
   Send,
   ShieldCheck,
+  Share2,
   Smartphone,
   Wallet,
   XCircle,
@@ -111,6 +112,8 @@ export default function ContractDetailPage() {
   const [showOmDialog, setShowOmDialog] = useState(false);
   const [cancelMethod, setCancelMethod] = useState<CancelMethod>("ANNULER");
   const [cancelMotif, setCancelMotif] = useState("");
+  // Instant de reference capture une fois (le calcul d'echeance reste pur).
+  const [now] = useState(() => Date.now());
   const canManageWorkflow = canManageContractWorkflow(auth?.user);
   const canConfirmPayment = canConfirmContractPayment(auth?.user);
   const canCancel = canCancelContract(auth?.user);
@@ -194,6 +197,33 @@ export default function ContractDetailPage() {
       source?.periodicity,
     );
   }, [contract]);
+  // Genre du vehicule (carte Attestations) : meme logique de source que
+  // l'echeance projetee ci-dessus.
+  const vehicleCategory = useMemo(() => {
+    if (!contract) return "";
+    const payload = contract.draft_payload as DraftPayload;
+    if (contract.contract_type === "GARAGE") return payload.garage?.subcategory || "";
+    if (contract.contract_type === "FLEET") {
+      return payload.fleet?.vehicles?.[0]?.subcategory || "";
+    }
+    return payload.vehicle?.subcategory || "";
+  }, [contract]);
+  // `contract.immatriculation` n'est pas toujours synchronise (contrats plus
+  // anciens) : meme repli que DraftDetailsPanel sur le brouillon.
+  const vehicleRegistration = useMemo(() => {
+    if (!contract) return "";
+    const payload = contract.draft_payload as DraftPayload;
+    const draftRegistration =
+      contract.contract_type === "GARAGE"
+        ? payload.garage?.registration
+        : payload.vehicle?.registration;
+    return contract.immatriculation || draftRegistration || "";
+  }, [contract]);
+  // Contrat annule ou echu : la carte Attestations se grise, seul "Renouveler" reste actif.
+  const isAttestationActive =
+    Boolean(contract) &&
+    contract!.internal_status !== "CANCELLED" &&
+    (!contract!.date_expiration || new Date(contract!.date_expiration).getTime() >= now);
   // Identifiants des champs du dialogue d'annulation : leurs libelles n'etaient
   // relies a rien, cliquer dessus ne placait pas le curseur dans le champ.
   const cancelMethodId = useId();
@@ -504,106 +534,51 @@ export default function ContractDetailPage() {
               />
             </section>
 
-            {/* ── Main grid ──────────────────────────────────────── */}
-            <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
-              {/* Left column */}
-              <div className="space-y-5">
+            {/* ── Contenu : une seule colonne pleine largeur, Actions et
+                Tarification n'y sont plus a l'etroit dans une barre laterale
+                de 300px. ──────────────────────────────────────────────── */}
+            <div className="space-y-5">
+                {/* Attestations en tete : c'est la preuve d'assurance, la premiere
+                    chose que l'apporteur doit voir et pouvoir partager sur le terrain. */}
+                <AttestationsPanel
+                  attestations={contract.ass_attestations}
+                  category={vehicleCategory}
+                  clientName={contract.client_name}
+                  effectDate={contract.effect_date}
+                  fallback={{
+                    attestationNumber:
+                      issueResult?.attestation_number || contract.attestation_number,
+                    dateExpiration:
+                      issueResult?.date_expiration || contract.date_expiration || null,
+                    immatriculation: vehicleRegistration,
+                    linkAttestation:
+                      issueResult?.link_attestation_digitale ||
+                      contract.link_attestation_digitale,
+                    linkCarteBrune:
+                      issueResult?.link_attestation_cedeao ||
+                      contract.link_attestation_cedeao,
+                    referenceExterne:
+                      issueResult?.reference_externe || contract.reference_externe,
+                  }}
+                  isActive={isAttestationActive}
+                  policyNumber={contract.policy_number}
+                  renewHref={`/contracts/new?type=${
+                    contract.contract_type === "MOTO" ? "AUTO_MONO" : contract.contract_type
+                  }`}
+                />
+
                 <DraftDetailsPanel contract={contract} />
 
-                <Panel bodyClassName="" icon={Banknote} title="Paiements">
-                  <div className="overflow-x-auto">
-                    <table className="app-table app-table-responsive">
-                      <thead>
-                        <tr>
-                          <th>Référence</th>
-                          <th>Statut</th>
-                          <th>Date</th>
-                          <th className="num">Montant</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {contract.payments.map((p) => (
-                          <tr key={p.id}>
-                            <td className="row-head" data-label="Référence">
-                              <span className="cell-mono">
-                                {p.external_reference || "—"}
-                              </span>
-                            </td>
-                            <td data-label="Statut">
-                              <StatusBadge status={p.status} />
-                            </td>
-                            <td data-label="Date">
-                              <span className="cell-sub">{formatDate(p.created_at)}</span>
-                            </td>
-                            <td className="num" data-label="Montant">
-                              <span className="text-[13.5px] font-black text-strong">
-                                {formatMoney(p.amount)}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                        {!contract.payments.length ? (
-                          <tr>
-                            <td
-                              className="py-8 text-center text-sm font-semibold text-faint"
-                              colSpan={4}
-                            >
-                              Aucun paiement enregistré
-                            </td>
-                          </tr>
-                        ) : null}
-                      </tbody>
-                    </table>
-                  </div>
-                </Panel>
-
-                <Panel icon={Calculator} title="Commission">
-                  {contract.commission_snapshot ? (
-                    <DataList columns={2}>
-                      <DataRow
-                        accent
-                        label="Commission totale"
-                        value={formatMoney(contract.commission_snapshot.commission_total)}
-                      />
-                      <DataRow
-                        label="Marge Horus"
-                        value={formatMoney(contract.commission_snapshot.marge_horus)}
-                      />
-                      <DataRow
-                        label={canSeeAss ? "Reversé ASS" : "Reversé assureur"}
-                        value={formatMoney(
-                          contract.commission_snapshot.montant_reverse_ass,
-                        )}
-                      />
-                      <DataRow
-                        label="Part prime RC"
-                        value={formatMoney(
-                          contract.commission_snapshot.commission_prime_rc_amount,
-                        )}
-                      />
-                      <DataRow
-                        label="Part police"
-                        value={formatMoney(
-                          contract.commission_snapshot.commission_policy_fee_amount,
-                        )}
-                      />
-                    </DataList>
-                  ) : (
-                    <p className="text-sm font-semibold text-faint">
-                      Aucun snapshot commission.
-                    </p>
-                  )}
-                </Panel>
-              </div>
-
-              {/* ── Right sidebar ─────────────────────────────── */}
-              <aside className="space-y-5 xl:sticky xl:top-[74px]">
-                {/* Actions panel */}
-                <Panel bodyClassName="space-y-2 p-3.5" title="Actions">
+                {/* Actions : rangee horizontale, pleine largeur maintenant qu'elle
+                    n'est plus coincee dans la barre laterale de 300px. */}
+                <Panel
+                  bodyClassName="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6"
+                  title="Actions"
+                >
                   <>
                     {canManageWorkflow && contract.internal_status === "DRAFT" ? (
                       <Link
-                        className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-primary to-[var(--primary-strong)] text-sm font-extrabold text-white shadow-sm shadow-primary/25 transition hover:shadow-[0_4px_14px_rgba(150,0,192,0.35)] hover:brightness-105"
+                        className="flex h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-primary to-[var(--primary-strong)] text-sm font-extrabold text-white shadow-sm shadow-primary/25 transition hover:shadow-[0_4px_14px_rgba(150,0,192,0.35)] hover:brightness-105"
                         href={`/contracts/new?draftId=${contract.id}`}
                       >
                         <FilePenLine size={15} />
@@ -628,7 +603,7 @@ export default function ContractDetailPage() {
                     ) : null}
 
                     {canManageWorkflow && draftNeedsCompletion ? (
-                      <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                      <p className="col-span-full flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
                         <FilePenLine size={13} className="mt-px shrink-0" />
                         Complétez toutes les informations obligatoires du brouillon
                         (souscripteur, véhicule et couverture) pour pouvoir calculer le devis.
@@ -722,25 +697,90 @@ export default function ContractDetailPage() {
                   netAVerser={payableAmount}
                 />
 
-                {/* Attestations */}
-                <AttestationsPanel
-                  attestations={contract.ass_attestations}
-                  fallback={{
-                    attestationNumber:
-                      issueResult?.attestation_number || contract.attestation_number,
-                    dateExpiration:
-                      issueResult?.date_expiration || contract.date_expiration || null,
-                    linkAttestation:
-                      issueResult?.link_attestation_digitale ||
-                      contract.link_attestation_digitale,
-                    linkCarteBrune:
-                      issueResult?.link_attestation_cedeao ||
-                      contract.link_attestation_cedeao,
-                    referenceExterne:
-                      issueResult?.reference_externe || contract.reference_externe,
-                  }}
-                />
-              </aside>
+                <Panel bodyClassName="" icon={Banknote} title="Paiements">
+                  <div className="overflow-x-auto">
+                    <table className="app-table app-table-responsive">
+                      <thead>
+                        <tr>
+                          <th>Référence</th>
+                          <th>Statut</th>
+                          <th>Date</th>
+                          <th className="num">Montant</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {contract.payments.map((p) => (
+                          <tr key={p.id}>
+                            <td className="row-head" data-label="Référence">
+                              <span className="cell-mono">
+                                {p.external_reference || "—"}
+                              </span>
+                            </td>
+                            <td data-label="Statut">
+                              <StatusBadge status={p.status} />
+                            </td>
+                            <td data-label="Date">
+                              <span className="cell-sub">{formatDate(p.created_at)}</span>
+                            </td>
+                            <td className="num" data-label="Montant">
+                              <span className="text-[13.5px] font-black text-strong">
+                                {formatMoney(p.amount)}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                        {!contract.payments.length ? (
+                          <tr>
+                            <td
+                              className="py-8 text-center text-sm font-semibold text-faint"
+                              colSpan={4}
+                            >
+                              Aucun paiement enregistré
+                            </td>
+                          </tr>
+                        ) : null}
+                      </tbody>
+                    </table>
+                  </div>
+                </Panel>
+
+                <Panel icon={Calculator} title="Commission">
+                  {contract.commission_snapshot ? (
+                    <DataList columns={2}>
+                      <DataRow
+                        accent
+                        label="Commission totale"
+                        value={formatMoney(contract.commission_snapshot.commission_total)}
+                      />
+                      <DataRow
+                        label="Marge Horus"
+                        value={formatMoney(contract.commission_snapshot.marge_horus)}
+                      />
+                      <DataRow
+                        label={canSeeAss ? "Reversé ASS" : "Reversé assureur"}
+                        value={formatMoney(
+                          contract.commission_snapshot.montant_reverse_ass,
+                        )}
+                      />
+                      <DataRow
+                        label="Part prime RC"
+                        value={formatMoney(
+                          contract.commission_snapshot.commission_prime_rc_amount,
+                        )}
+                      />
+                      <DataRow
+                        label="Part police"
+                        value={formatMoney(
+                          contract.commission_snapshot.commission_policy_fee_amount,
+                        )}
+                      />
+                    </DataList>
+                  ) : (
+                    <p className="text-sm font-semibold text-faint">
+                      Aucun snapshot commission.
+                    </p>
+                  )}
+                </Panel>
             </div>
           </>
         ) : null}
@@ -897,7 +937,7 @@ function DraftDetailsPanel({ contract }: { contract: ContractDetail }) {
                     <p className="eyebrow mb-1 text-primary">Souscripteur</p>
                     <DataList>
                       <DataRow label="Nom complet" value={personName(policyholder)} />
-                      <DataRow label="Téléphone" value={policyholder.phone || "—"} mono />
+                      <DataRow label="Téléphone" value={<PhoneLink phone={policyholder.phone} />} mono />
                       <DataRow label="Email" value={policyholder.email || "—"} />
                       <DataRow label="Adresse" value={policyholder.address || "—"} />
                     </DataList>
@@ -911,7 +951,7 @@ function DraftDetailsPanel({ contract }: { contract: ContractDetail }) {
                     <p className="eyebrow mb-1 text-primary">Assuré</p>
                     <DataList>
                       <DataRow label="Nom complet" value={personName(insured)} />
-                      <DataRow label="Téléphone" value={insured.phone || "—"} mono />
+                      <DataRow label="Téléphone" value={<PhoneLink phone={insured.phone} />} mono />
                       <DataRow label="Email" value={insured.email || "—"} />
                       <DataRow label="Adresse" value={insured.address || "—"} />
                     </DataList>
@@ -1269,18 +1309,42 @@ function TarificationPanel({
   );
 }
 
+function whatsappShareHref(a: {
+  label: string;
+  link_attestation_digitale: string;
+  link_attestation_cedeao: string;
+}) {
+  const lines = [`Attestation ${a.label} :`];
+  if (a.link_attestation_digitale) lines.push(`Attestation : ${a.link_attestation_digitale}`);
+  if (a.link_attestation_cedeao) lines.push(`Carte brune : ${a.link_attestation_cedeao}`);
+  return `https://wa.me/?text=${encodeURIComponent(lines.join("\n"))}`;
+}
+
 function AttestationsPanel({
   attestations,
+  category,
+  clientName,
+  effectDate,
   fallback,
+  isActive,
+  policyNumber,
+  renewHref,
 }: {
   attestations: ContractDetail["ass_attestations"];
+  category: string;
+  clientName: string;
+  effectDate: string;
   fallback: {
     attestationNumber: string;
     dateExpiration: string | null;
+    immatriculation: string;
     linkAttestation: string;
     linkCarteBrune: string;
     referenceExterne: string;
   };
+  isActive: boolean;
+  policyNumber: string;
+  renewHref: string;
 }) {
   const rows = attestations.length
     ? attestations
@@ -1289,7 +1353,7 @@ function AttestationsPanel({
           {
             kind: "VEHICLE" as const,
             label: "Véhicule",
-            immatriculation: "",
+            immatriculation: fallback.immatriculation,
             reference_externe: fallback.referenceExterne,
             attestation_number: fallback.attestationNumber,
             date_expiration: fallback.dateExpiration,
@@ -1298,6 +1362,9 @@ function AttestationsPanel({
           },
         ]
       : [];
+  // Flotte reste bloquee tant que rc.flotte.request est en panne cote ASS :
+  // pas de renouvellement propose pour ce type (voir referentials.py).
+  const canRenew = renewHref && !renewHref.endsWith("type=FLEET");
 
   return (
     <section className="app-surface overflow-hidden">
@@ -1307,68 +1374,108 @@ function AttestationsPanel({
           Attestations
         </h2>
       </div>
-      <div className="p-4">
-        {rows.length ? (
-          <div className="divide-y divide-border">
-            {rows.map((a) => (
-              <div
-                className="py-3.5 first:pt-0 last:pb-0"
-                key={`${a.kind}-${a.reference_externe}-${a.attestation_number}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-[13.5px] font-black text-strong">
-                      {a.label}
-                    </p>
-                    <p className="eyebrow mt-0.5">
-                      {a.kind === "TRAILER" ? "Remorque" : "Véhicule"}
-                      {a.immatriculation ? ` · ${a.immatriculation}` : ""}
-                    </p>
+      <div className={!isActive ? "grayscale opacity-60 pointer-events-none select-none" : ""}>
+        <div className="p-4">
+          {rows.length ? (
+            <div className="divide-y divide-border">
+              {rows.map((a) => (
+                <div
+                  className="py-3.5 first:pt-0 last:pb-0"
+                  key={`${a.kind}-${a.reference_externe}-${a.attestation_number}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[13.5px] font-black text-strong">
+                        {a.label}
+                      </p>
+                      <p className="eyebrow mt-0.5 truncate">
+                        {`Police ${policyNumber || "—"} · ${clientName || "—"}`}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-right font-mono text-[13px] font-black tabular-nums text-primary">
+                      {a.attestation_number || "—"}
+                    </span>
                   </div>
-                  <span className="shrink-0 text-right font-mono text-[13px] font-black tabular-nums text-primary">
-                    {a.attestation_number || "—"}
-                  </span>
+                  <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+                    <div>
+                      <p className="eyebrow">Immatriculation</p>
+                      <p className="mt-0.5 font-mono text-[13.5px] font-black text-strong">
+                        {a.immatriculation || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="eyebrow">Catégorie</p>
+                      <p className="mt-0.5 text-[13.5px] font-black text-strong">
+                        {category || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="eyebrow">Date d&apos;effet</p>
+                      <p className="mt-0.5 text-[17px] font-black tabular-nums text-primary">
+                        {effectDate ? formatDate(effectDate) : "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="eyebrow">Échéance</p>
+                      <p className="mt-0.5 text-[17px] font-black tabular-nums text-red-600">
+                        {a.date_expiration ? formatDate(a.date_expiration) : "—"}
+                      </p>
+                    </div>
+                  </div>
+                  {(a.link_attestation_digitale || a.link_attestation_cedeao) ? (
+                    <div className="mt-2.5 flex flex-wrap gap-2">
+                      {a.link_attestation_digitale ? (
+                        <a
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-[12px] font-bold text-white transition hover:bg-[var(--primary-strong)]"
+                          href={a.link_attestation_digitale}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          <Download size={11} />
+                          Télécharger l&apos;attestation
+                        </a>
+                      ) : null}
+                      {a.link_attestation_cedeao ? (
+                        <a
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-amber-500 px-3 text-[12px] font-bold text-white transition hover:bg-amber-600"
+                          href={a.link_attestation_cedeao}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          <Download size={11} />
+                          Télécharger carte brune
+                        </a>
+                      ) : null}
+                      <a
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-emerald-500 px-3 text-[12px] font-bold text-white transition hover:bg-emerald-600"
+                        href={whatsappShareHref(a)}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <Share2 size={11} />
+                        Partager
+                      </a>
+                    </div>
+                  ) : null}
                 </div>
-                <DataList className="mt-2">
-                  <DataRow label="Réf. externe" mono value={a.reference_externe || "—"} />
-                  <DataRow
-                    label="Expiration"
-                    value={a.date_expiration ? formatDate(a.date_expiration) : "—"}
-                  />
-                </DataList>
-                {(a.link_attestation_digitale || a.link_attestation_cedeao) ? (
-                  <div className="mt-2.5 flex flex-wrap gap-2">
-                    {a.link_attestation_digitale ? (
-                      <a
-                        className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary/10 px-3 text-[12px] font-bold text-primary transition hover:bg-primary/20"
-                        href={a.link_attestation_digitale}
-                        rel="noreferrer"
-                        target="_blank"
-                      >
-                        <ExternalLink size={11} />
-                        Attestation digitale
-                      </a>
-                    ) : null}
-                    {a.link_attestation_cedeao ? (
-                      <a
-                        className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-amber-50 px-3 text-[12px] font-bold text-amber-700 transition hover:bg-amber-100"
-                        href={a.link_attestation_cedeao}
-                        rel="noreferrer"
-                        target="_blank"
-                      >
-                        <ExternalLink size={11} />
-                        Carte brune CEDEAO
-                      </a>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm font-semibold text-faint">Aucune attestation émise.</p>
-        )}
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm font-semibold text-faint">Aucune attestation émise.</p>
+          )}
+        </div>
       </div>
+      {!isActive && canRenew ? (
+        <div className="border-t border-border p-3">
+          <Link
+            className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-primary text-xs font-extrabold text-white transition hover:bg-[var(--primary-strong)]"
+            href={renewHref}
+          >
+            <RefreshCw size={13} />
+            Renouveler
+          </Link>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1443,6 +1550,24 @@ function isDraftReadyForQuote(contract: ContractDetail): boolean {
 
   // AUTO_MONO, MOTO, BUS_SCHOOL : véhicule unique avec sa couverture.
   return isDraftVehicleComplete(payload.vehicle, { requireCoverage: true });
+}
+
+// Numeros senegalais a 9 chiffres uniquement (77 249 05 30) : tout autre
+// format est affiche tel quel plutot que de risquer un decoupage errone.
+function formatPhoneDisplay(phone: string) {
+  const digits = phone.replace(/\D/g, "").replace(/^221/, "");
+  const groups = digits.match(/^(\d{2})(\d{3})(\d{2})(\d{2})$/);
+  return groups ? `+221 ${groups[1]} ${groups[2]} ${groups[3]} ${groups[4]}` : phone;
+}
+
+function PhoneLink({ phone }: { phone?: string }) {
+  if (!phone) return <>—</>;
+  const digits = phone.replace(/\D/g, "").replace(/^221/, "");
+  return (
+    <a className="text-primary hover:underline" href={`tel:+221${digits}`}>
+      {formatPhoneDisplay(phone)}
+    </a>
+  );
 }
 
 function formatMoney(value: number) {
