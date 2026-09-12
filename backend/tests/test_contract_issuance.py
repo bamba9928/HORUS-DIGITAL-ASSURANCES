@@ -459,3 +459,52 @@ def test_issue_asks_ass_with_the_canonical_registration():
     issue_contract(contract, ass_client=client)
 
     assert client.verified == "AA-917-VL"
+
+
+class AssProductionCoverageClient(SuccessfulAssClient):
+    """Reponse REELLE de la production ASS (2026-09-12) : code 2000 + contrat.
+
+    Rien ne ressemble a la sandbox : `status` SUCCESS, et `data` est le `repr`
+    Python d'un dictionnaire, pas du JSON.
+    """
+
+    expire_at = "2026-10-11 23:59:59"
+
+    def verify_registration(self, payload):
+        self.verified = payload["immatriculation"]
+        return {
+            "code": "2000",
+            "message": "Opération effectuée avec succès.",
+            "status": "SUCCESS",
+            "data": (
+                "{'police': '26422026500570635', "
+                "'attestationNumber': 'SN004EQE79H', "
+                "'dateEffet': '2026-09-12', "
+                f"'expireAt': '{self.expire_at}', "
+                "'vehicule': {'immatriculation': 'AA917VL', "
+                "'marque': 'RENAULT', 'modele': '770KB'}}"
+            ),
+        }
+
+
+@pytest.mark.django_db
+def test_issue_is_blocked_on_the_production_shape_of_verif_immatriculation():
+    """La prod repond 2000/SUCCESS avec le contrat, pas 5006 comme la sandbox."""
+    contract = create_paid_contract()
+    contract.draft_payload["vehicle"]["effectDate"] = "2026-09-20"
+    contract.save(update_fields=["draft_payload"])
+
+    with pytest.raises(ContractIssueError, match="RENAULT 770KB"):
+        issue_contract(contract, ass_client=AssProductionCoverageClient(contract.id))
+
+
+@pytest.mark.django_db
+def test_issue_passes_when_the_ass_coverage_expires_before_the_new_effect_date():
+    """Renouvellement anticipe : la couverture ASS s'arrete avant la date d'effet."""
+    contract = create_paid_contract()
+    contract.draft_payload["vehicle"]["effectDate"] = "2026-12-01"
+    contract.save(update_fields=["draft_payload"])
+
+    result = issue_contract(contract, ass_client=AssProductionCoverageClient(contract.id))
+
+    assert result["internal_status"] == Contract.InternalStatus.ISSUED

@@ -1,4 +1,4 @@
-import { Mail, MapPin, Phone, ShieldCheck } from "lucide-react";
+import { Mail, MessageCircle, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -51,16 +51,18 @@ export default function ContactPage() {
 
           <div className="flex items-start gap-4 rounded-2xl border border-border bg-white p-6 shadow-xs">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Phone size={18} />
+              <MessageCircle size={18} />
             </span>
             <div>
-              <h2 className="text-[15px] font-extrabold tracking-tight">Téléphone</h2>
+              <h2 className="text-[15px] font-extrabold tracking-tight">Contact WhatsApp</h2>
               <p className="mt-1 text-sm font-medium text-black/55">
                 Du lundi au vendredi, de 9 h à 18 h :
               </p>
               <a
                 className="mt-1.5 inline-block text-sm font-bold text-primary hover:underline"
-                href="tel:+221773409658"
+                href="https://wa.me/221773409658"
+                rel="noopener noreferrer"
+                target="_blank"
               >
                 +221 77 340 96 58
               </a>
@@ -69,36 +71,37 @@ export default function ContactPage() {
 
           <div className="flex items-start gap-4 rounded-2xl border border-border bg-white p-6 shadow-xs">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <MapPin size={18} />
-            </span>
-            <div>
-              <h2 className="text-[15px] font-extrabold tracking-tight">Adresse</h2>
-              <p className="mt-1 text-sm font-medium text-black/55">
-                Horus Global Services
-                <br />
-                Touba Darou Khoudoss, Touba
-                <br />
-                Région de Diourbel, Sénégal
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-4 rounded-2xl border border-border bg-white p-6 shadow-xs">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <ShieldCheck size={18} />
             </span>
             <div>
-              <h2 className="text-[15px] font-extrabold tracking-tight">Espace agents</h2>
+              <h2 className="text-[15px] font-extrabold tracking-tight">Espace partenaire</h2>
               <p className="mt-1 text-sm font-medium text-black/55">
-                La plateforme est réservée aux agents et courtiers agréés. L&apos;accès
-                se fait uniquement sur invitation de votre administrateur.
+                La plateforme est réservée aux partenaires revendeurs agréés : il
+                n&apos;y a pas d&apos;inscription libre. Si vous souhaitez devenir
+                partenaire revendeur, contactez l&apos;administrateur pour la création
+                de votre compte.
               </p>
-              <Link
-                className="mt-1.5 inline-block text-sm font-bold text-primary hover:underline"
-                href="/login"
-              >
-                Se connecter →
-              </Link>
+              <p className="mt-2 text-sm font-medium text-black/55">
+                Il vous ouvre votre espace, y rattache votre point de vente et vous
+                accompagne sur vos premières attestations : émission, encaissement
+                Orange Money et suivi de vos commissions.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5">
+                <a
+                  className="text-sm font-bold text-primary hover:underline"
+                  href="https://wa.me/221773409658?text=Bonjour%2C%20je%20souhaite%20devenir%20partenaire%20revendeur%20Horus%20Assur."
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  Demander un compte partenaire →
+                </a>
+                <Link
+                  className="text-sm font-bold text-primary hover:underline"
+                  href="/login"
+                >
+                  Se connecter →
+                </Link>
+              </div>
             </div>
           </div>
         </div>

@@ -77,14 +77,16 @@ class AssVerifyRegistrationView(APIView):
         # peut y manquer, et l'apporteur ne l'apprenait qu'a l'emission, apres
         # avoir encaisse. La base d'ASS est donc consultee en second, quand le
         # registre n'a rien trouve. Best effort : renvoie None sur panne.
-        ass_message = None
+        ass_coverage = None
         if not result.blocked:
-            ass_message = already_insured_at_ass(AssClient(), immatriculation)
+            ass_coverage = already_insured_at_ass(
+                AssClient(), immatriculation, date_effet_prevue
+            )
 
         # UNAVAILABLE n'est pas NOT_FOUND : le registre etait injoignable, on
         # laisse passer la vente (FAIL_OPEN) mais le front doit annoncer
         # « verification indisponible », pas « immatriculation libre ».
-        if result.blocked or ass_message:
+        if result.blocked or ass_coverage:
             operation_status = "SUCCESS"
         elif not result.available:
             operation_status = "UNAVAILABLE"
@@ -94,18 +96,17 @@ class AssVerifyRegistrationView(APIView):
         payload = {
             "mode": "mock" if settings.AAS_DIOTALI_MOCK_ENABLED else "real",
             "operation_status": operation_status,
-            "operation_message": result.message or ass_message or "",
+            "operation_message": result.message or (ass_coverage.message if ass_coverage else ""),
             "immatriculation": immatriculation,
-            "is_registered": bool(result.blocked or ass_message),
+            "is_registered": bool(result.blocked or ass_coverage),
             # Le registre AAS Diotali ne fournit pas les caracteristiques du
             # vehicule (marque/genre/etc.) au sens du formulaire (categorie,
             # energie...) : `vehicle` reste None. `details` porte ce que le
             # contrat existant fournit reellement, pour l'alerte de blocage.
             "vehicle": None,
-            # `details` ne vient que du registre public : la base d'ASS ne
-            # renvoie ni marque, ni numero d'attestation, ni dates (`data`
-            # vide). Un blocage cote ASS n'a donc que son message.
-            "details": result.details,
+            # Les deux sources alimentent `details` avec les memes cles :
+            # le front n'a qu'un seul affichage a gerer.
+            "details": result.details or (ass_coverage.details if ass_coverage else None),
             "raw_response": {},
         }
         response_serializer = AssVerifyRegistrationSerializer(payload)

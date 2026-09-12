@@ -242,10 +242,10 @@ def _check_not_already_insured(contract, ass_client=None):
                 result.message
                 or f"Vehicule {immatriculation} deja assure : emission impossible."
             )
-        _check_ass_registration(ass_client, immatriculation)
+        _check_ass_registration(ass_client, immatriculation, date_effet)
 
 
-def _check_ass_registration(ass_client, immatriculation):
+def _check_ass_registration(ass_client, immatriculation, date_effet=None):
     """Complement du registre public : la base d'ASS via `verif.immatriculation`.
 
     Bloquer ici ne coute aucune vente : ASS refuse de toute facon l'emission
@@ -255,13 +255,14 @@ def _check_ass_registration(ass_client, immatriculation):
     echec au milieu de l'emission — et, pour une flotte, avant d'avoir emis
     les vehicules precedents.
 
-    Cet endpoint ne renvoie aucune date : un renouvellement anticipe est donc
-    refuse ici, comme il l'aurait ete par ASS quelques lignes plus loin. Voir
-    integrations/ass/duplicates.py pour le detail des pieges de la reponse.
+    En production, la reponse porte les dates du contrat existant : la meme
+    tolerance que sur AAS Diotali s'applique donc (couverture expirant avant
+    la date d'effet -> renouvellement anticipe autorise). Voir
+    integrations/ass/duplicates.py pour les deux formats de reponse.
     """
-    message = already_insured_at_ass(ass_client, immatriculation)
-    if message:
-        raise ContractIssueError(message)
+    coverage = already_insured_at_ass(ass_client, immatriculation, date_effet)
+    if coverage:
+        raise ContractIssueError(coverage.message)
 
 
 def _registrations_to_verify(contract):

@@ -47,7 +47,7 @@ class VerificationResult:
         return cls(blocked=False, available=False)
 
 
-def _parse_date(value) -> date | None:
+def parse_registry_date(value) -> date | None:
     """Date AAS -> `date`, ou None si le format est inconnu.
 
     None plutot que la valeur brute : une chaine non reconnue ne doit pas finir
@@ -119,8 +119,8 @@ def check_vehicule(
 
         if status == "SUCCESS":
             data = payload.get("data") or {}
-            dt_fin = _parse_date(data.get("dateEcheance"))
-            dt_debut = _parse_date(data.get("dateEffet"))
+            dt_fin = parse_registry_date(data.get("dateEcheance"))
+            dt_debut = parse_registry_date(data.get("dateEffet"))
 
             # Nouvelle date d'effet strictement apres l'echeance existante :
             # le vehicule ne sera plus couvert a cette date, on laisse passer.
