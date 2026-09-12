@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowLeft,
   ArrowLeftRight,
   Bike,
   BusFront,
@@ -29,11 +30,12 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
 import { computeExpirationDate } from "@/lib/coverage";
+import { useEscapeKey } from "@/lib/useEscapeKey";
 import { OmPaymentDialog } from "@/components/OmPaymentDialog";
 import { DatePicker } from "@/components/DatePicker";
 import { SelectSearch } from "@/components/SelectSearch";
@@ -235,6 +237,7 @@ function NewContractPageContent() {
   const [step, setStep] = useState(1);
   const [contractType, setContractType] = useState(() => {
     const type = searchParams.get("type")?.toUpperCase();
+    if (type === "FLEET") return "AUTO_MONO";
     return type && (VALID_CONTRACT_TYPES as readonly string[]).includes(type)
       ? type
       : "AUTO_MONO";
@@ -275,7 +278,19 @@ function NewContractPageContent() {
   const [registrationLookupState, setRegistrationLookupState] =
     useState<RegistrationLookupState>("idle");
   const [registrationLookupMessage, setRegistrationLookupMessage] = useState("");
-  const [error, setError] = useState("");
+  const [registrationBlockDetails, setRegistrationBlockDetails] =
+    useState<AssRegistrationVerification["details"]>(null);
+  // Alerte de blocage (vehicule deja assure) : ne se montre qu'au moment de
+  // passer a l'etape options, pas pendant la saisie.
+  const [showRegistrationBlockDialog, setShowRegistrationBlockDialog] = useState(false);
+  // Flotte desactivee (rc.flotte.request en panne cote ASS) : un lien direct
+  // vers ?type=FLEET atterrit sur Auto mono, avec une explication au lieu
+  // d'un formulaire qui echouerait au devis de toute facon.
+  const [error, setError] = useState(() =>
+    searchParams.get("type")?.toUpperCase() === "FLEET"
+      ? "Flotte est temporairement indisponible (panne côté API ASS) : vous avez été redirigé vers Auto mono."
+      : "",
+  );
   const savedDraftIdRef = useRef<number | null>(null);
   const draftSavePromiseRef = useRef<Promise<number | null> | null>(null);
   const registrationLookupRequestRef = useRef(0);
@@ -419,7 +434,13 @@ function NewContractPageContent() {
 
   useEffect(() => {
     const registration = normalizeRegistrationLookup(vehicle.registration);
-    if (isGarage || registration.length < 5 || lastRegistrationLookupRef.current === registration) {
+    // Cle composite registration+date d'effet : la date d'effet change souvent
+    // APRES l'immatriculation (le formulaire remplit le vehicule avant la
+    // couverture), et elle peut a elle seule faire passer un vehicule bloque
+    // a autorise (echeance du contrat existant depassee) — voir
+    // integrations/aas_diotali/service.check_vehicule.
+    const lookupKey = `${registration}|${vehicle.effectDate}`;
+    if (isGarage || registration.length < 5 || lastRegistrationLookupRef.current === lookupKey) {
       return;
     }
 
@@ -430,11 +451,11 @@ function NewContractPageContent() {
         canSeeAss ? "Recherche automatique dans ASS..." : "Recherche automatique en cours…",
       );
       try {
-        const response = await verifyAssRegistration(registration);
+        const response = await verifyAssRegistration(registration, vehicle.effectDate || undefined);
         if (registrationLookupRequestRef.current !== requestId) {
           return;
         }
-        lastRegistrationLookupRef.current = registration;
+        lastRegistrationLookupRef.current = lookupKey;
 
         if (response.is_registered) {
           // L'API réelle ne renvoie jamais les données du véhicule : on garde le
@@ -457,6 +478,7 @@ function NewContractPageContent() {
             response.operation_message ||
               "Ce véhicule dispose déjà d'une assurance digitale active.",
           );
+          setRegistrationBlockDetails(response.details);
           return;
         }
 
@@ -464,6 +486,7 @@ function NewContractPageContent() {
         setRegistrationLookupMessage(
           "Immatriculation libre : aucune assurance digitale active.",
         );
+        setRegistrationBlockDetails(null);
       } catch {
         if (registrationLookupRequestRef.current !== requestId) {
           return;
@@ -478,7 +501,7 @@ function NewContractPageContent() {
     }, 700);
 
     return () => window.clearTimeout(timeout);
-  }, [canSeeAss, isGarage, vehicle.registration]);
+  }, [canSeeAss, isGarage, vehicle.registration, vehicle.effectDate]);
   const canSaveVehicle = Boolean(
     vehicle.brand &&
       vehicle.model &&
@@ -518,7 +541,11 @@ function NewContractPageContent() {
         : isGarage
           ? canSaveGarage
           : canSaveVehicle) &&
-      canContinueParties,
+      canContinueParties &&
+      // Vehicule deja assure (verification AAS Diotali) sans que la nouvelle
+      // date d'effet ne coure apres l'echeance du contrat existant : on ne
+      // laisse pas passer a l'etape options tant que ce n'est pas resolu.
+      registrationLookupState !== "found",
   );
   const hasDraftContent = Boolean(
     Object.values(policyholder).some((value) => value.trim()) ||
@@ -635,6 +662,13 @@ function NewContractPageContent() {
 
   async function continueToOptions() {
     setShowErrors(true);
+    // Vehicule deja assure (AAS Diotali) sans que la date d'effet ne coure
+    // apres l'echeance existante : alerte plein ecran plutot qu'un blocage
+    // silencieux, avec un retour explicite vers le formulaire pour corriger.
+    if (registrationLookupState === "found") {
+      setShowRegistrationBlockDialog(true);
+      return;
+    }
     if (!canCalculateQuote) {
       return;
     }
@@ -1148,6 +1182,14 @@ function NewContractPageContent() {
                 </button>
               </div>
             </div>
+          ) : null}
+
+          {showRegistrationBlockDialog ? (
+            <RegistrationBlockDialog
+              details={registrationBlockDetails}
+              message={registrationLookupMessage}
+              onClose={() => setShowRegistrationBlockDialog(false)}
+            />
           ) : null}
 
           {step === 2 ? (
@@ -1827,22 +1869,21 @@ function VehicleFields({
               required
               value={vehicle.registration}
             />
-            {registrationLookupState !== "idle" ? (
+            {/* Le cas « déjà assuré » n'apparaît plus ici : il est réservé à
+                l'alerte plein écran déclenchée au clic sur Suivant, pour ne
+                pas se perdre dans le flux de saisie. */}
+            {registrationLookupState !== "idle" && registrationLookupState !== "found" ? (
               <p
                 className={`mt-2 flex items-center gap-1.5 text-xs font-bold ${
-                  registrationLookupState === "found"
-                    ? "text-amber-700"
-                    : registrationLookupState === "not_found"
-                      ? "text-emerald-700"
-                      : registrationLookupState === "error"
-                        ? "text-red-700"
-                        : "text-black/48"
+                  registrationLookupState === "not_found"
+                    ? "text-emerald-700"
+                    : registrationLookupState === "error"
+                      ? "text-red-700"
+                      : "text-black/48"
                 }`}
               >
                 {registrationLookupState === "checking" ? (
                   <LoaderCircle className="animate-spin" size={13} />
-                ) : registrationLookupState === "found" ? (
-                  <TriangleAlert size={13} />
                 ) : registrationLookupState === "not_found" ? (
                   <Check size={13} />
                 ) : null}
@@ -3046,6 +3087,91 @@ function formatDisplayDate(value?: string | null) {
   if (!value) return "—";
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
   return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
+}
+
+// Alerte plein écran (vérification AAS Diotali) : le véhicule saisi a déjà un
+// contrat en cours dont l'échéance ne précède pas la date d'effet demandée.
+// Ne s'affiche qu'au clic sur « Suivant », pas pendant la saisie — un seul
+// bouton, retour au formulaire pour corriger l'immatriculation ou la date.
+function RegistrationBlockDialog({
+  details,
+  message,
+  onClose,
+}: {
+  details: AssRegistrationVerification["details"];
+  message: string;
+  onClose: () => void;
+}) {
+  useEscapeKey(onClose, true);
+  const titleId = useId();
+
+  return (
+    <div
+      aria-labelledby={titleId}
+      aria-modal="true"
+      className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+      role="dialog"
+    >
+      <button
+        aria-label="Fermer"
+        className="absolute inset-0 cursor-default bg-black/50 backdrop-blur-[1px]"
+        onClick={onClose}
+        tabIndex={-1}
+        type="button"
+      />
+      <div className="relative w-full max-w-md overflow-hidden rounded-2xl bg-red-600 text-white shadow-2xl">
+        <div className="flex items-start gap-3 p-5">
+          <TriangleAlert className="mt-0.5 shrink-0" size={22} />
+          <div className="min-w-0">
+            <h2 className="text-base font-black" id={titleId}>
+              Véhicule déjà assuré
+            </h2>
+            <p className="mt-1 text-sm font-semibold text-red-50">{message}</p>
+          </div>
+        </div>
+        {details ? (
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-white/20 bg-black/10 px-5 py-4 text-sm">
+            <div>
+              <dt className="text-[10px] font-black uppercase tracking-widest text-red-100">
+                Marque / Modèle
+              </dt>
+              <dd className="font-bold">
+                {[details.brand, details.model].filter(Boolean).join(" ") || "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[10px] font-black uppercase tracking-widest text-red-100">
+                Attestation
+              </dt>
+              <dd className="font-bold">{details.attestation_number || "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-[10px] font-black uppercase tracking-widest text-red-100">
+                Valide depuis
+              </dt>
+              <dd className="font-bold">{formatDisplayDate(details.date_effet)}</dd>
+            </div>
+            <div>
+              <dt className="text-[10px] font-black uppercase tracking-widest text-red-100">
+                Jusqu&apos;au
+              </dt>
+              <dd className="font-bold">{formatDisplayDate(details.date_echeance)}</dd>
+            </div>
+          </dl>
+        ) : null}
+        <div className="p-4">
+          <button
+            className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-white text-sm font-extrabold text-red-700 transition hover:bg-red-50"
+            onClick={onClose}
+            type="button"
+          >
+            <ArrowLeft size={15} />
+            Retour au formulaire
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function upsertOption(options: SelectOption[], option: SelectOption) {

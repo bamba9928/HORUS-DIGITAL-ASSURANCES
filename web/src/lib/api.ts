@@ -448,13 +448,26 @@ export type AssRegistrationVerification = {
     cylindree: string;
     motoUsage: string;
   } | null;
+  // Contrat existant trouve par AAS Diotali (null si le vehicule est libre) :
+  // sert a l'alerte de blocage avant le passage a l'etape options.
+  details: {
+    immatriculation: string;
+    brand: string;
+    model: string;
+    attestation_number: string;
+    date_effet: string;
+    date_echeance: string;
+  } | null;
   raw_response: Record<string, unknown>;
 };
 
-export async function verifyAssRegistration(immatriculation: string) {
+export async function verifyAssRegistration(immatriculation: string, effectDate?: string) {
   return fetchApi<AssRegistrationVerification>("/integrations/ass/verify-registration/", {
     method: "POST",
-    body: JSON.stringify({ immatriculation }),
+    body: JSON.stringify({
+      immatriculation,
+      ...(effectDate ? { date_effet: effectDate } : {}),
+    }),
   });
 }
 

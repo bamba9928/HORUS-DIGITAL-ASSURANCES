@@ -405,6 +405,18 @@ ASS_CANCEL_ENDPOINT_FALLBACK = config(
 ASS_QR_STOCK_ALERT_THRESHOLD = config("ASS_QR_STOCK_ALERT_THRESHOLD", default=10, cast=int)
 
 
+# ─── Verification independante AAS Diotali (avant emission) ──────────────────
+# Registre public national, distinct d'ASS : detecte un vehicule deja assure
+# AVANT d'appeler ASS, pour ne jamais bruler un QR reel sur un doublon. Voir
+# integrations/aas_diotali/service.py et la memoire project-aas-diotali-a-porter.
+AAS_PUBLIC_BASE_URL = config(
+    "AAS_PUBLIC_BASE_URL", default="https://apiaas.diotali.com/applicationtiers"
+)
+# Pas de sandbox connue pour ce tiers : mock local par defaut (comme ASS_MOCK_ENABLED)
+# pour ne pas dependre d'un service externe en dev/tests.
+AAS_DIOTALI_MOCK_ENABLED = config("AAS_DIOTALI_MOCK_ENABLED", default=True, cast=bool)
+
+
 # ─── Admin Django (unfold) ────────────────────────────────────────────────────
 # L'admin sert l'exploitation interne : support, finance, correction ponctuelle.
 # Le parcours metier passe par l'API + le front Next.js, jamais par l'admin.

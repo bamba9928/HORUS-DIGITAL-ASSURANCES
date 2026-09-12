@@ -17,7 +17,6 @@ from contracts.services import (
     parse_ass_datetime,
 )
 from integrations.ass.client import extract_available_qr
-from integrations.ass.views import AssVerifyRegistrationView
 from payments.services import expected_payment_amount
 
 
@@ -134,20 +133,6 @@ REAL_STOCK_RESPONSE = {
 }
 
 # verif.immatriculation — vehicule deja assure / immatriculation libre
-REAL_VERIF_ALREADY_INSURED = {
-    "code": "5006",
-    "message": "Ce véhicule DK1234AB dispose déjà d'une police d'assurance chez: PREVOYANCE ASSURANCES",
-    "status": "ERREUR",
-    "data": "",
-}
-REAL_VERIF_FREE = {
-    "code": "4000",
-    "message": "L'attestation d'assurance (ZZ0000ZZ) n'est pas valide.",
-    "status": "ERROR",
-    "data": "",
-}
-
-
 def test_extract_prime_rc_supports_real_string_data():
     # PrimeRC (4469) + Cedeao (300) — ici `data` vaut encore la meme chose.
     assert extract_prime_rc(REAL_RC_RESPONSE) == 4769
@@ -301,14 +286,6 @@ def test_stock_extractor_parses_real_string_value():
     assert extract_available_qr({"data": 80}) == 80
     assert extract_available_qr({"data": {"stock": "12"}}) == 12
     assert extract_available_qr({"data": "n/a"}) is None
-
-
-def test_verify_registration_maps_real_status_codes():
-    view = AssVerifyRegistrationView()
-
-    assert view._extract_is_registered(REAL_VERIF_ALREADY_INSURED) is True
-    assert view._extract_is_registered(REAL_VERIF_FREE) is False
-    assert view._extract_vehicle(REAL_VERIF_ALREADY_INSURED) is None
 
 
 # ─── Emission (reponse sandbox exacte, capturee le 2026-08-06) ───────────────

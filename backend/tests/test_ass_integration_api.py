@@ -1,7 +1,6 @@
 import pytest
 from django.test import override_settings
 from rest_framework.test import APIClient
-from unittest.mock import patch
 
 from accounts.models import User
 from organizations.models import Organization
@@ -100,8 +99,8 @@ def test_stock_qr_endpoint_requires_authentication():
 
 
 @pytest.mark.django_db
-@override_settings(DEBUG=True, ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
-def test_can_verify_registration_with_ass_mock_in_debug_mode():
+@override_settings(DEBUG=True, AAS_DIOTALI_MOCK_ENABLED=True)
+def test_can_verify_registration_with_aas_diotali_mock_in_debug_mode():
     organization = Organization.objects.create(name="Groupe Verification", code="VERIFY")
     contributor = User.objects.create_user(
         username="contributor-ass-verification",
@@ -114,7 +113,7 @@ def test_can_verify_registration_with_ass_mock_in_debug_mode():
 
     already_insured = client.post(
         "/api/integrations/ass/verify-registration/",
-        {"immatriculation": "ass-001"},
+        {"immatriculation": "aas-001"},
         format="json",
     )
     free = client.post(
@@ -123,11 +122,11 @@ def test_can_verify_registration_with_ass_mock_in_debug_mode():
         format="json",
     )
 
-    # Format reel valide en sandbox : l'API ne renvoie jamais les donnees du
-    # vehicule, uniquement un statut deja assure (5006) / libre (4000).
+    # Le registre AAS Diotali ne renvoie jamais les caracteristiques du
+    # vehicule, seulement l'existence (ou non) d'un contrat en cours.
     assert already_insured.status_code == 200
     assert already_insured.data["mode"] == "mock"
-    assert already_insured.data["immatriculation"] == "ASS-001"
+    assert already_insured.data["immatriculation"] == "AAS-001"
     assert already_insured.data["is_registered"] is True
     assert already_insured.data["vehicle"] is None
     assert "MOCK ASSURANCES" in already_insured.data["operation_message"]
@@ -138,31 +137,15 @@ def test_can_verify_registration_with_ass_mock_in_debug_mode():
 
 
 @pytest.mark.django_db
-@override_settings(ASS_MOCK_ENABLED=False, ASS_REAL_CALLS_ALLOWED=True)
-@patch("integrations.ass.views.AssClient.verify_registration")
-def test_verify_registration_normalizes_real_ass_vehicle_payload(
-    verify_registration,
-):
-    verify_registration.return_value = {
-        "operationStatus": "SUCCESS",
-        "operationMessage": "Vehicule retrouve.",
-        "data": {
-            "exists": True,
-            "vehicle": {
-                "immatriculation": "DK-1234-AB",
-                "marque": "YAMAHA",
-                "modele": "MT",
-                "genre": "2RMOT",
-                "energie": "ESSENCE",
-                "cylindre": 150,
-                "nombrePlace": 2,
-                "dateMiseEnCirculation": "2022-11-08T00:00:00Z",
-            },
-        },
-    }
-    organization = Organization.objects.create(name="Groupe Normalisation", code="NORMALIZE")
+@override_settings(AAS_DIOTALI_MOCK_ENABLED=True)
+def test_verify_registration_lets_through_when_existing_cover_expires_before_new_effect_date():
+    # Sentinelle mock : echeance fixee au 2026-12-31 (voir
+    # integrations/aas_diotali/client.py). Une nouvelle date d'effet
+    # posterieure signifie que le vehicule ne sera plus couvert par
+    # l'ancien contrat : on laisse passer.
+    organization = Organization.objects.create(name="Groupe Renouvellement", code="RENEW")
     contributor = User.objects.create_user(
-        username="contributor-ass-normalization",
+        username="contributor-ass-renouvellement",
         password="test-pass-123",
         role=User.Role.CONTRIBUTOR,
         organization=organization,
@@ -170,19 +153,29 @@ def test_verify_registration_normalizes_real_ass_vehicle_payload(
     client = APIClient()
     client.force_authenticate(contributor)
 
-    response = client.post(
+    after_expiry = client.post(
         "/api/integrations/ass/verify-registration/",
-        {"immatriculation": "dk-1234-ab"},
+        {"immatriculation": "aas-002", "date_effet": "2027-01-05"},
+        format="json",
+    )
+    before_expiry = client.post(
+        "/api/integrations/ass/verify-registration/",
+        {"immatriculation": "aas-002", "date_effet": "2026-06-01"},
+        format="json",
+    )
+    no_date_provided = client.post(
+        "/api/integrations/ass/verify-registration/",
+        {"immatriculation": "aas-002"},
         format="json",
     )
 
-    assert response.status_code == 200
-    assert response.data["is_registered"] is True
-    assert response.data["vehicle"]["category"] == "C5"
-    assert response.data["vehicle"]["subcategory"] == "2RMOT"
-    assert response.data["vehicle"]["brand"] == "YAMAHA"
-    assert response.data["vehicle"]["cylindree"] == "150"
-    assert response.data["vehicle"]["firstCirculationDate"] == "2022-11-08"
+    assert after_expiry.data["is_registered"] is False
+    assert after_expiry.data["details"] is None
+    assert before_expiry.data["is_registered"] is True
+    assert before_expiry.data["details"]["attestation_number"] == "MOCKAAS0001"
+    assert before_expiry.data["details"]["date_echeance"] == "2026-12-31"
+    # Sans date d'effet (formulaire pas encore arrive a la couverture) : bloque par defaut.
+    assert no_date_provided.data["is_registered"] is True
 
 
 @pytest.mark.django_db
@@ -235,34 +228,7 @@ def test_verify_registration_rejects_invalid_characters():
 
 
 @pytest.mark.django_db
-@override_settings(
-    DEBUG=False,
-    ASS_MOCK_ENABLED=False,
-    ASS_REAL_CALLS_ALLOWED=False,
-    ASS_USERNAME="ass",
-    ASS_PASSWORD="secret-test",
-)
-def test_verify_registration_does_not_call_real_ass_when_real_calls_are_disabled():
-    finance = User.objects.create_user(
-        username="finance-ass-verif",
-        password="test-pass-123",
-        role=User.Role.FINANCE,
-    )
-    client = APIClient()
-    client.force_authenticate(finance)
-
-    response = client.post(
-        "/api/integrations/ass/verify-registration/",
-        {"immatriculation": "AA-917-XQ"},
-        format="json",
-    )
-
-    assert response.status_code == 503
-    assert "appels reels ass" in response.data["detail"].lower()
-
-
-@pytest.mark.django_db
-@override_settings(DEBUG=True, ASS_MOCK_ENABLED=True, ASS_REAL_CALLS_ALLOWED=False)
+@override_settings(DEBUG=True, AAS_DIOTALI_MOCK_ENABLED=True)
 def test_verify_registration_requires_authentication_even_in_debug():
     client = APIClient()
 
