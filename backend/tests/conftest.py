@@ -20,3 +20,18 @@ def _allow_om_mock(settings):
     refus reposent ce drapeau a False eux-memes.
     """
     settings.OM_ALLOW_MOCK_IN_PRODUCTION = True
+
+
+@pytest.fixture(autouse=True)
+def _mock_aas_diotali(settings):
+    """Coupe le registre AAS Diotali pendant les tests.
+
+    Le reglage par defaut est le VRAI registre public (une prod entiere a
+    tourne sur le mock parce que le defaut etait inverse). La suite, elle, ne
+    doit pas dependre d'un service tiers ni faire d'appel sortant : le mock est
+    donc force ici. Les tests qui veulent le vrai chemin reposent le drapeau
+    eux-memes avec `override_settings(AAS_DIOTALI_MOCK_ENABLED=False)`.
+
+    Sentinelle du mock : une plaque contenant "AAS" est « deja assuree ».
+    """
+    settings.AAS_DIOTALI_MOCK_ENABLED = True

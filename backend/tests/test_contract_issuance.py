@@ -325,3 +325,72 @@ def test_issue_is_blocked_with_clear_message_when_qr_stock_is_empty():
     contract.refresh_from_db()
     assert contract.internal_status == Contract.InternalStatus.PAID
     assert contract.issuance_started_at is None
+
+
+class NeverCalledAssClient:
+    """Aucun appel ASS ne doit partir quand le doublon est detecte en amont."""
+
+    def stock_qr(self, payload=None):
+        raise AssertionError("Le stock QR ne doit pas etre interroge sur un doublon.")
+
+    def issue_auto_contract(self, payload):
+        raise AssertionError("L'emission ne doit pas etre tentee sur un doublon.")
+
+
+def _already_insured_contract(effect_date="2026-06-10"):
+    # "AAS" dans la plaque = sentinelle du mock AAS Diotali : vehicule deja
+    # assure, contrat existant du 01/01/2026 au 31/12/2026.
+    contract = create_paid_contract()
+    contract.draft_payload["vehicle"]["registration"] = "AAS-001-XQ"
+    contract.draft_payload["vehicle"]["effectDate"] = effect_date
+    contract.save(update_fields=["draft_payload"])
+    return contract
+
+
+@pytest.mark.django_db
+def test_issue_is_blocked_when_aas_diotali_reports_vehicle_already_insured():
+    """Le blocage ne vit pas qu'en React : un appel direct a l'API bute ici.
+
+    Sans ce filet, un brouillon repris ou un client API contournait la
+    verification du formulaire et brulait un QR reel sur un doublon — qu'ASS
+    ne refuse qu'APRES l'avoir consomme.
+    """
+    contract = _already_insured_contract()
+
+    with pytest.raises(ContractIssueError, match="deja assure"):
+        issue_contract(contract, ass_client=NeverCalledAssClient())
+
+    contract.refresh_from_db()
+    assert contract.internal_status == Contract.InternalStatus.PAID
+    assert contract.issuance_started_at is None
+
+
+@pytest.mark.django_db
+def test_issue_passes_when_existing_insurance_expires_before_new_effect_date():
+    """Echeance existante depassee : le vehicule n'est plus couvert, on emet."""
+    contract = _already_insured_contract(effect_date="2027-03-01")
+
+    result = issue_contract(contract, ass_client=SuccessfulAssClient(contract.id))
+
+    assert result["internal_status"] == Contract.InternalStatus.ISSUED
+
+
+@pytest.mark.django_db
+def test_issue_verifies_every_fleet_registration_including_trailers():
+    contract = create_paid_contract()
+    contract.contract_type = Contract.ContractType.FLEET
+    contract.draft_payload = {
+        "guarantees": [1],
+        "policyholder": POLICYHOLDER,
+        "insured": POLICYHOLDER,
+        "fleet": {
+            "effectDate": "2026-06-10",
+            "vehicles": [
+                {"registration": "BB-123-CC", "trailers": [{"registration": "AAS-777-RR"}]},
+            ],
+        },
+    }
+    contract.save(update_fields=["contract_type", "draft_payload"])
+
+    with pytest.raises(ContractIssueError, match="deja assure"):
+        issue_contract(contract, ass_client=NeverCalledAssClient())

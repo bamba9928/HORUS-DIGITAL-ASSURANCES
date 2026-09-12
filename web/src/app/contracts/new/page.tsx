@@ -434,12 +434,16 @@ function NewContractPageContent() {
 
   useEffect(() => {
     const registration = normalizeRegistrationLookup(vehicle.registration);
+    // En flotte, la date d'effet est portee par la couverture commune, pas par
+    // la fiche vehicule : sans ca le registre etait interroge sans date et la
+    // tolerance d'echeance (contrat existant deja expire) ne jouait jamais.
+    const lookupEffectDate = (isFleet ? fleetCoverage.effectDate : vehicle.effectDate) || "";
     // Cle composite registration+date d'effet : la date d'effet change souvent
     // APRES l'immatriculation (le formulaire remplit le vehicule avant la
     // couverture), et elle peut a elle seule faire passer un vehicule bloque
     // a autorise (echeance du contrat existant depassee) — voir
     // integrations/aas_diotali/service.check_vehicule.
-    const lookupKey = `${registration}|${vehicle.effectDate}`;
+    const lookupKey = `${registration}|${lookupEffectDate}`;
     if (isGarage || registration.length < 5 || lastRegistrationLookupRef.current === lookupKey) {
       return;
     }
@@ -451,7 +455,7 @@ function NewContractPageContent() {
         canSeeAss ? "Recherche automatique dans ASS..." : "Recherche automatique en cours…",
       );
       try {
-        const response = await verifyAssRegistration(registration, vehicle.effectDate || undefined);
+        const response = await verifyAssRegistration(registration, lookupEffectDate || undefined);
         if (registrationLookupRequestRef.current !== requestId) {
           return;
         }
@@ -513,7 +517,7 @@ function NewContractPageContent() {
     }, 700);
 
     return () => window.clearTimeout(timeout);
-  }, [canSeeAss, isGarage, vehicle.registration, vehicle.effectDate]);
+  }, [canSeeAss, isFleet, isGarage, vehicle.registration, vehicle.effectDate, fleetCoverage.effectDate]);
   const canSaveVehicle = Boolean(
     vehicle.brand &&
       vehicle.model &&
@@ -729,6 +733,14 @@ function NewContractPageContent() {
   }
 
   function saveFleetVehicle() {
+    // Vehicule deja assure (AAS Diotali) : meme alerte qu'en mono. Sans ce
+    // garde-fou la fiche entrait dans la flotte et `resetRegistrationLookup()`
+    // effacait l'etat « found » juste apres — le blocage de l'etape options ne
+    // voyait plus rien et le doublon partait a l'emission.
+    if (registrationLookupState === "found") {
+      setShowRegistrationBlockDialog(true);
+      return;
+    }
     if (!canSaveVehicle) {
       return;
     }

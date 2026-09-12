@@ -7,7 +7,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
+from django.utils.dateparse import parse_date, parse_datetime
 
 from commissions.models import CommissionSnapshot
 from commissions.services import build_commission_snapshot_values
@@ -24,6 +24,7 @@ from integrations.ass.referentials import (
     horus_extra_rebate_rate,
     horus_extra_rebate_rate_for_genres,
 )
+from integrations.aas_diotali.service import check_vehicule
 from integrations.ass.exceptions import AssIntegrationError
 from payments.services import has_confirmed_payment
 
@@ -184,6 +185,7 @@ def issue_contract(contract, ass_client=None):
 
     exchange = {}
     try:
+        _check_not_already_insured(contract)
         _check_qr_stock(ass_client)
         request_payload, ass_response, issue_data = call_ass_issue(
             contract, ass_client, exchange=exchange
@@ -206,6 +208,76 @@ def issue_contract(contract, ass_client=None):
         raise
 
     return build_issue_result(contract)
+
+
+def _check_not_already_insured(contract):
+    """Dernier filet AAS Diotali avant de consommer un QR reel.
+
+    Le formulaire interroge deja le registre pendant la saisie, mais ce
+    controle-la vit dans le navigateur : un brouillon repris, un appel direct
+    a l'API ou une simple course de debounce arrivait ici sans qu'aucune
+    verification n'ait eu lieu. ASS ne refuse le doublon qu'APRES avoir
+    consomme le QR, sans repli possible — d'ou ce re-controle serveur.
+
+    Les pannes du tiers laissent passer (FAIL_OPEN, voir
+    integrations/aas_diotali/service) : seul un doublon prouve bloque.
+    """
+    if contract.contract_type == Contract.ContractType.GARAGE:
+        # Plaques W du concessionnaire : hors perimetre du registre, comme
+        # cote formulaire (isGarage y court-circuite la verification).
+        return
+
+    for immatriculation, date_effet in _registrations_to_verify(contract):
+        result = check_vehicule(immatriculation, date_effet)
+        if result.blocked:
+            raise ContractIssueError(
+                result.message
+                or f"Vehicule {immatriculation} deja assure : emission impossible."
+            )
+
+
+def _registrations_to_verify(contract):
+    """(immatriculation, date d'effet) de chaque vehicule porte par le contrat.
+
+    Mono, flotte et remorques : chacun consomme son propre QR chez ASS, donc
+    chacun doit etre verifie. La date d'effet suit la meme cascade que les
+    payloads d'emission (flotte > vehicule/remorque) pour que la tolerance
+    d'echeance joue sur la vraie date.
+    """
+    payload = contract.draft_payload if isinstance(contract.draft_payload, dict) else {}
+    fleet = payload.get("fleet") if isinstance(payload.get("fleet"), dict) else {}
+    fleet_effect = fleet.get("effectDate")
+
+    seen = set()
+    pairs = []
+
+    def add(registration, raw_effect_date):
+        immat = str(registration or "").strip().upper()
+        if not immat or immat in seen:
+            return
+        seen.add(immat)
+        pairs.append((immat, parse_date(str(raw_effect_date)) if raw_effect_date else None))
+
+    vehicle = payload.get("vehicle") if isinstance(payload.get("vehicle"), dict) else {}
+    add(vehicle.get("registration"), vehicle.get("effectDate"))
+
+    for fleet_vehicle in fleet.get("vehicles", []) or []:
+        if not isinstance(fleet_vehicle, dict):
+            continue
+        add(
+            fleet_vehicle.get("registration"),
+            fleet_effect or fleet_vehicle.get("effectDate"),
+        )
+        for trailer in fleet_vehicle.get("trailers", []) or []:
+            if isinstance(trailer, dict):
+                add(
+                    trailer.get("registration"),
+                    fleet_effect
+                    or trailer.get("effectDate")
+                    or fleet_vehicle.get("effectDate"),
+                )
+
+    return pairs
 
 
 def _check_qr_stock(ass_client):

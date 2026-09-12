@@ -414,9 +414,12 @@ ASS_QR_STOCK_ALERT_THRESHOLD = config("ASS_QR_STOCK_ALERT_THRESHOLD", default=10
 AAS_PUBLIC_BASE_URL = config(
     "AAS_PUBLIC_BASE_URL", default="https://apiaas.diotali.com/applicationtiers"
 )
-# Pas de sandbox connue pour ce tiers : mock local par defaut (comme ASS_MOCK_ENABLED)
-# pour ne pas dependre d'un service externe en dev/tests.
-AAS_DIOTALI_MOCK_ENABLED = config("AAS_DIOTALI_MOCK_ENABLED", default=True, cast=bool)
+# Pas de sandbox connue pour ce tiers, mais le defaut reste le VRAI registre :
+# l'endpoint est public (aucune cle a obtenir) et un defaut a True a fait tourner
+# la production entiere sur le mock — toute plaque sans les lettres "AAS"
+# repondait "immatriculation libre" sans qu'aucun appel ne sorte. Le mock ne
+# s'active plus que si on le demande explicitement (dev hors ligne, tests).
+AAS_DIOTALI_MOCK_ENABLED = config("AAS_DIOTALI_MOCK_ENABLED", default=False, cast=bool)
 
 
 # ─── Admin Django (unfold) ────────────────────────────────────────────────────
