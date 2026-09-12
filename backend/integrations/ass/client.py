@@ -1,5 +1,7 @@
 import logging
 import time
+from calendar import monthrange
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from urllib.parse import urlsplit
 
@@ -398,6 +400,11 @@ class AssClient:
     def _mock_issue_response(self, payload):
         reference = payload.get("referenceTrxPartner", "MOCK-REFERENCE")
         immatriculation = (payload.get("vehicule") or {}).get("immatriculation", "")
+        # AUTO_MONO ne calcule pas dateExpiration cote Horus (ASS s'en charge) ;
+        # Moto/Bus la fournissent deja dans le payload d'emission.
+        date_expiration = payload.get("dateExpiration") or _mock_expiration_date(
+            payload.get("dateEffet"), payload.get("duree"), payload.get("periodicite")
+        )
         return {
             "operationStatus": ASS_SUCCESS_STATUS,
             "operationMessage": "Emission mockee avec succes.",
@@ -405,7 +412,7 @@ class AssClient:
                 "referenceExterne": reference,
                 "attestationNumber": "SNMOCK0001",
                 "secureKey": "MOCK-SECURE-KEY",
-                "dateExpiration": "2026-09-01T23:59:59",
+                "dateExpiration": date_expiration,
                 "linkAttestation": "https://example.test/attestation/SNMOCK0001",
                 "linkCarteBrune": "https://example.test/cedeao/SNMOCK0001",
                 "immatriculation": immatriculation,
@@ -414,6 +421,11 @@ class AssClient:
         }
 
     def _mock_fleet_issue_response(self, payload):
+        # Une seule couverture pour toute la flotte (racine du payload) :
+        # meme echeance appliquee a chaque vehicule.
+        date_expiration = _mock_expiration_date(
+            payload.get("dateEffet"), payload.get("duree"), payload.get("periodicite")
+        )
         items = []
         for item in payload.get("items", []):
             vehicle = item.get("vehicule", {})
@@ -424,7 +436,7 @@ class AssClient:
                     "referenceExterne": reference,
                     "attestationNumber": attestation_number,
                     "secureKey": "MOCK-SECURE-KEY",
-                    "dateExpiration": "2026-09-01T23:59:59",
+                    "dateExpiration": date_expiration,
                     "linkAttestation": f"https://example.test/attestation/{attestation_number}",
                     "linkCarteBrune": f"https://example.test/cedeao/{attestation_number}",
                     "immatriculation": vehicle.get("immatriculation", ""),
@@ -446,7 +458,9 @@ class AssClient:
                 "referenceExterne": reference,
                 "attestationNumber": attestation_number,
                 "secureKey": "MOCK-TRAILER-SECURE-KEY",
-                "dateExpiration": "2026-09-01T23:59:59",
+                # Deja calculee par build_fleet_trailer_issue_payloads : on la
+                # reprend telle quelle plutot que de la refabriquer.
+                "dateExpiration": payload.get("dateExpiration", ""),
                 "linkAttestation": f"https://example.test/attestation/{attestation_number}",
                 "linkCarteBrune": f"https://example.test/cedeao/{attestation_number}",
                 "immatriculation": payload.get("immatriculation", ""),
@@ -463,7 +477,8 @@ class AssClient:
                 "referenceExterne": reference,
                 "attestationNumber": attestation_number,
                 "secureKey": "MOCK-GARAGE-SECURE-KEY",
-                "dateExpiration": "2026-09-01T23:59:59",
+                # Deja calculee par build_garage_issue_payload : reprise telle quelle.
+                "dateExpiration": payload.get("dateExpiration", ""),
                 "linkAttestation": f"https://example.test/attestation/{attestation_number}",
                 "linkCarteBrune": f"https://example.test/cedeao/{attestation_number}",
                 "immatriculation": payload.get("immatriculation", ""),
@@ -547,6 +562,34 @@ def parse_ass_amount(value, default=None):
 
 def _coerce_stock_int(value):
     return parse_ass_amount(value)
+
+
+def _mock_add_months(value, months):
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
+
+
+def _mock_expiration_date(effect_date, duration, periodicity):
+    """Echeance du mock : meme regle que `calculate_expiration_date`
+    (contracts/services.py, non importable ici sans import circulaire) —
+    effet + duree - 1 jour. Sans elle le mock renvoyait une date fixe,
+    parfois anterieure a la date d'effet demandee.
+    """
+    if not effect_date:
+        return ""
+    try:
+        start_date = date.fromisoformat(effect_date)
+    except ValueError:
+        return ""
+    duration = int(duration or 1)
+    if periodicity == "JOUR":
+        expiration = start_date + timedelta(days=duration) - timedelta(days=1)
+    else:
+        expiration = _mock_add_months(start_date, duration) - timedelta(days=1)
+    return f"{expiration.isoformat()}T23:59:59"
 
 
 def _build_rc_breakdown(prime_rc):
